@@ -12,6 +12,8 @@ Packing Scanning should remove the uncertainty and stress from packing.
 
 A traveller scans their luggage and belongings with a phone. The application reconstructs their geometry, identifies relevant physical properties, considers the trip and the traveller's priorities, and calculates a practical packing plan. The result is a visual, layer-by-layer sequence that can be followed without holding a phone camera throughout the packing process.
 
+The first usable product must support single travellers and households, one or multiple bags, reusable personal item scans, current supported-carrier rules, and an offline packing workflow.
+
 The product should prevent common problems such as:
 
 - discovering too late that everything does not fit;
@@ -735,21 +737,26 @@ The controlled MVP should include:
 
 - account and local guest mode;
 - trip-aware and packing-only sessions;
-- one hard-sided suitcase or rectangular travel container;
+- one or multiple hard-sided suitcases or rectangular travel containers in the same trip;
+- individual traveller and household profiles;
+- shared family packing lists with traveller-specific required items;
+- distribution of belongings across multiple bags;
 - one supported high-quality 3D capture path;
 - individual object scanning;
 - guided scale establishment;
-- personal item library;
+- a reusable personal item library that does not require unchanged objects to be rescanned;
 - measured/known/estimated/confirmed property provenance;
 - quick uncertainty review;
 - Balanced, Maximum Capacity, and Easy Access modes;
 - rigid objects plus conservative compressible-item presets;
-- mass limit and accessibility constraints;
+- mass limits, accessibility constraints, bag assignments, and cross-bag weight distribution;
+- at least one production carrier-rule adapter with carrier, route or fare applicability, source URL, retrieval time, and manual override;
+- a clearly visible stale-data warning and offline cache for previously retrieved carrier rules;
 - several explainable plan candidates;
 - 3D layer-by-layer instructions;
 - large touch controls and basic voice commands;
 - locked placements and “does not fit” replanning;
-- offline access to an already generated plan;
+- fully offline access during the journey to saved packing lists, bag contents, packing instructions, and previously generated plans;
 - raw-scan deletion and core privacy controls;
 - deterministic solver test mode.
 
@@ -765,14 +772,14 @@ The MVP should prove scan-to-plan usefulness before adding every carrier, bag ty
 - multiple compartments;
 - smart-scale integration;
 - richer trip-aware suggestions;
-- multi-bag planning;
+- advanced multi-bag rebalancing and transfer suggestions;
 - return-trip inventory;
 - wider iOS and Android device support.
 
 ### Version 2
 
-- shared household packing;
-- carrier and dangerous-goods adapters;
+- advanced household collaboration and permissions;
+- wider carrier and dangerous-goods adapter coverage;
 - advanced clothing folding/compression models;
 - product/barcode database expansion;
 - destination inventory and purchase planning;
@@ -828,7 +835,7 @@ Do not optimize only for theoretical volume utilization.
 
 The MVP is ready for controlled user testing when:
 
-1. A supported device can scan an empty hard-sided suitcase with metric scale.
+1. A supported device can scan one or more empty hard-sided suitcases with metric scale.
 2. A user can scan a defined test set of rigid and conservatively compressible objects.
 3. Every relevant property displays provenance and confidence.
 4. The interface never labels inferred mass as measured mass.
@@ -836,16 +843,20 @@ The MVP is ready for controlled user testing when:
 6. Required items and hard constraints are never silently removed.
 7. The user can choose Balanced, Maximum Capacity, or Easy Access optimization.
 8. The system returns at least one valid plan or explains why no valid plan exists.
-9. Candidate plans show meaningful trade-offs and uncertainty.
-10. A user can follow the layer-by-layer instructions without continuous camera use.
-11. Large touch controls and required voice commands work during the packing sequence.
-12. “Does not fit” preserves confirmed placements and recalculates the remaining plan.
-13. The selected plan remains available offline.
-14. Deleting raw scan data removes it from active storage according to the documented retention process.
-15. Deterministic geometric tests reproduce the same feasibility result.
-16. Physical benchmark trials report scan error, fit success, closure success, and replanning rate.
-17. Unsupported devices receive a clear fallback or incompatibility message.
-18. No flow requires a user to disclose trip context when they only want spatial packing.
+9. In a multi-bag session, the solver distributes items across bags while respecting each bag's geometry, mass limit, traveller assignment, and accessibility constraints.
+10. Family members can share a trip packing list while required personal items remain assigned to the correct traveller.
+11. A previously confirmed unchanged personal item can be reused in a later trip without rescanning.
+12. A supported carrier rule displays its applicability, source, retrieval time, and whether the cached information may be stale.
+13. Candidate plans show meaningful trade-offs and uncertainty.
+14. A user can follow the layer-by-layer instructions without continuous camera use.
+15. Large touch controls and required voice commands work during the packing sequence.
+16. “Does not fit” preserves confirmed placements and recalculates the remaining plan.
+17. Saved packing lists, bag inventories, instructions, and the selected plan remain usable offline throughout the journey.
+18. Deleting raw scan data removes it from active storage according to the documented retention process.
+19. Deterministic geometric tests reproduce the same feasibility result.
+20. Physical benchmark trials report scan error, fit success, closure success, and replanning rate.
+21. Unsupported devices receive a clear fallback or incompatibility message.
+22. No flow requires a user to disclose trip context when they only want spatial packing.
 
 ## 21. Test strategy
 
@@ -912,13 +923,15 @@ Publish capability levels rather than implying identical performance on every ph
 4. Build luggage-volume and object collision-model extraction.
 5. Implement a deterministic rigid-object packing solver.
 6. Add the Balanced, Maximum Capacity, and Easy Access objective profiles.
-7. Build candidate-plan explanations and layer-by-layer visualization.
-8. Add the personal library and uncertainty review.
-9. Implement locked placement and partial replanning.
-10. Run physical packing trials before expanding object recognition.
-11. Add the second platform depth adapter.
-12. Add photogrammetry fallback and certify device capability levels.
-13. Introduce soft-bag, compression, travel intelligence, and multi-bag features incrementally.
+7. Extend the solver to multiple bags, traveller assignments, and cross-bag weight distribution.
+8. Build candidate-plan explanations and layer-by-layer visualization.
+9. Add the reusable personal library, household trip model, and uncertainty review.
+10. Add the first sourced carrier-rule adapter and offline rule cache.
+11. Implement locked placement, partial replanning, and offline journey access.
+12. Run physical packing trials before expanding object recognition.
+13. Add the second platform depth adapter.
+14. Add photogrammetry fallback and certify device capability levels.
+15. Introduce soft-bag, advanced compression, and broader travel intelligence incrementally.
 
 ## 23. Authoritative platform references
 
