@@ -93,6 +93,10 @@ export function ItemCapture({ initial, suggestedItem, unit, scanSupported, recog
     return () => URL.revokeObjectURL(url);
   }, [photo]);
 
+  useEffect(() => {
+    if (!photo && !removePhoto && existingPhotoUrl) setPhotoUrl(existingPhotoUrl);
+  }, [existingPhotoUrl, photo, removePhoto]);
+
   const choosePhoto = (file?: File) => {
     if (!file) return;
     if (!file.type.startsWith('image/')) { setError('Choose an image file.'); return; }

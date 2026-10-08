@@ -15,9 +15,10 @@ import { orderPackingSteps, packingStepPreview, packingStepRelation } from '../p
 import { PackingDiagram } from './PackingDiagram';
 import { ContainerSpaceNotes } from './ContainerSpaceNotes';
 import { printingAvailable, printPackingSequence } from '../printing';
+import { LocalPhoto } from './LocalPhoto';
 import type { Container, LibraryItem, PackingPlan, Trip } from '../types';
 
-export function PackingSequence({ trip, plan, containers, items, photos, onExit }: { trip: Trip; plan: PackingPlan; containers: Container[]; items: LibraryItem[]; photos: Record<string, string>; onExit: () => void }) {
+export function PackingSequence({ trip, plan, containers, items, getPhoto, onExit }: { trip: Trip; plan: PackingPlan; containers: Container[]; items: LibraryItem[]; getPhoto:(id:string)=>Promise<Blob|undefined>; onExit: () => void }) {
   const ordered = useMemo(() => orderPackingSteps(plan.placements, containers), [plan.placements, containers]);
   const heading = useRef<HTMLHeadingElement>(null);
   const [printing, setPrinting] = useState(false);
@@ -52,7 +53,7 @@ export function PackingSequence({ trip, plan, containers, items, photos, onExit 
     <ol className="sequence-cards">{ordered.map((step, index) => {
       const item = packingItemForPlacement(itemById.get(step.itemId),step), bag = bagById.get(step.containerId);
       if (!item || !bag) return null;
-      return <li key={step.instanceId} className="sequence-card"><div className="sequence-step-heading"><strong className="sequence-number">{index + 1}</strong>{item.photoId && photos[item.photoId] && <img src={photos[item.photoId]} alt={item.name}/>}<div><h2>{item.name}</h2><p>{bag.name}{step.compartmentId&&` · ${compartmentFor(bag,step.compartmentId)?.name??'Missing compartment'}`} · {trip.travellers.find((traveller) => traveller.id === trip.entries.find((entry) => entry.id === step.entryId)?.travellerId)?.name ?? 'Traveller'} · {trip.completedInstanceIds.includes(step.instanceId) ? 'Confirmed packed' : 'Not confirmed packed'}</p></div></div>
+      return <li key={step.instanceId} className="sequence-card"><div className="sequence-step-heading"><strong className="sequence-number">{index + 1}</strong>{item.photoId && <LocalPhoto eager photoId={item.photoId} getPhoto={getPhoto} className="sequence-photo" alt={item.name}/>}<div><h2>{item.name}</h2><p>{bag.name}{step.compartmentId&&` · ${compartmentFor(bag,step.compartmentId)?.name??'Missing compartment'}`} · {trip.travellers.find((traveller) => traveller.id === trip.entries.find((entry) => entry.id === step.entryId)?.travellerId)?.name ?? 'Traveller'} · {trip.completedInstanceIds.includes(step.instanceId) ? 'Confirmed packed' : 'Not confirmed packed'}</p></div></div>
         <div className="sequence-instruction"><PackingDiagram bag={bag} placements={packingStepPreview(ordered, index, trip.completedInstanceIds)} currentId={step.instanceId} numbers={numbers} notes={false} items={items}/><div><PackingFormNotes form={item.packingForms?.find(form=>form.id===step.packingFormId)}/><p>{packingStepRelation(step, ordered, items, bag)}</p><p><strong>Position:</strong> {Math.round(step.x)} × {Math.round(step.y)} × {Math.round(step.z)} mm from the inside corner.</p><p><strong>Orientation:</strong> length × width × height {Math.round(step.length)} × {Math.round(step.width)} × {Math.round(step.height)} mm.</p><p><strong>Size evidence:</strong> {item.dimensionEvidence.source.replace('_', ' ')} · {Math.round(item.dimensionEvidence.confidence * 100)}% recorded confidence.</p><HandlingPropertyNotes item={item} expanded/><StackLoadNotes plan={plan} items={items} instanceId={step.instanceId}/>{item.fragile && <p>Fragile: do not rest anything on this item. Add cushioning and include its dimensions and weight; impact protection is not simulated.</p>}{item.keepUpright && <p>{uprightInstruction(item,bag)}</p>}<p className="paper-check">□ Physically checked and packed</p></div></div>
       </li>;
     })}</ol>

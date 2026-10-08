@@ -386,3 +386,9 @@
 .shared-change-fields { color: var(--muted); font-size: .9rem; }
 .shared-combination select { max-width: 100%; }
 @media (max-width: 600px) { .shared-combination { padding: .8rem; } .shared-change { padding: .8rem; } .shared-change-values { grid-template-columns: 1fr; gap: 0; } }
+
+.local-photo-slot{display:block;flex:none;overflow:hidden}
+.local-photo-slot>img{display:block;width:100%;height:100%;object-fit:cover}
+.workspace-photo{width:38px;height:38px;border-radius:7px}
+.library-photo{width:100%;height:100%;border-radius:inherit}
+.sequence-photo{width:50px;height:50px;border-radius:7px}
