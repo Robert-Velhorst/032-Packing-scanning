@@ -69,6 +69,14 @@ export function canSeparatePackingCopy(trip:Trip,entryId:string):boolean {
   return !trip.completedInstanceIds.includes(id)&&!trip.unavailableInstanceIds.includes(id)
     &&!trip.lockedPlacements.some(p=>p?.instanceId===id)&&!(trip.rejectedPlacements??[]).some(p=>p?.instanceId===id);
 }
+export function separablePackingEntryIds(trip:Trip):Set<string> {
+  const blocked=new Set([...trip.completedInstanceIds,...trip.unavailableInstanceIds]);
+  for(const placement of trip.lockedPlacements)if(placement?.instanceId)blocked.add(placement.instanceId);
+  for(const placement of trip.rejectedPlacements??[])if(placement?.instanceId)blocked.add(placement.instanceId);
+  const separable=new Set<string>();
+  for(const entry of trip.entries)if(Number.isInteger(entry.quantity)&&entry.quantity>=2&&!blocked.has(entry.id+'#'+entry.quantity))separable.add(entry.id);
+  return separable;
+}
 export function separatePackingCopy(trip:Trip,entryId:string,newEntryId:string):Trip {
   if(!canSeparatePackingCopy(trip,entryId))return trip;
   if(!text(newEntryId,80)||trip.entries.some(entry=>entry.id===newEntryId))throw Error('Use a distinct pack-entry ID.');
