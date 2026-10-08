@@ -308,6 +308,9 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     return [container.id,spaces] as const;
   }));
   const itemById = new Map(items.map((item) => [item.instanceId, item]));
+  // Rectangle-only contacts advance strictly upward; without a fragile or
+  // weight-limited item, a candidate cannot create a stacking conflict.
+  const stackSensitiveIds = new Set(items.filter(item => item.fragile || item.maxTopLoadGrams !== undefined).map(item => item.instanceId));
   const placedIds = new Set<string>();
   const blockedBagIds = new Set<string>();
   const massConflicts: BagMassConflict[] = [];
@@ -432,7 +435,10 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             const separationError = placementSeparationError(placement,[...placements,...savedMassPositions],rules,itemById);
             if(separationError){separationFailure=separationError;continue;}
             if (rejected.some((failed) => samePlacementGeometry(failed, placement))) continue;
-            const conflicts = assessStackLoads([...placements.filter(p => p.containerId === container.id), placement], itemById,[container]).filter(load => load.status === 'conflict');
+            const needsStackCheck = useShapeSequence || stackSensitiveIds.has(item.instanceId) || bagPlacements.some(placed => stackSensitiveIds.has(placed.instanceId));
+            const conflicts = needsStackCheck
+              ? assessStackLoads([...bagPlacements, placement], itemById, [container]).filter(load => load.status === 'conflict')
+              : [];
             if (conflicts.length) {
               loadFailure = conflicts.map(load => `${load.orientation==='travel'?'Travel orientation - ':''}${itemById.get(load.instanceId)?.name ?? 'Item'}: ${load.reason}`).join(' ');
               continue;

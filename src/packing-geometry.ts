@@ -166,8 +166,15 @@ export function geometryContactArea(upper:Placement,lower:Placement,items:Map<st
   return faceContact(upper,lower,items,'down',up);
 }
 function faceContact(upper:Placement,lower:Placement,items:Map<string,ShapeItem>,side:'bottom'|'down',up:GravityUp):number {
+  const upperItem=items.get(upper.instanceId),lowerItem=items.get(lower.instanceId);
+  if(up.axis===2&&up.sign===1&&!upperItem?.packingShape&&!lowerItem?.packingShape){
+    if(Math.abs(upper.z-(lower.z+lower.height))>EPS)return 0;
+    const length=Math.min(upper.x+upper.length,lower.x+lower.length)-Math.max(upper.x,lower.x);
+    const width=Math.min(upper.y+upper.width,lower.y+lower.width)-Math.max(upper.y,lower.y);
+    return length>EPS&&width>EPS?length*width:0;
+  }
   let area=0;
-  for(const base of faces(upper,items.get(upper.instanceId),side,up))for(const top of faces(lower,items.get(lower.instanceId),'top',up))if(Math.abs(base.z-top.z)<=EPS){
+  for(const base of faces(upper,upperItem,side,up))for(const top of faces(lower,lowerItem,'top',up))if(Math.abs(base.z-top.z)<=EPS){
     const l=Math.min(base.x+base.length,top.x+top.length)-Math.max(base.x,top.x),w=Math.min(base.y+base.width,top.y+top.width)-Math.max(base.y,top.y);
     if(l>EPS&&w>EPS)area+=l*w;
   }
