@@ -6,7 +6,7 @@ import { WeatherLookup, useWeatherClock } from './components/WeatherLookup';
 import { weatherSuggestions, type SavedWeather } from './weather';
 import { SeparationRules, SeparationNotes } from './components/SeparationRules';
 import { entryHasSeparation, separationRuleError, MAX_SEPARATION_RULES } from './item-separation';
-import { PlanComparison } from './components/PlanComparison';
+import { PlanReview } from './components/PlanComparison';
 import { bagMassRecordError } from './mass-constraints';
 import { ScanRetentionSettings } from './components/ScanRetentionSettings';
 import { PackingEvidenceReview } from './components/PackingEvidenceReview';
@@ -140,9 +140,6 @@ function PackingApp() {
   // Selecting a step must not rerun the solver or recreate unchanged view geometry.
   const plan = useMemo(() => data && activeTrip ? buildPlan(activeTrip, data.libraryItems, data.containers) : undefined,
     [data?.libraryItems, data?.containers, activeTrip?.id, activeTrip?.entries, activeTrip?.containerIds, activeTrip?.mode, activeTrip?.lockedPlacements, activeTrip?.unavailableInstanceIds, activeTrip?.rejectedPlacements, activeTrip?.separationRules]);
-  const allPlanModes = useMemo(() => data && activeTrip ? (['balanced','maximum_capacity','easy_access','fragile_protection'] as OptimizationMode[]).map((mode) => buildPlan(activeTrip, data.libraryItems, data.containers, mode)) : [],
-    [data?.libraryItems, data?.containers, activeTrip?.id, activeTrip?.entries, activeTrip?.containerIds, activeTrip?.mode, activeTrip?.lockedPlacements, activeTrip?.unavailableInstanceIds, activeTrip?.rejectedPlacements, activeTrip?.separationRules]);
-
   useEffect(() => {
     if (data?.settings.automaticPhotoDeletionDays) prunePhotos(data.settings.automaticPhotoDeletionDays).catch(() => undefined);
   }, [data?.settings.automaticPhotoDeletionDays]);
@@ -449,7 +446,7 @@ function PackingApp() {
       {notice && <div className="notice-banner" role="status"><span>{notice}</span><button className="icon-button" aria-label="Dismiss" onClick={() => setNotice('')}><X size={16}/></button></div>}
       {!activeTrip && page !== 'settings' ? <EmptyState onNew={() => setCapture({ kind: 'trip' })} onSettings={() => setPage('settings')}/> : <>
         {page === 'workspace' && activeTrip && plan && <Workspace
-          trip={activeTrip} data={data} containers={activeContainers} selectedContainer={selectedContainer} plan={plan} alternatePlans={allPlanModes} canvasView={canvasView} layer={layer} photoUrls={photoUrls} unit={data.unitSystem}
+          trip={activeTrip} data={data} containers={activeContainers} selectedContainer={selectedContainer} plan={plan} canvasView={canvasView} layer={layer} photoUrls={photoUrls} unit={data.unitSystem}
           onSeparationRules={rules=>updateTrip(trip=>({...trip,separationRules:rules}))}
           onWeather={weather=>updateTrip(trip=>({...trip,weather}))}
           onPrintSequence={() => setPage('sequence')}
@@ -478,12 +475,12 @@ interface WorkspaceProps {
   onSeparationRules:(rules:SeparationRule[])=>void;
   onReviewItem:(item:LibraryItem)=>void; onReviewBag:(bag:Container)=>void; onReviewMissing:()=>void;
   onPrintSequence: () => void;
-  trip: Trip; data: AppData; containers: Container[]; selectedContainer?: Container; plan: PackingPlan; alternatePlans: PackingPlan[]; canvasView: '3d'|'top'|'layers'; layer: number; photoUrls: Record<string,string>; unit: UnitSystem;
+  trip: Trip; data: AppData; containers: Container[]; selectedContainer?: Container; plan: PackingPlan; canvasView: '3d'|'top'|'layers'; layer: number; photoUrls: Record<string,string>; unit: UnitSystem;
   onView: (view:'3d'|'top'|'layers') => void; onLayer: (layer:number) => void; onSelectContainer:(id:string)=>void; onMode:(mode:OptimizationMode)=>void; onAddItem:()=>void; onAddSuggestion:(suggestion:TripSuggestion,item?:LibraryItem)=>void; onAddBag:()=>void; onAddTrip:()=>void; onRemoveEntry:(id:string)=>void; onToggleComplete:(id:string,complete:boolean)=>void; onToggleLock:(placement:Placement)=>void; onUnavailable:(id:string)=>void; onStartSteps:()=>void; onEditTrip:()=>void; onPriority:(entryId:string,priority:ItemPriority)=>void; onAccess:(entryId:string,priority:number)=>void; onTraveller:(entryId:string,travellerId:string)=>void; onAssignment:(entryId:string,containerId:string,compartmentId?:string)=>void; onPackingForm:(entryId:string,packingFormId:string)=>void; onSeparateCopy:(entryId:string)=>void; onQuantity:(entryId:string,quantity:number)=>void;
 }
 
 function Workspace(props: WorkspaceProps) {
-  const { trip, data, containers, selectedContainer, plan, alternatePlans, canvasView, layer, photoUrls, unit } = props;
+  const { trip, data, containers, selectedContainer, plan, canvasView, layer, photoUrls, unit } = props;
   const itemById = new Map(data.libraryItems.map((item) => [item.id, item]));
   const validEntries = trip.entries.filter((entry) => itemById.has(entry.itemId));
   const completed = new Set(trip.completedInstanceIds);
@@ -546,7 +543,7 @@ function Workspace(props: WorkspaceProps) {
     <StackLoadNotes plan={plan} items={data.libraryItems} unit={unit} containerId={selectedContainer?.id}/>
     <SeparationRules trip={trip} items={data.libraryItems} unit={unit} onChange={props.onSeparationRules}/>
     <SeparationNotes trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit}/>
-    <section className="plan-review"><div className="review-heading"><div><span className="panel-kicker">PLAN CHECK</span><h2>Fit and trade-offs</h2></div><span className="review-caption">Deterministic geometric placement · generated on this device</span></div><PlanComparison trip={trip} items={data.libraryItems} bags={data.containers} plans={alternatePlans} unit={unit} modeCopy={modeCopy} onSelect={props.onMode}/>
+    <section className="plan-review"><div className="review-heading"><div><span className="panel-kicker">PLAN CHECK</span><h2>Fit and trade-offs</h2></div><span className="review-caption">Deterministic geometric placement · generated on this device</span></div><PlanReview trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit} modeCopy={modeCopy} onSelect={props.onMode}/>
       {plan.excluded.filter((entry) => entry.reason !== 'Marked unavailable for this plan.').length > 0 && <div className="excluded-list"><strong>Needs a decision</strong>{plan.excluded.filter((entry) => entry.reason !== 'Marked unavailable for this plan.').map((entry) => <div key={entry.instanceId}><AlertTriangle size={15}/><span><strong>{entry.name}{entry.required ? ' · required' : ''}</strong><small>{entry.reason}</small></span>{trip.lockedPlacements.filter(saved => saved.instanceId === entry.instanceId).map(saved => <button className="button button-secondary" key={saved.instanceId} onClick={() => completed.has(saved.instanceId) ? props.onToggleComplete(saved.instanceId,false) : props.onToggleLock(saved)}>{completed.has(saved.instanceId) ? `Undo packed for ${entry.name}` : `Unlock ${entry.name}`}</button>)}<button className="text-button" onClick={() => props.onUnavailable(entry.instanceId)}>Remove from plan</button></div>)}</div>}
     </section>
     <div className="plan-trust-note"><Lock size={15}/><span>Locked placements are preserved during replanning. A geometric match is a suggestion, not a guarantee the bag will close.</span></div>

@@ -1,9 +1,69 @@
 import { SeparationNotes } from './SeparationRules';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BagMassConflictNote } from './BagMassConflictNote';
 import { RetrievalNotes } from './RetrievalNotes';
 import { comparePackingPlan, comparisonWeightText, type ComparisonWeight } from '../plan-comparison';
+import { buildPlan } from '../optimizer';
 import type { Container, LibraryItem, OptimizationMode, PackingPlan, Trip, UnitSystem } from '../types';
+
+const comparisonModes: OptimizationMode[] = ['balanced', 'maximum_capacity', 'easy_access', 'fragile_protection'];
+
+export function PlanReview({ trip, items, bags, plan, unit, modeCopy, onSelect }: {
+  trip: Trip; items: LibraryItem[]; bags: Container[]; plan: PackingPlan; unit: UnitSystem;
+  modeCopy: Record<OptimizationMode, { title: string; detail: string }>; onSelect: (mode: OptimizationMode) => void;
+}) {
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const [requested, setRequested] = useState(false);
+  const [comparison, setComparison] = useState<{ source: PackingPlan; plans: PackingPlan[] }>();
+
+  useEffect(() => {
+    const section = sectionRef.current;
+    if (!section) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setRequested(true);
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setRequested(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '700px 0px' });
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!requested) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    let index = 0;
+    const plans: PackingPlan[] = [];
+    setComparison(undefined);
+    const calculateNext = () => {
+      if (cancelled) return;
+      const mode = comparisonModes[index++];
+      plans.push(mode === plan.mode ? plan : buildPlan(trip, items, bags, mode));
+      if (index < comparisonModes.length) {
+        timer = window.setTimeout(calculateNext, 0);
+      } else {
+        setComparison({ source: plan, plans });
+      }
+    };
+    timer = window.setTimeout(calculateNext, 0);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [requested, plan, trip.id, trip.entries, trip.containerIds, trip.lockedPlacements, trip.unavailableInstanceIds, trip.rejectedPlacements, trip.separationRules, items, bags]);
+
+  const ready = comparison?.source === plan ? comparison.plans : undefined;
+  return <div ref={sectionRef}>
+    {ready
+      ? <PlanComparison trip={trip} items={items} bags={bags} plans={ready} unit={unit} modeCopy={modeCopy} onSelect={onSelect}/>
+      : <p className="candidate-uncertainty" role="status" aria-live="polite">{requested ? 'Preparing approach comparisons…' : 'Approach comparisons will be prepared when you reach this section.'}</p>}
+  </div>;
+}
 
 function MissingWeights({ weight }: { weight: ComparisonWeight }) {
   if (weight.complete) return null;
