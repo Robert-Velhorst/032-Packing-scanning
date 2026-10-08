@@ -533,7 +533,7 @@ function Workspace(props: WorkspaceProps) {
         setCanvasRequested(true);
         observer.disconnect();
       }
-    }, { rootMargin: '350px 0px' });
+    }, { rootMargin: '200px 0px' });
     observer.observe(stage);
     return () => observer.disconnect();
   }, [canvasRequested, selectedContainer?.id]);
