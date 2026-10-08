@@ -2,8 +2,7 @@ import {recordSharedPublication} from './shared-pack-combination';
 import type {SharedPackBaseline} from './shared-pack-baseline';
 import type {SharedCopyWitness} from './shared-packs';
 import type { SeparationRule } from './types';
-import { useWeatherClock } from './weather-clock';
-import { weatherSuggestions, type SavedWeather } from './weather';
+import type { SavedWeather } from './weather';
 import { SeparationRules, SeparationNotes } from './components/SeparationRules';
 import { entryHasSeparation, separationRuleError, MAX_SEPARATION_RULES } from './item-separation';
 import { bagMassRecordError } from './mass-constraints';
@@ -44,7 +43,7 @@ import { useScannerCapabilities } from './scanning/useScannerCapabilities';
 import { PackCanvas } from './components/PackCanvas';
 import { LocalPhoto } from './components/LocalPhoto';
 import { carrierRuleOverridden, carrierRuleHasUpdatedLimits,  type CarrierCatalog } from './carrier-catalog';
-import { buildTripSuggestions, matchTripSuggestionItems, type TripSuggestion } from './trip-assistant';
+import type { TripSuggestion } from './trip-assistant';
 import { buildPlan } from './optimizer';
 import {  markPackingItemUnavailable, rejectPackingPlacement, setPackingItemComplete } from './packing-progress';
 import { measurementFromInput, measurementInput } from './measurement-input';
@@ -63,6 +62,7 @@ const SavedScanPreview = lazy(() => import('./components/SavedScanPreview').then
 const CarrierLookup = lazy(() => import('./components/CarrierLookup').then((module) => ({ default: module.CarrierLookup })));
 const PlanReview = lazy(() => import('./components/PlanComparison').then((module) => ({ default: module.PlanReview })));
 const WeatherLookup = lazy(() => import('./components/WeatherLookup').then((module) => ({ default: module.WeatherLookup })));
+const TripListAssistant = lazy(() => import('./components/TripListAssistant').then((module) => ({ default: module.TripListAssistant })));
 
 const newId = () => globalThis.crypto?.randomUUID?.() ?? `id-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const evidence = (source: Evidence['source'], note?: string): Evidence => ({ source, confidence: 1, collectedAt: new Date().toISOString(), note });
@@ -521,7 +521,7 @@ function Workspace(props: WorkspaceProps) {
     <div className="page-heading"><div><p className="eyebrow">PACKING PLAN</p><div className="title-line"><h1>{trip.name}</h1><button className="icon-button title-edit" title="Edit pack details" onClick={props.onEditTrip}><MoreHorizontal size={20}/></button></div><p className="page-subtitle">{trip.destination || 'Packing-only session'}{trip.startDate ? ` · ${new Date(`${trip.startDate}T00:00:00`).toLocaleDateString(undefined, { month:'short',day:'numeric' })}` : ''}{trip.endDate ? ` – ${new Date(`${trip.endDate}T00:00:00`).toLocaleDateString(undefined, { month:'short',day:'numeric' })}` : ''}<span className="dot-separator">·</span>{trip.travellers.length} {trip.travellers.length === 1 ? 'traveller' : 'travellers'}</p></div><button className="button button-secondary desktop-new-pack" onClick={props.onAddTrip}><Plus size={16}/> New pack</button></div>
     {trip.sample && <div className="sample-notice"><BookOpen size={16}/><span><strong>Example pack.</strong> These sample dimensions and weights are illustrative. Replace them with your own before you rely on a plan.</span></div>}
     {(!trip.packingOnly||trip.weather)&&<Suspense fallback={<p role="status">Opening weather tools…</p>}><WeatherLookup key={`${trip.id}:${trip.destination}:${trip.packingOnly}`} trip={trip} unit={unit} onSave={props.onWeather}/></Suspense>}
-    {!trip.packingOnly && <TripListAssistant trip={trip} library={data.libraryItems} onAdd={props.onAddSuggestion}/>}
+    {!trip.packingOnly && <Suspense fallback={<p role="status">Opening trip suggestions…</p>}><TripListAssistant trip={trip} library={data.libraryItems} onAdd={props.onAddSuggestion}/></Suspense>}
     <div className="plan-toolbar"><div className="mode-switch" aria-label="Packing approach">{(['balanced','maximum_capacity','easy_access','fragile_protection'] as OptimizationMode[]).map((mode) => <button key={mode} className={trip.mode === mode ? 'active' : ''} onClick={() => props.onMode(mode)} title={modeCopy[mode].detail}>{modeCopy[mode].title}</button>)}</div><button className="button button-primary start-pack-button" disabled={!plan.placements.length} onClick={props.onStartSteps}><PackageCheck size={17}/> Pack step by step <span>{stepsRemaining}</span></button></div>
     <div className="mode-explainer">{modeCopy[trip.mode].detail} <span>·</span> Pack plans use each item’s selected recorded form and dimensions.</div>
     <button className="button button-secondary workspace-sequence-open" onClick={props.onPrintSequence}>Printable sequence and bag contents</button>
@@ -573,36 +573,6 @@ function Workspace(props: WorkspaceProps) {
     </section>
     <div className="plan-trust-note"><Lock size={15}/><span>Locked placements are preserved during replanning. A geometric match is a suggestion, not a guarantee the bag will close.</span></div>
   </main>;
-}
-
-function TripListAssistant({ trip, library, onAdd }: { trip: Trip; library: LibraryItem[]; onAdd:(suggestion:TripSuggestion,item?:LibraryItem)=>void }) {
-  const now=useWeatherClock();
-  const suggestions = useMemo(() => [...weatherSuggestions(trip,now),...buildTripSuggestions(trip)], [trip,now]);
-  const optionsBySuggestion = useMemo(() => new Map(suggestions.map((suggestion) => [suggestion.id, matchTripSuggestionItems(suggestion,library)])), [suggestions,library]);
-  const [selectedItems, setSelectedItems] = useState<Record<string,string>>({});
-  const [quantities, setQuantities] = useState<Record<string,number>>({});
-  const listedItemIds = useMemo(() => new Set(trip.entries.map((entry) => entry.itemId)), [trip.entries]);
-
-  return <section className="trip-assistant" aria-labelledby="trip-assistant-title">
-    <div className="trip-assistant-heading"><div><span className="panel-kicker">TRIP-AWARE STARTER</span><h2 id="trip-assistant-title">Build a first checklist</h2><p>Suggestions are optional. Add only what suits your trip.</p></div><span className="local-chip"><Lock size={12}/> On this device</span></div>
-    <div className="trip-suggestions">{suggestions.map((suggestion) => {
-      const options = optionsBySuggestion.get(suggestion.id) ?? [];
-      const selectedId = selectedItems[suggestion.id] ?? '';
-      const selectedItem = options.find((item) => item.id === selectedId);
-      const alreadyListed = Boolean(selectedItem && listedItemIds.has(selectedItem.id));
-      const quantity = quantities[suggestion.id] ?? suggestion.quantity;
-      return <article className="trip-suggestion" key={suggestion.id}>
-        <div className="trip-suggestion-copy"><strong>{suggestion.name}</strong><p>{suggestion.reason}</p></div>
-        <div className="trip-suggestion-controls">
-          {options.length > 0 && <label className="suggestion-item-select"><span>Use saved item</span><select aria-label={`Saved item for ${suggestion.name}`} value={selectedId} onChange={(event) => setSelectedItems((current) => ({ ...current, [suggestion.id]: event.target.value }))}><option value="">Choose a matching item…</option>{options.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>}
-          {options.length === 0 && library.some((item) => item.category === suggestion.category) && <small className="suggestion-no-match">No saved item name matches this reminder yet.</small>}
-          <label className="suggestion-quantity"><span>Qty</span><input aria-label={`Quantity for ${suggestion.name}`} type="number" min="1" max="99" value={quantity} onChange={(event) => setQuantities((current) => ({ ...current, [suggestion.id]: Math.max(1, Math.min(99, Number(event.target.value) || 1)) }))}/></label>
-          <button className="button button-secondary" type="button" disabled={alreadyListed} onClick={() => onAdd({ ...suggestion, quantity }, selectedItem)}>{alreadyListed ? 'Already added' : selectedItem ? 'Add saved item' : 'Add details'}</button>
-        </div>
-      </article>;
-    })}</div>
-    <p className="trip-assistant-note">Choose “Add details” to measure or scan a new item before it enters the space plan. Weather reminders use only a saved, current forecast for covered trip dates. Carrier rules and medical needs are not inferred; add personal essentials yourself.</p>
-  </section>;
 }
 
 function CarrierRulesPage({ trip, bags, summaries, placements, items, unit, catalog, onCatalog, onReview, onAdd, onEdit, onDelete }: { trip:Trip; bags:Container[]; summaries:ContainerSummary[]; placements:Placement[]; items:LibraryItem[]; unit:UnitSystem; catalog?:CarrierCatalog; onCatalog:(catalog:CarrierCatalog)=>void; onReview:(draft:CarrierRule)=>void; onAdd:()=>void; onEdit:(rule:CarrierRule)=>void; onDelete:(rule:CarrierRule)=>void }) {
