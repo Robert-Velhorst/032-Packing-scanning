@@ -65,6 +65,7 @@ const TripListAssistant = lazy(() => import('./components/TripListAssistant').th
 const PackCanvas = lazy(() => import('./components/PackCanvas').then((module) => ({ default: module.PackCanvas })));
 
 const newId = () => globalThis.crypto?.randomUUID?.() ?? `id-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+const reuseIdenticalReferences = <T,>(previous: T[], next: T[]) => previous.length === next.length && previous.every((value, index) => value === next[index]) ? previous : next;
 const evidence = (source: Evidence['source'], note?: string): Evidence => ({ source, confidence: 1, collectedAt: new Date().toISOString(), note });
 const mmToDisplay = (value: number, unit: UnitSystem) => unit === 'metric' ? String(Math.round(value)) : String(Math.round(value / 25.4 * 10) / 10);
 const displayToMm = (value: number, unit: UnitSystem) => unit === 'metric' ? value : value * 25.4;
@@ -145,9 +146,23 @@ function PackingApp() {
 
   const activeContainers = useMemo(() => data && activeTrip ? data.containers.filter((bag) => activeTrip.containerIds.includes(bag.id)) : [], [data?.containers, activeTrip?.containerIds]);
   const selectedContainer = activeContainers.find((bag) => bag.id === selectedContainerId) ?? activeContainers[0];
-  // Selecting a step must not rerun the solver or recreate unchanged view geometry.
-  const plan = useMemo(() => data && activeTrip ? buildPlan(activeTrip, data.libraryItems, data.containers) : undefined,
-    [data?.libraryItems, data?.containers, activeTrip?.id, activeTrip?.entries, activeTrip?.containerIds, activeTrip?.mode, activeTrip?.lockedPlacements, activeTrip?.unavailableInstanceIds, activeTrip?.rejectedPlacements, activeTrip?.separationRules]);
+  const previousPlanItems = useRef<LibraryItem[]>([]);
+  const planItems = useMemo(() => {
+    const referenced = new Set(activeTrip?.entries.map((entry) => entry.itemId) ?? []);
+    const next = data?.libraryItems.filter((item) => referenced.has(item.id)) ?? [];
+    const stable = reuseIdenticalReferences(previousPlanItems.current, next);
+    previousPlanItems.current = stable;
+    return stable;
+  }, [data?.libraryItems, activeTrip?.entries]);
+  const previousPlanContainers = useRef<Container[]>([]);
+  const planContainers = useMemo(() => {
+    const stable = reuseIdenticalReferences(previousPlanContainers.current, activeContainers);
+    previousPlanContainers.current = stable;
+    return stable;
+  }, [activeContainers]);
+  // Solve only when the active pack or one of its referenced records changes.
+  const plan = useMemo(() => data && activeTrip ? buildPlan(activeTrip, planItems, planContainers) : undefined,
+    [data !== undefined, planItems, planContainers, activeTrip?.id, activeTrip?.entries, activeTrip?.containerIds, activeTrip?.mode, activeTrip?.lockedPlacements, activeTrip?.unavailableInstanceIds, activeTrip?.rejectedPlacements, activeTrip?.separationRules]);
   useEffect(() => {
     if (data?.settings.automaticPhotoDeletionDays) prunePhotos(data.settings.automaticPhotoDeletionDays).catch(() => undefined);
   }, [data?.settings.automaticPhotoDeletionDays]);
