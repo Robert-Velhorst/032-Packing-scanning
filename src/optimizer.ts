@@ -424,7 +424,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
               length: orientation.length,
               width: orientation.width,
               height: orientation.height,
-              layer: 1 + Math.max(0, ...placements.filter((placed) => placed.containerId === container.id && placed.compartmentId===space.compartmentId && placed.z + placed.height <= position.z + EPSILON).map((placed) => placed.layer)),
+              layer: 1 + bagPlacements.reduce((maxLayer, placed) => placed.compartmentId===space.compartmentId && placed.z + placed.height <= position.z + EPSILON ? Math.max(maxLayer, placed.layer) : maxLayer, 0),
               rotation: orientation.rotation,
               ...(useShapeSequence?{insertionOrder:placements.length+1}:{}),
               ...(item.packingShape?{shapeKey:shapeKey(item.packingShape)}:{}),
@@ -469,7 +469,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
               const prior=[...bagPlacements,placement];return !placementSeparationError(next,prior,rules,itemById)&&fitsGeometrySpace(next,container,future)&&!prior.some(p=>geometryIntersects(next,p,itemById))&&hasPackingAndTravelSupport(next,prior,itemById,mode==='fragile_protection'?1:.65,container)&&hasVerticalEntry(next,prior,itemById,container)
                 && !assessStackLoads([...prior,next],itemById,[container]).some(load=>load.status==='conflict');
             }));if(!possible)lookahead=future.volumeMm3*20;}
-            const score = placementScore(candidateBase, space, container, item, placements, mode, itemById)+lookahead;
+            const score = placementScore(candidateBase, space, container, item, bagPlacements, massAfter, mode)+lookahead;
             const weightCost = bagCosts.get(container.id), priorCost = best && bagCosts.get(best.container.id);
             // Compare lighter bags only after all placement gates, and never override
             // a known future-shape obstruction. Within a bag retain geometric scoring.
@@ -583,13 +583,12 @@ function placementScore(
   container: Container,
   item: PlanItem,
   placed: Placement[],
+  massAfter: number,
   mode: OptimizationMode,
-  itemById: Map<string, PlanItem>,
 ) {
   const leftover = Math.max(0, spaceVolume(space) - volume(candidate));
   const shortSide = Math.min(space.length - candidate.length, space.width - candidate.width, space.height - candidate.height);
-  const bagMass = massInContainer(container.id, placed, itemById, container.tareGrams ?? 0) + (item.upperMassGrams ?? 0);
-  const massRatio = container.massLimitGrams ? bagMass / container.massLimitGrams : 0;
+  const massRatio = container.massLimitGrams ? massAfter / container.massLimitGrams : 0;
   const base = leftover + Math.max(0, shortSide) * item.volumeMm3 * 0.015;
   if (mode === 'easy_access') {
     const topPreference = (candidate.z + candidate.height) / container.inside.height;
