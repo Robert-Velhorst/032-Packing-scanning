@@ -481,11 +481,11 @@ interface WorkspaceProps {
 
 function Workspace(props: WorkspaceProps) {
   const { trip, data, containers, selectedContainer, plan, canvasView, layer, photoUrls, unit } = props;
-  const itemById = new Map(data.libraryItems.map((item) => [item.id, item]));
-  const validEntries = trip.entries.filter((entry) => itemById.has(entry.itemId));
-  const completed = new Set(trip.completedInstanceIds);
-  const placedIds = new Set(plan.placements.map((placement) => placement.instanceId));
-  const allInstances = validEntries.flatMap((entry) => instanceIds(entry));
+  const itemById = useMemo(() => new Map(data.libraryItems.map((item) => [item.id, item])), [data.libraryItems]);
+  const validEntries = useMemo(() => trip.entries.filter((entry) => itemById.has(entry.itemId)), [trip.entries, itemById]);
+  const completed = useMemo(() => new Set(trip.completedInstanceIds), [trip.completedInstanceIds]);
+  const placedIds = useMemo(() => new Set(plan.placements.map((placement) => placement.instanceId)), [plan.placements]);
+  const allInstances = useMemo(() => validEntries.flatMap((entry) => instanceIds(entry)), [validEntries]);
   const stepsRemaining = plan.placements.filter((placement) => !completed.has(placement.instanceId)).length;
   const selectedSummary = plan.summaries.find((summary) => summary.containerId === selectedContainer?.id);
   const boxVolume = selectedSummary?.volumeCapacityMm3??0;
@@ -552,15 +552,16 @@ function Workspace(props: WorkspaceProps) {
 
 function TripListAssistant({ trip, library, onAdd }: { trip: Trip; library: LibraryItem[]; onAdd:(suggestion:TripSuggestion,item?:LibraryItem)=>void }) {
   const now=useWeatherClock();
-  const suggestions = [...weatherSuggestions(trip,now),...buildTripSuggestions(trip)];
+  const suggestions = useMemo(() => [...weatherSuggestions(trip,now),...buildTripSuggestions(trip)], [trip,now]);
+  const optionsBySuggestion = useMemo(() => new Map(suggestions.map((suggestion) => [suggestion.id, matchTripSuggestionItems(suggestion,library)])), [suggestions,library]);
   const [selectedItems, setSelectedItems] = useState<Record<string,string>>({});
   const [quantities, setQuantities] = useState<Record<string,number>>({});
-  const listedItemIds = new Set(trip.entries.map((entry) => entry.itemId));
+  const listedItemIds = useMemo(() => new Set(trip.entries.map((entry) => entry.itemId)), [trip.entries]);
 
   return <section className="trip-assistant" aria-labelledby="trip-assistant-title">
     <div className="trip-assistant-heading"><div><span className="panel-kicker">TRIP-AWARE STARTER</span><h2 id="trip-assistant-title">Build a first checklist</h2><p>Suggestions are optional. Add only what suits your trip.</p></div><span className="local-chip"><Lock size={12}/> On this device</span></div>
     <div className="trip-suggestions">{suggestions.map((suggestion) => {
-      const options = matchTripSuggestionItems(suggestion, library);
+      const options = optionsBySuggestion.get(suggestion.id) ?? [];
       const selectedId = selectedItems[suggestion.id] ?? '';
       const selectedItem = options.find((item) => item.id === selectedId);
       const alreadyListed = Boolean(selectedItem && listedItemIds.has(selectedItem.id));
