@@ -33,9 +33,10 @@ self.addEventListener('fetch', (event) => {
   if (request.mode === 'navigate') {
     event.respondWith(fetch(request).then((response) => {
       const copy = response.clone();
-      caches.open(CACHE).then((cache) => cache.put('/index.html', copy));
+      const cacheKey = url.pathname === '/three/three-view.html' ? request : '/index.html';
+      caches.open(CACHE).then((cache) => cache.put(cacheKey, copy));
       return response;
-    }).catch(() => caches.match('/index.html')));
+    }).catch(() => caches.match(request).then((cached) => cached ?? (url.pathname === '/' ? caches.match('/index.html') : undefined))));
     return;
   }
 

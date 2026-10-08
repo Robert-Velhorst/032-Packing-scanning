@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc --noEmit && tsc -p tsconfig.server.json && vite build",
+    "build": "tsc --noEmit && tsc -p tsconfig.server.json && vite build && vite build --config vite.three.config.ts",
     "test": "vitest run",
     "benchmark": "node scripts/physical-benchmark.ts",
     "check:benchmarks": "tsc -p tsconfig.tools.json",
