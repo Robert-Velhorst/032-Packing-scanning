@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Packing Scanning</string>
+    <string name="title_activity_main">Packing Scanning</string>
+    <string name="package_name">com.packingscanning.app</string>
+    <string name="custom_url_scheme">com.packingscanning.app</string>
+</resources>

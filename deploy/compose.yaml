@@ -1,0 +1,21 @@
+services:
+  packing:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    ports:
+      - "127.0.0.1:3001:3001"
+    environment:
+      APP_ALLOWED_ORIGINS: ""
+    volumes:
+      - carrier-cache:/app/.carrier-cache
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+volumes:
+  carrier-cache:

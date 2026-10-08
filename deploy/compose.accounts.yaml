@@ -1,0 +1,18 @@
+# Optional overlay: configure HTTPS and a separate 32-byte secret before enabling.
+# See docs/ACCOUNTS.md. The base compose keeps accounts disabled.
+services:
+  packing:
+    environment:
+      APP_ACCOUNT_ORIGIN: ${PACKING_ACCOUNT_ORIGIN:?Set the exact public HTTPS origin}
+      APP_ACCOUNT_KEY_FILE: /run/secrets/packing_account_key
+      APP_ACCOUNT_DB_FILE: /app/.account-data/accounts.sqlite
+      APP_ACCOUNT_ALLOW_REGISTRATION: ${PACKING_ACCOUNT_ALLOW_REGISTRATION:-false}
+    secrets:
+      - packing_account_key
+    volumes:
+      - account-data:/app/.account-data
+secrets:
+  packing_account_key:
+    file: ${PACKING_ACCOUNT_KEY_FILE:?Set a private raw 32-byte key file outside the checkout}
+volumes:
+  account-data:
