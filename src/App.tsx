@@ -40,7 +40,6 @@ import type { ItemDraft } from './components/ItemCapture';
 import { calibrateLongestEdge } from './scanning/calibration';
 import { assessCarrierRule, carrierReviewDate, carrierReviewTimestamp, formatComparisonNumber, isCarrierRuleStale, secureCarrierSourceUrl, type CarrierLimitCheck } from './carrier-rules';
 import { useScannerCapabilities } from './scanning/useScannerCapabilities';
-import { PackCanvas } from './components/PackCanvas';
 import { LocalPhoto } from './components/LocalPhoto';
 import { carrierRuleOverridden, carrierRuleHasUpdatedLimits,  type CarrierCatalog } from './carrier-catalog';
 import type { TripSuggestion } from './trip-assistant';
@@ -63,6 +62,7 @@ const CarrierLookup = lazy(() => import('./components/CarrierLookup').then((modu
 const PlanReview = lazy(() => import('./components/PlanComparison').then((module) => ({ default: module.PlanReview })));
 const WeatherLookup = lazy(() => import('./components/WeatherLookup').then((module) => ({ default: module.WeatherLookup })));
 const TripListAssistant = lazy(() => import('./components/TripListAssistant').then((module) => ({ default: module.TripListAssistant })));
+const PackCanvas = lazy(() => import('./components/PackCanvas').then((module) => ({ default: module.PackCanvas })));
 
 const newId = () => globalThis.crypto?.randomUUID?.() ?? `id-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const evidence = (source: Evidence['source'], note?: string): Evidence => ({ source, confidence: 1, collectedAt: new Date().toISOString(), note });
@@ -488,7 +488,9 @@ interface WorkspaceProps {
 function Workspace(props: WorkspaceProps) {
   const { trip, data, containers, selectedContainer, plan, canvasView, layer, getPhoto, unit } = props;
   const planReviewRef = useRef<HTMLElement>(null);
+  const visualStageRef = useRef<HTMLDivElement>(null);
   const [planReviewRequested, setPlanReviewRequested] = useState(false);
+  const [canvasRequested, setCanvasRequested] = useState(false);
   const itemById = useMemo(() => new Map(data.libraryItems.map((item) => [item.id, item])), [data.libraryItems]);
   const validEntries = useMemo(() => trip.entries.filter((entry) => itemById.has(entry.itemId)), [trip.entries, itemById]);
   const completed = useMemo(() => new Set(trip.completedInstanceIds), [trip.completedInstanceIds]);
@@ -499,6 +501,8 @@ function Workspace(props: WorkspaceProps) {
   const boxVolume = selectedSummary?.volumeCapacityMm3??0;
   const volumePercent = boxVolume && selectedSummary ? Math.min(100, selectedSummary.volumeUsedMm3 / boxVolume * 100) : 0;
   const itemFor = (entry: PackEntry) => {const item=itemById.get(entry.itemId)!;try{return packingItem(item,entry.packingFormId);}catch{return item;}};
+  const canvasPadding = selectedContainer ? Math.max(selectedContainer.inside.length, selectedContainer.inside.width) * 0.06 : 0;
+  const canvasPlaceholder = selectedContainer && <div className="packing-diagram-with-notes"><div className="packing-diagram-deferred" aria-hidden="true" style={{ aspectRatio: `${selectedContainer.inside.length + canvasPadding * 2} / ${selectedContainer.inside.width + canvasPadding * 2}` }}/><ContainerSpaceNotes bag={selectedContainer}/></div>;
 
   useEffect(() => {
     const section = planReviewRef.current;
@@ -516,6 +520,23 @@ function Workspace(props: WorkspaceProps) {
     observer.observe(section);
     return () => observer.disconnect();
   }, [planReviewRequested]);
+
+  useEffect(() => {
+    const stage = visualStageRef.current;
+    if (!stage || canvasRequested) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setCanvasRequested(true);
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setCanvasRequested(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '350px 0px' });
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, [canvasRequested, selectedContainer?.id]);
 
   return <main className="workspace-page">
     <div className="page-heading"><div><p className="eyebrow">PACKING PLAN</p><div className="title-line"><h1>{trip.name}</h1><button className="icon-button title-edit" title="Edit pack details" onClick={props.onEditTrip}><MoreHorizontal size={20}/></button></div><p className="page-subtitle">{trip.destination || 'Packing-only session'}{trip.startDate ? ` · ${new Date(`${trip.startDate}T00:00:00`).toLocaleDateString(undefined, { month:'short',day:'numeric' })}` : ''}{trip.endDate ? ` – ${new Date(`${trip.endDate}T00:00:00`).toLocaleDateString(undefined, { month:'short',day:'numeric' })}` : ''}<span className="dot-separator">·</span>{trip.travellers.length} {trip.travellers.length === 1 ? 'traveller' : 'travellers'}</p></div><button className="button button-secondary desktop-new-pack" onClick={props.onAddTrip}><Plus size={16}/> New pack</button></div>
@@ -549,7 +570,7 @@ function Workspace(props: WorkspaceProps) {
         <div className="panel-heading visual-heading"><div><span className="panel-kicker">YOUR BAG, IN PLAN</span><h2>{selectedContainer?.name ?? 'Add a bag'}</h2></div><button className="text-button" onClick={props.onAddBag}><Plus size={16}/> Add bag</button></div>
         {containers.length > 0 && <div className="bag-tabs" role="tablist" aria-label="Bags">{containers.map((bag) => <button role="tab" aria-selected={selectedContainer?.id === bag.id} className={selectedContainer?.id === bag.id ? 'active' : ''} key={bag.id} onClick={() => props.onSelectContainer(bag.id)}><Backpack size={14}/>{bag.name}</button>)}</div>}
         {selectedContainer ? <>
-          <div className="visual-stage"><PackCanvas container={selectedContainer} plan={plan} items={data.libraryItems} selectedInstanceId={undefined} view={canvasView} layer={canvasView === 'layers' ? layer : undefined}/><div className="canvas-caption"><span>GEOMETRIC PREVIEW</span><span>{mmToDisplay(selectedContainer.inside.length,unit)} × {mmToDisplay(selectedContainer.inside.width,unit)} × {mmToDisplay(selectedContainer.inside.height,unit)} {dimLabel(unit)} inside</span></div></div>
+          <div ref={visualStageRef} className="visual-stage">{canvasRequested ? <Suspense fallback={canvasPlaceholder}><PackCanvas container={selectedContainer} plan={plan} items={data.libraryItems} selectedInstanceId={undefined} view={canvasView} layer={canvasView === 'layers' ? layer : undefined}/></Suspense> : canvasPlaceholder}<div className="canvas-caption"><span>GEOMETRIC PREVIEW</span><span>{mmToDisplay(selectedContainer.inside.length,unit)} × {mmToDisplay(selectedContainer.inside.width,unit)} × {mmToDisplay(selectedContainer.inside.height,unit)} {dimLabel(unit)} inside</span></div></div>
           <div className="view-controls"><div className="view-tabs" role="tablist" aria-label="Model view">{(['3d','top','layers'] as const).map((view) => <button role="tab" aria-selected={canvasView === view} className={canvasView === view ? 'active' : ''} key={view} onClick={() => props.onView(view)}>{view === '3d' ? '3D' : view === 'top' ? 'Top view' : 'Layers'}</button>)}</div>{canvasView === 'layers' && <div className="layer-control"><span>Layer</span><input aria-label="Layer" type="range" min="1" max={Math.max(1, ...plan.placements.filter((placement) => placement.containerId === selectedContainer.id).map((placement) => placement.layer))} value={layer} onChange={(event) => props.onLayer(Number(event.target.value))}/><strong>{layer}</strong></div>}</div>
           <div className="bag-summary"><div><span>ITEMS IN THIS BAG</span><strong>{selectedSummary?.itemCount ?? 0}</strong></div><div><span>OCCUPIED VOLUME USED</span><strong>~{Math.round(volumePercent)}<small>%</small></strong></div><div><span>UPPER ITEM WEIGHT</span><strong>{selectedSummary ? gramToDisplay(selectedSummary.usedMassGrams,unit) : '—'}</strong></div><span className="summary-info" title="Volume uses adopted occupied cells or rectangular item bounds. Weight uses the upper saved item values where available; it does not include the bag unless tare is recorded."><CircleHelp size={15}/></span></div>
     <BagWeightNotes containers={containers} plan={plan} trip={trip} unit={unit}/>
