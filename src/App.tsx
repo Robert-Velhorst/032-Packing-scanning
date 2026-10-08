@@ -43,7 +43,6 @@ import { calibrateLongestEdge } from './scanning/calibration';
 import { assessCarrierRule, carrierReviewDate, carrierReviewTimestamp, formatComparisonNumber, isCarrierRuleStale, secureCarrierSourceUrl, type CarrierLimitCheck } from './carrier-rules';
 import { useScannerCapabilities } from './scanning/useScannerCapabilities';
 import { PackCanvas } from './components/PackCanvas';
-import { CarrierLookup } from './components/CarrierLookup';
 import { carrierRuleOverridden, carrierRuleHasUpdatedLimits,  type CarrierCatalog } from './carrier-catalog';
 import { buildTripSuggestions, matchTripSuggestionItems, type TripSuggestion } from './trip-assistant';
 import { buildPlan } from './optimizer';
@@ -61,6 +60,7 @@ const AccountPanel = lazy(() => import('./components/AccountPanel').then((module
 const PlanSteps = lazy(() => import('./components/PlanSteps').then((module) => ({ default: module.PlanSteps })));
 const PackingSequence = lazy(() => import('./components/PackingSequence').then((module) => ({ default: module.PackingSequence })));
 const SavedScanPreview = lazy(() => import('./components/SavedScanPreview').then((module) => ({ default: module.SavedScanPreview })));
+const CarrierLookup = lazy(() => import('./components/CarrierLookup').then((module) => ({ default: module.CarrierLookup })));
 
 const newId = () => globalThis.crypto?.randomUUID?.() ?? `id-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const evidence = (source: Evidence['source'], note?: string): Evidence => ({ source, confidence: 1, collectedAt: new Date().toISOString(), note });
@@ -582,7 +582,7 @@ function TripListAssistant({ trip, library, onAdd }: { trip: Trip; library: Libr
 function CarrierRulesPage({ trip, bags, summaries, placements, items, unit, catalog, onCatalog, onReview, onAdd, onEdit, onDelete }: { trip:Trip; bags:Container[]; summaries:ContainerSummary[]; placements:Placement[]; items:LibraryItem[]; unit:UnitSystem; catalog?:CarrierCatalog; onCatalog:(catalog:CarrierCatalog)=>void; onReview:(draft:CarrierRule)=>void; onAdd:()=>void; onEdit:(rule:CarrierRule)=>void; onDelete:(rule:CarrierRule)=>void }) {
   return <main className="secondary-page carrier-rules-page"><div className="page-heading"><div><p className="eyebrow">TRIP SOURCES</p><h1>Carrier rules</h1><p className="page-subtitle">Keep the rule you checked for this booking beside its official source.</p></div><button className="button button-primary" onClick={onAdd}><Plus size={16}/> Add source record</button></div>
     <div className="carrier-rules-disclaimer"><ShieldCheck size={18}/><span>General baggage pages can differ from a booked flight. Check the exact itinerary, fare, operating airline, and each bag in your booking. The comparisons below check only the limits and measurements you entered; estimated or missing values need confirmation.</span></div>
-    <CarrierLookup catalog={catalog} onCatalog={onCatalog} onReview={onReview}/>
+    <Suspense fallback={<div className="secondary-page" role="status">Opening carrier lookup…</div>}><CarrierLookup catalog={catalog} onCatalog={onCatalog} onReview={onReview}/></Suspense>
     {trip.carrierRules.length === 0 ? <div className="library-empty"><div className="empty-icon"><BookOpen size={22}/></div><h2>No carrier source saved</h2><p>Open the airline's official source or booking details, then save the exact allowance, review date, and the bags it applies to.</p><button className="button button-secondary" onClick={onAdd}><Plus size={15}/> Add a source record</button></div> : <div className="carrier-rule-list">{trip.carrierRules.map((rule) => {
       const updatedLimits = carrierRuleHasUpdatedLimits(rule, catalog);
       const stale = isCarrierRuleStale(rule) || updatedLimits;
