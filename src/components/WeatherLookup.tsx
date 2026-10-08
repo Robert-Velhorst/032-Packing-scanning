@@ -2,8 +2,8 @@ import {useEffect,useRef,useState} from 'react';
 import type {Trip,UnitSystem} from '../types';
 import {isSavedWeather,placeLabel,reviewWeather,WEATHER_SOURCE,WEATHER_GEOCODING_SOURCE,type SavedWeather,type WeatherForecast,type WeatherPlace} from '../weather';
 import {fetchWeather,weatherEndpoint} from '../weather-client';
+import {useWeatherClock} from '../weather-clock';
 
-export function useWeatherClock(){const [now,setNow]=useState(Date.now());useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),60000);return()=>clearInterval(timer);},[]);return now;}
 const temperature=(c:number|null,unit:UnitSystem)=>c===null?'Not supplied':`${(unit==='metric'?c:c*9/5+32).toLocaleString('en-GB',{maximumFractionDigits:1})} °${unit==='metric'?'C':'F'}`;
 export function WeatherNotes({trip,unit,now=Date.now()}:{trip:Trip;unit:UnitSystem;now?:number}){
   if(!trip.weather)return null;

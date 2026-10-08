@@ -2,11 +2,10 @@ import {recordSharedPublication} from './shared-pack-combination';
 import type {SharedPackBaseline} from './shared-pack-baseline';
 import type {SharedCopyWitness} from './shared-packs';
 import type { SeparationRule } from './types';
-import { WeatherLookup, useWeatherClock } from './components/WeatherLookup';
+import { useWeatherClock } from './weather-clock';
 import { weatherSuggestions, type SavedWeather } from './weather';
 import { SeparationRules, SeparationNotes } from './components/SeparationRules';
 import { entryHasSeparation, separationRuleError, MAX_SEPARATION_RULES } from './item-separation';
-import { PlanReview } from './components/PlanComparison';
 import { bagMassRecordError } from './mass-constraints';
 import { ScanRetentionSettings } from './components/ScanRetentionSettings';
 import { PackingEvidenceReview } from './components/PackingEvidenceReview';
@@ -62,6 +61,8 @@ const PlanSteps = lazy(() => import('./components/PlanSteps').then((module) => (
 const PackingSequence = lazy(() => import('./components/PackingSequence').then((module) => ({ default: module.PackingSequence })));
 const SavedScanPreview = lazy(() => import('./components/SavedScanPreview').then((module) => ({ default: module.SavedScanPreview })));
 const CarrierLookup = lazy(() => import('./components/CarrierLookup').then((module) => ({ default: module.CarrierLookup })));
+const PlanReview = lazy(() => import('./components/PlanComparison').then((module) => ({ default: module.PlanReview })));
+const WeatherLookup = lazy(() => import('./components/WeatherLookup').then((module) => ({ default: module.WeatherLookup })));
 
 const newId = () => globalThis.crypto?.randomUUID?.() ?? `id-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const evidence = (source: Evidence['source'], note?: string): Evidence => ({ source, confidence: 1, collectedAt: new Date().toISOString(), note });
@@ -486,6 +487,8 @@ interface WorkspaceProps {
 
 function Workspace(props: WorkspaceProps) {
   const { trip, data, containers, selectedContainer, plan, canvasView, layer, getPhoto, unit } = props;
+  const planReviewRef = useRef<HTMLElement>(null);
+  const [planReviewRequested, setPlanReviewRequested] = useState(false);
   const itemById = useMemo(() => new Map(data.libraryItems.map((item) => [item.id, item])), [data.libraryItems]);
   const validEntries = useMemo(() => trip.entries.filter((entry) => itemById.has(entry.itemId)), [trip.entries, itemById]);
   const completed = useMemo(() => new Set(trip.completedInstanceIds), [trip.completedInstanceIds]);
@@ -497,10 +500,27 @@ function Workspace(props: WorkspaceProps) {
   const volumePercent = boxVolume && selectedSummary ? Math.min(100, selectedSummary.volumeUsedMm3 / boxVolume * 100) : 0;
   const itemFor = (entry: PackEntry) => {const item=itemById.get(entry.itemId)!;try{return packingItem(item,entry.packingFormId);}catch{return item;}};
 
+  useEffect(() => {
+    const section = planReviewRef.current;
+    if (!section || planReviewRequested) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setPlanReviewRequested(true);
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setPlanReviewRequested(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '700px 0px' });
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, [planReviewRequested]);
+
   return <main className="workspace-page">
     <div className="page-heading"><div><p className="eyebrow">PACKING PLAN</p><div className="title-line"><h1>{trip.name}</h1><button className="icon-button title-edit" title="Edit pack details" onClick={props.onEditTrip}><MoreHorizontal size={20}/></button></div><p className="page-subtitle">{trip.destination || 'Packing-only session'}{trip.startDate ? ` · ${new Date(`${trip.startDate}T00:00:00`).toLocaleDateString(undefined, { month:'short',day:'numeric' })}` : ''}{trip.endDate ? ` – ${new Date(`${trip.endDate}T00:00:00`).toLocaleDateString(undefined, { month:'short',day:'numeric' })}` : ''}<span className="dot-separator">·</span>{trip.travellers.length} {trip.travellers.length === 1 ? 'traveller' : 'travellers'}</p></div><button className="button button-secondary desktop-new-pack" onClick={props.onAddTrip}><Plus size={16}/> New pack</button></div>
     {trip.sample && <div className="sample-notice"><BookOpen size={16}/><span><strong>Example pack.</strong> These sample dimensions and weights are illustrative. Replace them with your own before you rely on a plan.</span></div>}
-    {(!trip.packingOnly||trip.weather)&&<WeatherLookup key={`${trip.id}:${trip.destination}:${trip.packingOnly}`} trip={trip} unit={unit} onSave={props.onWeather}/>}
+    {(!trip.packingOnly||trip.weather)&&<Suspense fallback={<p role="status">Opening weather tools…</p>}><WeatherLookup key={`${trip.id}:${trip.destination}:${trip.packingOnly}`} trip={trip} unit={unit} onSave={props.onWeather}/></Suspense>}
     {!trip.packingOnly && <TripListAssistant trip={trip} library={data.libraryItems} onAdd={props.onAddSuggestion}/>}
     <div className="plan-toolbar"><div className="mode-switch" aria-label="Packing approach">{(['balanced','maximum_capacity','easy_access','fragile_protection'] as OptimizationMode[]).map((mode) => <button key={mode} className={trip.mode === mode ? 'active' : ''} onClick={() => props.onMode(mode)} title={modeCopy[mode].detail}>{modeCopy[mode].title}</button>)}</div><button className="button button-primary start-pack-button" disabled={!plan.placements.length} onClick={props.onStartSteps}><PackageCheck size={17}/> Pack step by step <span>{stepsRemaining}</span></button></div>
     <div className="mode-explainer">{modeCopy[trip.mode].detail} <span>·</span> Pack plans use each item’s selected recorded form and dimensions.</div>
@@ -548,7 +568,7 @@ function Workspace(props: WorkspaceProps) {
     <StackLoadNotes plan={plan} items={data.libraryItems} unit={unit} containerId={selectedContainer?.id}/>
     <SeparationRules trip={trip} items={data.libraryItems} unit={unit} onChange={props.onSeparationRules}/>
     <SeparationNotes trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit}/>
-    <section className="plan-review"><div className="review-heading"><div><span className="panel-kicker">PLAN CHECK</span><h2>Fit and trade-offs</h2></div><span className="review-caption">Deterministic geometric placement · generated on this device</span></div><PlanReview trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit} modeCopy={modeCopy} onSelect={props.onMode}/>
+    <section ref={planReviewRef} className="plan-review"><div className="review-heading"><div><span className="panel-kicker">PLAN CHECK</span><h2>Fit and trade-offs</h2></div><span className="review-caption">Deterministic geometric placement · generated on this device</span></div>{planReviewRequested ? <Suspense fallback={<p className="candidate-uncertainty" role="status">Opening approach comparisons…</p>}><PlanReview trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit} modeCopy={modeCopy} onSelect={props.onMode}/></Suspense> : <p className="candidate-uncertainty" role="status" aria-live="polite">Approach comparisons will be prepared when you reach this section.</p>}
       {plan.excluded.filter((entry) => entry.reason !== 'Marked unavailable for this plan.').length > 0 && <div className="excluded-list"><strong>Needs a decision</strong>{plan.excluded.filter((entry) => entry.reason !== 'Marked unavailable for this plan.').map((entry) => <div key={entry.instanceId}><AlertTriangle size={15}/><span><strong>{entry.name}{entry.required ? ' · required' : ''}</strong><small>{entry.reason}</small></span>{trip.lockedPlacements.filter(saved => saved.instanceId === entry.instanceId).map(saved => <button className="button button-secondary" key={saved.instanceId} onClick={() => completed.has(saved.instanceId) ? props.onToggleComplete(saved.instanceId,false) : props.onToggleLock(saved)}>{completed.has(saved.instanceId) ? `Undo packed for ${entry.name}` : `Unlock ${entry.name}`}</button>)}<button className="text-button" onClick={() => props.onUnavailable(entry.instanceId)}>Remove from plan</button></div>)}</div>}
     </section>
     <div className="plan-trust-note"><Lock size={15}/><span>Locked placements are preserved during replanning. A geometric match is a suggestion, not a guarantee the bag will close.</span></div>
