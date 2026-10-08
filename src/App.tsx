@@ -491,7 +491,12 @@ function Workspace(props: WorkspaceProps) {
   const visualStageRef = useRef<HTMLDivElement>(null);
   const [planReviewRequested, setPlanReviewRequested] = useState(false);
   const [canvasRequested, setCanvasRequested] = useState(false);
-  const itemById = useMemo(() => new Map(data.libraryItems.map((item) => [item.id, item])), [data.libraryItems]);
+  const referencedItemIds = useMemo(() => new Set(trip.entries.map(entry => entry.itemId)), [trip.entries]);
+  const itemById = useMemo(() => {
+    const byId = new Map<string, LibraryItem>();
+    for (const item of data.libraryItems) if (referencedItemIds.has(item.id)) byId.set(item.id, item);
+    return byId;
+  }, [data.libraryItems, referencedItemIds]);
   const validEntries = useMemo(() => trip.entries.filter((entry) => itemById.has(entry.itemId)), [trip.entries, itemById]);
   const completed = useMemo(() => new Set(trip.completedInstanceIds), [trip.completedInstanceIds]);
   const placedIds = useMemo(() => new Set(plan.placements.map((placement) => placement.instanceId)), [plan.placements]);

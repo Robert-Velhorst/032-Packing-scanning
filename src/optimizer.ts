@@ -37,7 +37,9 @@ const spaceVolume = (box: FreeSpace) => box.length * box.width * box.height;
 const EPSILON = 0.01;
 
 export function buildPlan(trip: Trip, library: LibraryItem[], allContainers: Container[], mode: OptimizationMode = trip.mode): PackingPlan {
-  const byId = new Map(library.map((item) => [item.id, item]));
+  const referencedItemIds = new Set(trip.entries.map(entry => entry.itemId));
+  const byId = new Map<string, LibraryItem>();
+  for (const item of library) if (referencedItemIds.has(item.id)) byId.set(item.id, item);
   const containers = allContainers.filter((container) => trip.containerIds.includes(container.id));
   const unavailable = new Set(trip.unavailableInstanceIds);
   const allItems: PlanItem[] = [];
