@@ -313,6 +313,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
   // Rectangle-only contacts advance strictly upward; without a fragile or
   // weight-limited item, a candidate cannot create a stacking conflict.
   const stackSensitiveIds = new Set(items.filter(item => item.fragile || item.maxTopLoadGrams !== undefined).map(item => item.instanceId));
+  const shapeItems = items.filter(item => item.packingShape);
   const placedIds = new Set<string>();
   const blockedBagIds = new Set<string>();
   const massConflicts: BagMassConflict[] = [];
@@ -388,7 +389,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
       if (blockedBagIds.has(container.id)||containerSpaceError(container)||interiorSupportError(container.packingInterior)) continue;
       const massAfter = massInContainer(container.id, placements, itemById, container.tareGrams ?? 0) + (item.upperMassGrams ?? 0);
       if (container.massLimitGrams !== undefined && massAfter > container.massLimitGrams + EPSILON) continue;
-      const futureShapes=container.compartments?[]:items.filter(i=>i.instanceId!==item.instanceId&&i.packingShape&&!placements.some(p=>p.instanceId===i.instanceId)&&!placedIds.has(i.instanceId)
+      const futureShapes=container.compartments?[]:shapeItems.filter(i=>i.instanceId!==item.instanceId&&!placedIds.has(i.instanceId)
         && eligibleForBag(i,container)
         && (container.massLimitGrams === undefined || massAfter + (i.upperMassGrams ?? 0) <= container.massLimitGrams + EPSILON)
         && geometryOrientations(i,container).some(o=>fitsOpening(o,container)&&o.length<=container.inside.length+EPSILON&&o.width<=container.inside.width+EPSILON&&o.height<=usableContainerHeight(container)+EPSILON));
@@ -518,6 +519,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     }
 
     placements.push(best.placement);
+    placedIds.add(item.instanceId);
     let remaining=freeSpaces.get(best.container.id)??[];for(const box of placementBoxes(best.placement,item))remaining=splitFreeSpaces(remaining,box);freeSpaces.set(best.container.id,remaining);
   }
 
