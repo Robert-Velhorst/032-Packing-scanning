@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assessStackLoads, StackLoadContactCache, supportArea, topLoadError } from './stack-load';
+import { assessStackLoads, hasStackContact, StackLoadContactCache, supportArea, topLoadError } from './stack-load';
 import { buildPlan } from './optimizer';
 import { createInitialData } from './seed';
 import type { LibraryItem, OptimizationMode, Placement, PlanItem } from './types';
@@ -32,6 +32,12 @@ function fixture(items: LibraryItem[]) {
 }
 
 describe('static stacking bounds', () => {
+  it('detects whether a candidate can change stack loads before rebuilding the graph', () => {
+    const items = planItems([item('base'), item('upper')]);
+    expect(hasStackContact(placement('upper', 10), [placement('base', 0)], items)).toBe(true);
+    expect(hasStackContact(placement('upper', 30), [placement('base', 0)], items)).toBe(false);
+  });
+
   it('keeps irregular-shape stack results unchanged when contact geometry is reused', () => {
     const dimensions = { length: 40, width: 40, height: 40 };
     const packingShape = { adoptedAt: evidence.collectedAt, sourceEnvelopeMm: dimensions, fittedDimensionsMm: dimensions,

@@ -57,6 +57,16 @@ export function supportArea(upper: Placement, lower: Placement): number {
   return length > CONTACT_EPSILON && width > CONTACT_EPSILON ? length * width : 0;
 }
 
+/** An isolated placement cannot change the validated stack graph. */
+export function hasStackContact(placement: Placement, placed: Placement[], items: Map<string, PlanItem>, container?: Container): boolean {
+  if (placed.some(other => geometryContactArea(placement, other, items) > 0 || geometryContactArea(other, placement, items) > 0)) return true;
+  if (!container?.packingInterior) return false;
+  const up = interiorTravelUp(container.packingInterior);
+  if (up.axis === 2 && up.sign === 1) return false;
+  return placed.some(other => other.containerId === container.id
+    && (geometryContactArea(placement, other, items, up) > 0 || geometryContactArea(other, placement, items, up) > 0));
+}
+
 /** Conservative static bound: do not assume that a bridge shares its weight evenly. */
 export function assessStackLoads(placements: Placement[], items: Map<string, PlanItem>,containers:Container[]=[],contactCache?:StackLoadContactCache): StackLoadCheck[] {
   const packing=assessFrameLoads(placements,items,{axis:2,sign:1},contactCache);
@@ -74,7 +84,13 @@ function assessFrameLoads(placements:Placement[],items:Map<string,PlanItem>,up:G
   const above = new Map(placements.map(p => [p.instanceId, new Set<string>()]));
   const direct=new Map(placements.map(p=>[p.instanceId,new Set<string>()])),cyclic=new Set<string>();
   const cache=contactCache?.shouldCache(placements,up)?contactCache:undefined;
-  for(const upper of placements)for(const lower of placements)if((cache?cache.contactArea(upper,lower,up):geometryContactArea(upper,lower,items,up))>0)direct.get(lower.instanceId)!.add(upper.instanceId);
+  const rectangularPacking=up.axis===2&&up.sign===1&&placements.every(p=>!items.get(p.instanceId)?.packingShape);
+  if(rectangularPacking){
+    const below=new Map<string,Placement[]>(),plane=(p:Placement,bucket:number)=>`${p.containerId}\u0000${p.compartmentId??''}\u0000${bucket}`;
+    for(const lower of placements){const bucket=Math.floor((lower.z+lower.height)/CONTACT_EPSILON),key=plane(lower,bucket),samePlane=below.get(key)??[];samePlane.push(lower);below.set(key,samePlane);}
+    for(const upper of placements){const bucket=Math.floor(upper.z/CONTACT_EPSILON);for(let offset=-2;offset<=2;offset++)for(const lower of below.get(plane(upper,bucket+offset))??[])
+      if(geometryContactArea(upper,lower,items,up)>0)direct.get(lower.instanceId)!.add(upper.instanceId);}
+  }else for(const upper of placements)for(const lower of placements)if((cache?cache.contactArea(upper,lower,up):geometryContactArea(upper,lower,items,up))>0)direct.get(lower.instanceId)!.add(upper.instanceId);
   for(const p of placements){const reached=above.get(p.instanceId)!,pending=[...direct.get(p.instanceId)!];for(let i=0;i<pending.length;i++){
     const id=pending[i];if(id===p.instanceId){cyclic.add(id);continue;}if(reached.has(id))continue;reached.add(id);pending.push(...direct.get(id)!);
   }}

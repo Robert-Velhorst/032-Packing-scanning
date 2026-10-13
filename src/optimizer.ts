@@ -8,7 +8,7 @@ import type {
   BagMassConflict, Container, ExcludedItem, LibraryItem, OptimizationMode, PackingPlan,
   PlanItem, Placement, Trip, SeparationRule,
 } from './types';
-import { assessStackLoads, StackLoadContactCache, topLoadError } from './stack-load';
+import { assessStackLoads, hasStackContact, StackLoadContactCache, topLoadError } from './stack-load';
 import { packingItem, packingFormKey } from './packing-forms';
 import { isValidRejectedPlacement, samePlacementGeometry } from './packing-progress';
 import { containerBlockedBoxes, containerSpaceError, usableContainerHeight, usableContainerVolume } from './container-space';
@@ -482,7 +482,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             if(separationError){separationFailure=separationError;continue;}
             if (rejected.some((failed) => samePlacementGeometry(failed, placement))) continue;
             const needsStackCheck = useShapeSequence || stackSensitiveIds.has(item.instanceId) || bagPlacements.some(placed => stackSensitiveIds.has(placed.instanceId));
-            const conflicts = needsStackCheck
+            const conflicts = needsStackCheck && hasStackContact(placement, bagPlacements, itemById, container)
               ? assessStackLoads([...bagPlacements, placement], itemById, [container],stackLoadContactCache).filter(load => load.status === 'conflict')
               : [];
             if (conflicts.length) {

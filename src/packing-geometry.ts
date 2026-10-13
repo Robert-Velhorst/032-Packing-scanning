@@ -189,7 +189,9 @@ function faceContact(upper:Placement,lower:Placement,items:Map<string,ShapeItem>
 export function hasGeometrySupport(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,fraction:number,up:GravityUp=packingUp,floor=0):boolean {
   const area=faces(p,items.get(p.instanceId),'bottom',up).reduce((sum,f)=>sum+f.length*f.width,0);
   if(area<=0)return false;if(Math.abs(gravityBox(p,up).z-floor)<=EPS)return true;
-  return placed.reduce((sum,lower)=>sum+geometrySupportArea(p,lower,items,up),0)+EPS**2>=area*fraction;
+  const required=area*fraction;let supported=0;
+  for(const lower of placed){supported+=geometrySupportArea(p,lower,items,up);if(supported+EPS**2>=required)return true;}
+  return false;
 }
 /** Both snapshots must be supported; unavailable-region tops never become supports. */
 export function hasPackingAndTravelSupport(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,fraction:number,bag:Container):boolean{
