@@ -127,7 +127,13 @@ export function geometryIntersects(a:Placement,b:Placement,items:Map<string,Shap
   return placementBoxes(a,items.get(a.instanceId)).some(left=>placementBoxes(b,items.get(b.instanceId)).some(right=>boxesIntersect(left,right)));
 }
 export function fitsGeometrySpace(p:Placement,bag:Container,item?:ShapeItem):boolean {
-  if(containerSpaceError(bag)||!fitsCompartment(p,bag)||p.x<0||p.y<0||p.z<0||p.x+p.length>bag.inside.length+EPS||p.y+p.width>bag.inside.width+EPS||p.z+p.height>usableContainerHeight(bag)+EPS)return false;
+  if(containerSpaceError(bag))return false;
+  return fitsGeometrySpaceInValidatedContainer(p,bag,item);
+}
+/** Use only after validating this unchanged bag record for the current plan. */
+export function fitsGeometrySpaceInValidatedContainer(p:Placement,bag:Container,item?:ShapeItem):boolean {
+  const usableHeight=bag.inside.height-(bag.lidClearanceMm??0);
+  if(!fitsCompartment(p,bag)||p.x<0||p.y<0||p.z<0||p.x+p.length>bag.inside.length+EPS||p.y+p.width>bag.inside.width+EPS||p.z+p.height>usableHeight+EPS)return false;
   return !placementBoxes(p,item).some(box=>containerBlockedBoxes(bag).some(blocked=>boxesIntersect(box,blocked)));
 }
 /** Proper axis rotation; negative coordinates are deliberate and retain exact contact. */
