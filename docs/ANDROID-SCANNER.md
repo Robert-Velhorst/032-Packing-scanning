@@ -1,0 +1,65 @@
+# Android raw-depth capture
+
+Status on 2026-10-01: the complete Android debug app compiles, all 107 native unit tests pass through the Android Gradle build, and Android lint reports zero errors and 27 warnings. Observed camera-direction/depth guidance and retained diagnostics now support targeted rescan review; see [capture guidance](CAPTURE-GUIDANCE.md). Camera/device behavior remains unverified. It captures points and can explicitly reconstruct a closed estimated voxel surface for item review. This is not a physically validated scanner. Explicitly adopted item shapes drive occupied-cell planning; explicitly reviewed and adopted bag cavities also drive estimated usable-space planning. See the dated [Android build verification](QA-ANDROID-BUILD.md) for preserved artifact evidence and limitations.
+
+## Capture path
+
+`PackingScanPlugin` exposes capability check, scan, delete one capture, clear captures, Android-only saved-surface preview and item-surface reconstruction. Only starting a scan requests camera permission or opens ARCore's installation flow. Reading or reconstructing a saved surface does not require camera access or start ARCore. The app remains installable on devices without AR support; failure returns to manual dimensions.
+
+`DepthCaptureActivity` runs a raw-depth session, shows camera imagery and captured green points, and provides start/restart, size review, scan-more, use-estimate, and cancel controls. The traveller selects the capture area's width and centres a stationary object or empty bag. The capture frame is anchored slightly behind the initially visible central surface. The area is a selection boundary, not an entered object dimension.
+
+`RawDepthSampler` projects fresh raw-depth pixels into metric 3D coordinates using scaled camera intrinsics and the camera pose. It excludes samples below 0.8 confidence and ignores tracking loss and reprojected duplicate depth frames. Detected horizontal supporting planes are filtered for individual objects. Bag-interior capture retains visible interior surfaces and warns that their bounds do not establish the usable cavity or opening.
+
+`DepthCloud` retains a 5 mm voxel cloud within the anchored capture area, capped at 60,000 points. A result requires at least 300 retained points, six accepted depth frames, three distinct camera directions, at least 60 degrees of direction spread, non-coplanar dimensions of at least 5 mm, and no substantial clipping at the area edge. These are provisional capture-quality gates, not an accuracy certification or proof that hidden surfaces were captured.
+
+The result records bounding dimensions from the actual cloud, its source format and units, point count, depth-frame count, view count, confidence filter, and voxel spacing. The web forms preserve this provenance and mark scan dimensions as estimates. No weight is inferred. The solver uses rectangular bounds until the traveller explicitly adopts a valid uniformly scaled occupied-cell derivative.
+
+## Oriented surface envelope and saved review
+
+New captures compare the starting camera axes, principal-component axes and a bounded orientation search. The search uses at most 1,200 deterministic sample points; the chosen candidate is bounded again using every retained source point. It does not trim observed handles or clutter, find a globally minimal box, establish complete surface coverage, or infer which side must remain upright. Tilted coplanar captures are rejected in principal axes rather than passing because their camera-axis bounds happen to have three nonzero sides.
+
+Each new envelope adds 2.5 mm per face, half the voxel spacing. This is an explicit sampling margin, not a bound on sensor error or unknown surfaces. A bag's observed wall envelope, including this margin, can overstate its clear usable cavity; inside dimensions and the opening still require physical checking. The envelope method, selected basis and margin are recorded alongside the unedited estimate.
+
+The item and bag editors open the original saved point cloud only after the traveller chooses **Review saved scan**. Android reads the app-private UUID capture on the plugin's background queue, verifies its identity, format, point count, finite coordinates and confidence, recomputes its envelope and checks the stored dimensions and basis. It returns at most 8,000 display points plus source SHA-256 and counts. No path, public file URL, camera request or upload is returned. Existing camera-aligned captures retain their historical envelope without gaining the new margin.
+
+The review offers rotation, zoom, reset and an SVG top view when 3D graphics are unavailable. It shows the original source envelope before scale calibration or manual edits; opening or closing it never replaces packing dimensions. Missing files or inconsistent native responses leave those fields usable. Review requires the original Android capture; web/iOS review is unavailable. JSON exports contain scan metadata but exclude native point files, and the current restore workflow drops the native capture link.
+
+## Reconstructed estimated item surfaces
+
+Explicit item reconstruction reads every verified source point, fills only voxel regions unreachable from the exterior and validates connected, orientable closed topology. Its native response and web surface validator bind the result to the reviewed source hash and envelope. The review switches between points and a reconstructed surface, and shows a top projection and occupied-volume estimate. Open voxel shells, disconnected shapes and ambiguous contacts are rejected; narrow physical openings may nevertheless disappear at the selected cell spacing. Bag-interior sources are excluded. Review does not replace dimensions; explicit adoption followed by item save persists a derivative and source provenance separately from the original capture. See [algorithm, integration and physical limits](SURFACE-RECONSTRUCTION.md).
+
+## Storage and privacy
+
+`CaptureStore` writes an ASCII PLY point cloud and JSON record under the app's private `files/packing-scans/<uuid>/` directory. It writes the PLY through a partial file, cleans up a failed new capture, validates UUIDs and resolved paths for deletion, and provides no public file URL or upload operation. Cleanup preserves unrelated files and directories, including malformed identifiers and UUID-named ordinary files. Android cloud backup and device-transfer exclusions cover the app's credential-protected and device-protected data domains; legacy backup flags are also disabled. These settings were checked in the packaged manifest and source XML, not through a real backup/transfer operation. Cancel before saving retains no native capture files. JSON app backups retain metadata but do not include native PLY files, as with iOS USDZ files.
+
+Capture uses Google Play Services for AR. The capture screen displays a provider notice and links to [Google's ARCore privacy requirements](https://developers.google.com/ar/develop/privacy-requirements). The implementation uses no Cloud Anchors, Geospatial API, or location permission. Provider behavior is governed by Google's policies, separately from the app's local scan storage.
+
+## Evidence and tests
+
+The Java suites passed 40 tests through `:app:testDebugUnitTest` with the Android SDK and Java 21, and through the standalone helper. `DepthCloudTest` checks projection units/signs, confidence and area filtering, non-finite input rejection, duplicate-depth coverage, captured bounds, snapshot isolation, and rejection of flat or clipped geometry. `ScanEnvelopeTest` uses analytic rotated boxes, an isotropic cube, a cylinder, a protruding point, translation/order invariance and tilted coplanar rejection. `CaptureStoreTest` writes and reads real PLY/JSON files, checks repeatable read-only preview and full-source reconstruction beyond the display limit, unchanged original files, legacy dimensions, missing or altered sources, idempotent deletion, unrelated-file preservation, traversal and invalid targets. `VoxelSolidTest` checks exact closed-shell volume, U-shaped concavity, repeatability, open shells, disconnected objects, non-manifold edges, resource bounds and invalid points. `VoxelCavityTest` and `CaptureInteriorTest` additionally check selected empty components, reviewed entry ends, missing-wall/floor rejection, intrusions, nonintegral bounds, full-source reads and original-byte preservation. These tests use synthetic geometry, not captured phone measurements.
+
+The complete web/server suite passes 186 tests. Isolated Chrome checks at 1440×1000 and 375×812 exercised saved review and reconstruction with synthetic cube and U-shaped surface DTOs emitted by the actual Java save/read/reconstruction implementation and a simulated Capacitor promise boundary. Checks cover original versus calibrated dimensions, explicit reconstruction, switching views, retained concavity, rejected hashes and malformed cells, rotation pixels, controls, top view, 48 px targets, overflow, missing source, malformed preview, graphics loss, editor cleanup, offline reload and web fallback. They performed no camera, microphone, upload or physical scan. The actual native/WebView round trip and device usability remain unverified.
+
+For standalone geometry/storage tests without the Android SDK, `scripts/test-android-geometry.ps1` takes explicit Java, JUnit 4.13.2, Hamcrest 1.3, and JSON-java 20250517 paths. It compiles only the pure domain/storage classes and fails on compilation or test errors; it does not prove Android integration compiles.
+
+After `npm run build` and `npm run cap:sync`, run `scripts/build-android.ps1` from the repo in PowerShell. Its default tasks run the Android unit tests, build the debug APK, and run lint. It uses the ignored repo-local Java 21 and SDK by default; supply `-JavaHome` and `-SdkRoot` to use other installations. The script restores process environment settings afterwards and does not install tools or accept licences. On other hosts, run `gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug` from `android/` with Java 21 and Android SDK 36 configured. The generated Capacitor build sets Java 21 compatibility.
+
+The complete capture Activity, renderer, sampler, registered Capacitor plugin, resources, and manifest now compile together. The support check waits for ARCore's asynchronous availability result, and scan cancellation uses AndroidX Back dispatch rather than the old gesture-incompatible Activity override. Both still require runtime/device acceptance.
+
+Adopted derivatives now support a separate manual upright review with six labelled source ends and explicit traveller confirmation. It runs in the web layer and preserves source points and measurements. This does not change the capture algorithm or prove native transport, gravity inference, physical top-direction accuracy or stability. See [surface review and upright handling](SURFACE-RECONSTRUCTION.md).
+
+## Physical-device acceptance still required
+
+Verify camera denial, unsupported/no-depth devices, ARCore installation/update cancellation, permission revocation, tracking loss and resume, screen/background interruption, capture restart, review and save, low-confidence/reflective/thin objects, background contamination, scan-area clipping, app storage failure, source-file removal, and calibration. Measure reference-object dimension error, usable interior and opening error, fit and closure success, and replanning rate. A successful code build will not establish any of these results.
+
+## Technical sources
+
+- [ARCore raw depth](https://developers.google.com/ar/develop/java/depth/raw-depth): confidence images, depth enablement, and fresh-frame handling.
+- [Google's raw-depth codelab](https://codelabs.developers.google.com/codelabs/arcore-rawdepthapi): camera intrinsics, depth projection, and world coordinates.
+- [AR-optional integration](https://developers.google.com/ar/develop/java/enable-arcore): availability and runtime installation.
+- [Capacitor Android plugin guide](https://capacitorjs.com/docs/plugins/android): permission and activity callbacks.
+- [ARCore 1.56.0 release](https://github.com/google-ar/arcore-android-sdk/releases/tag/v1.56.0): pinned native dependency.
+
+Automatic segmentation, physically validated reconstruction, physically validated irregular packing, photogrammetry fallback, certified device compatibility and physical accuracy remain part of the product's uncompleted scope. The estimated voxel review and oriented envelope do not establish these results.
+
+A separate native seeded-interior operation now reads complete saved bag sources and returns one connected empty component with observed walls and a reviewed opening plane. The independent web contract checks masks, seed reachability, boundary escapes and topology. The current native suite passes 40 tests, and web/server tests pass 186. The bag editor now offers opening/seed review, separate travel-up confirmation and explicit adoption, with planner, lock, calibration, backup and view integration. See [implementation and physical limits](INTERIOR-RECONSTRUCTION.md).

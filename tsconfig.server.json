@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "module": "NodeNext", "moduleResolution": "NodeNext",
+    "allowImportingTsExtensions": true, "noEmit": true, "strict": true,
+    "erasableSyntaxOnly": true, "types": ["node"], "skipLibCheck": true,
+    "noUnusedLocals": true, "noUnusedParameters": true
+  },
+  "include": ["server", "src/carrier-catalog.ts", "src/types.ts"]
+}

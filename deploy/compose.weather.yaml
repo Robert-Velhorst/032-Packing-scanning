@@ -1,0 +1,12 @@
+# Optional commercial provider overlay. Never enables billing or buys access.
+# Provision an authorised existing provider key privately before using this file.
+services:
+  packing:
+    environment:
+      WEATHER_ACCESS: commercial
+      WEATHER_API_KEY_FILE: /run/secrets/packing_weather_key
+    secrets:
+      - packing_weather_key
+secrets:
+  packing_weather_key:
+    file: ${PACKING_WEATHER_KEY_FILE:?Set an authorised provider key file outside the checkout}
