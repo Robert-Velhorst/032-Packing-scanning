@@ -1,5 +1,11 @@
-const CACHE = 'packing-shell-v3';
+const CACHE = 'packing-shell-v4';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
+
+function isOfflineAsset(pathname) {
+  return SHELL.includes(pathname)
+    || pathname === '/three/three-view.html'
+    || /^\/(?:assets|three\/assets)\/[A-Za-z0-9._-]+\.(?:js|css|woff2?|svg|png|webp|avif|wasm)$/.test(pathname);
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
@@ -17,10 +23,14 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith('packing-shell-') && key !== CACHE).map((key) => caches.delete(key))))
-      .then(() => self.clients.claim()),
-  );
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((key) => key.startsWith('packing-shell-') && key !== CACHE).map((key) => caches.delete(key)));
+    const cache = await caches.open(CACHE);
+    const requests = await cache.keys();
+    await Promise.all(requests.filter((request) => !isOfflineAsset(new URL(request.url).pathname)).map((request) => cache.delete(request)));
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener('fetch', (event) => {
@@ -39,6 +49,8 @@ self.addEventListener('fetch', (event) => {
     }).catch(() => caches.match(request).then((cached) => cached ?? (url.pathname === '/' ? caches.match('/index.html') : undefined))));
     return;
   }
+
+  if (!isOfflineAsset(url.pathname)) return;
 
   event.respondWith(caches.match(request).then((cached) => {
     if (cached) return cached;
