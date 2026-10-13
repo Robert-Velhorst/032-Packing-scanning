@@ -427,16 +427,20 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
       if (blockedBagIds.has(container.id)||containerSpaceError(container)||interiorSupportError(container.packingInterior)) continue;
       const massAfter = (massByContainer.get(container.id) ?? container.tareGrams ?? 0) + (item.upperMassGrams ?? 0);
       if (container.massLimitGrams !== undefined && massAfter > container.massLimitGrams + EPSILON) continue;
-      const futureShapes=container.compartments?[]:shapeItems.filter(i=>i.instanceId!==item.instanceId&&!placedIds.has(i.instanceId)
-        && eligibleForBag(i,container)
-        && (container.massLimitGrams === undefined || massAfter + (i.upperMassGrams ?? 0) <= container.massLimitGrams + EPSILON)
-        && geometryOrientations(i,container).some(o=>fitsOpening(o,container)&&o.length<=container.inside.length+EPSILON&&o.width<=container.inside.width+EPSILON&&o.height<=usableContainerHeight(container)+EPSILON));
+      const futureOrientationById = new Map<string, ReturnType<typeof geometryOrientations>>();
+      const futureShapes=container.compartments?[]:shapeItems.filter(i=>{
+        if(i.instanceId===item.instanceId||placedIds.has(i.instanceId)||!eligibleForBag(i,container)
+          || (container.massLimitGrams !== undefined && massAfter + (i.upperMassGrams ?? 0) > container.massLimitGrams + EPSILON))return false;
+        const orientations=geometryOrientations(i,container);
+        futureOrientationById.set(i.instanceId,orientations);
+        return orientations.some(o=>fitsOpening(o,container)&&o.length<=container.inside.length+EPSILON&&o.width<=container.inside.width+EPSILON&&o.height<=usableContainerHeight(container)+EPSILON);
+      });
       const hasShapes=useShapeSequence;
       const bagPlacements=placementsByContainer.get(container.id)??[];
       const reservation=lookaheadDepth>1&&futureShapes.length>1?reservePendingShapes(futureShapes,bagPlacements,container,itemById,mode,lookaheadDepth,rules):undefined;
       const anchors=[...(reservation?.placements??[]),...futureShapes.flatMap(future=>{
-        const o=geometryOrientations(future,container)[0];
-        return o.length<=container.inside.length&&o.width<=container.inside.width&&o.height<=usableContainerHeight(container)?cornerPositions(initialSpace(container),o).map(position=>({instanceId:future.instanceId,entryId:future.entryId,itemId:future.itemId,containerId:container.id,...position,...o,layer:1})):[];
+        const o=futureOrientationById.get(future.instanceId)?.[0];
+        return o&&o.length<=container.inside.length&&o.width<=container.inside.width&&o.height<=usableContainerHeight(container)?cornerPositions(initialSpace(container),o).map(position=>({instanceId:future.instanceId,entryId:future.entryId,itemId:future.itemId,containerId:container.id,...position,...o,layer:1})):[];
       })];
       const spaces = [...(freeSpaces.get(container.id) ?? []),...(hasShapes?shapeSearchRegions.get(container.id)??[]:[])];
       for (const space of spaces) {
@@ -503,7 +507,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
                 lookaheadCache.set(key,penalty);
               }
               lookahead=penalty;
-            } else if(future){const possible=geometryOrientations(future,container).some(o=>fitsOpening(o,container)&&cornerPositions(initialSpace(container),o).some(position=>{
+            } else if(future){const possible=(futureOrientationById.get(future.instanceId)??[]).some(o=>fitsOpening(o,container)&&cornerPositions(initialSpace(container),o).some(position=>{
               const next:Placement={...position,...o,instanceId:future.instanceId,entryId:future.entryId,itemId:future.itemId,containerId:container.id,layer:1};
               const prior=[...bagPlacements,placement];return !placementSeparationError(next,prior,rules,itemById)&&fitsGeometrySpace(next,container,future)&&!prior.some(p=>geometryIntersects(next,p,itemById))&&hasPackingAndTravelSupport(next,prior,itemById,mode==='fragile_protection'?1:.65,container)&&hasVerticalEntry(next,prior,itemById,container)
                 && !assessStackLoads([...prior,next],itemById,[container]).some(load=>load.status==='conflict');
