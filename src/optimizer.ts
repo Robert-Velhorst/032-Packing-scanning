@@ -409,6 +409,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
 
   for (const item of items) {
     if (placedIds.has(item.instanceId)) continue;
+    const groupedRules = rules.filter(rule => rule.kind !== 'clearance' && [rule.firstEntryId, rule.secondEntryId].includes(item.entryId));
     const candidateContainers = containers.filter(container => eligibleForBag(item,container));
     let loadFailure: string | undefined;
     let separationFailure: string | undefined;
@@ -470,7 +471,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             if(!fitsGeometrySpace(placement,container,item)||!hasPackingAndTravelSupport(placement,bagPlacements,itemById,mode==='fragile_protection'?1:.65,container))continue;
             if(bagPlacements.some(p=>geometryIntersects(placement,p,itemById)))continue;
             if(hasShapes&&!hasVerticalEntry(placement,bagPlacements,itemById,container))continue;
-            const separationError = placementSeparationError(placement,[...placements,...savedMassPositions],rules,itemById);
+            const separationError = rules.length ? placementSeparationError(placement,[...placements,...savedMassPositions],rules,itemById) : undefined;
             if(separationError){separationFailure=separationError;continue;}
             if (rejected.some((failed) => samePlacementGeometry(failed, placement))) continue;
             const needsStackCheck = useShapeSequence || stackSensitiveIds.has(item.instanceId) || bagPlacements.some(placed => stackSensitiveIds.has(placed.instanceId));
@@ -509,9 +510,8 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             const weightCost = bagCosts.get(container.id), priorCost = best && bagCosts.get(best.container.id);
             // Compare lighter bags only after all placement gates, and never override
             // a known future-shape obstruction. Within a bag retain geometric scoring.
-            const grouped = rules.filter(rule=>rule.kind!=='clearance'&&[rule.firstEntryId,rule.secondEntryId].includes(item.entryId));
-            const affinity = grouped.length>0 && bagPlacements.some(p=>p.entryId===item.entryId
-              && (!grouped.some(rule=>rule.kind==='different_compartments') || p.compartmentId===space.compartmentId));
+            const affinity = groupedRules.length>0 && bagPlacements.some(p=>p.entryId===item.entryId
+              && (!groupedRules.some(rule=>rule.kind==='different_compartments') || p.compartmentId===space.compartmentId));
             const compareAffinity = best && affinity!==best.affinity;
             const compareWeight = best && container.id !== best.container.id && lookahead === 0 && best.lookahead === 0
               && weightCost !== undefined && priorCost !== undefined && Math.abs(weightCost - priorCost) > 1e-12;
