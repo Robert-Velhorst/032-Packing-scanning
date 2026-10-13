@@ -52,6 +52,17 @@ describe('recorded cross-bag weight distribution', () => {
     plan = buildPlan(trip, [item], bags);
     expect(plan.summaries.reduce((count, s) => count + s.unweighedCount, 0)).toBe(2);
   });
+  it('uses complete cached bag totals with the same costs as scanning placements', () => {
+    const { trip, item, bags } = fixture(2);
+    const placements = buildPlan(trip, [item], bags).placements;
+    const items = new Map(placements.map(placement => [placement.instanceId, { upperMassGrams: item.massGrams } as PlanItem]));
+    const totals = new Map(bags.map(bag => [bag.id, bag.tareGrams! + placements
+      .filter(placement => placement.containerId === bag.id)
+      .reduce((sum, placement) => sum + (items.get(placement.instanceId)?.upperMassGrams ?? 0), 0)]));
+
+    expect(balancedBagCosts(bags, placements, items, 500, totals)).toEqual(balancedBagCosts(bags, placements, items, 500));
+    expect(balancedBagCosts(bags, placements, items, 500, null)).toEqual(new Map());
+  });
   it('retains bag/traveller assignments and hard mass limits in every mode', () => {
     const { trip, item, bags } = fixture(2); bags[1].tareGrams = 2000; trip.entries[0].containerId = 'heavy';
     for (const mode of ['balanced', 'maximum_capacity', 'easy_access', 'fragile_protection'] as const) {
