@@ -444,11 +444,20 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
         return o.length<=container.inside.length&&o.width<=container.inside.width&&o.height<=usableHeight(container)?cornerPositions(initialSpace(container,usableHeight(container)),o).map(position=>({instanceId:future.instanceId,entryId:future.entryId,itemId:future.itemId,containerId:container.id,...position,...o,layer:1})):[];
       })];
       const spaces = [...(freeSpaces.get(container.id) ?? []),...(hasShapes?packingRegions(container).map(region=>({...region,shapeSearch:true})):[])];
+      const orientations=geometryOrientations(item,container);
+      const compartmentContexts=new Map<string|undefined,{compartment:ReturnType<typeof compartmentFor>;eligible:boolean;contentsError?:string;orientations:typeof orientations}>();
       for (const space of spaces) {
-        const compartment=compartmentFor(container,space.compartmentId);if(!eligibleForCompartment(item,compartment))continue;
-        const contentsError=compartmentMassError(compartment,bagPlacements,itemById,item);if(contentsError){loadFailure=contentsError;continue;}
-        for (const orientation of geometryOrientations(item,container)) {
-          if (!fitsOpening(orientation, container,space.compartmentId)) continue;
+        let context=compartmentContexts.get(space.compartmentId);
+        if(!context){
+          const compartment=compartmentFor(container,space.compartmentId),eligible=eligibleForCompartment(item,compartment);
+          context={compartment,eligible,contentsError:eligible?compartmentMassError(compartment,bagPlacements,itemById,item):undefined,
+            orientations:eligible?orientations.filter(orientation=>fitsOpening(orientation,container,space.compartmentId)):[]};
+          compartmentContexts.set(space.compartmentId,context);
+        }
+        if(!context.eligible)continue;
+        if(context.contentsError){loadFailure=context.contentsError;continue;}
+        const {compartment}=context;
+        for (const orientation of context.orientations) {
           if (orientation.length > space.length + EPSILON || orientation.width > space.width + EPSILON || orientation.height > space.height + EPSILON) continue;
           const contacts=space.shapeSearch?contactPositions(container,orientation,item,[...bagPlacements,...anchors],itemById,space,blockedSpaces.get(container.id)):undefined;
           if(contacts?.limited)searchLimited=true;
