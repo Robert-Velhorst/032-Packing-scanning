@@ -95,6 +95,7 @@ function PackingApp() {
   const [plan, setPlan] = useState<PackingPlan>();
   const [planError, setPlanError] = useState('');
   const [notice, setNotice] = useState('');
+  const planRequest = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -152,19 +153,47 @@ function PackingApp() {
     previousPlanContainers.current = stable;
     return stable;
   }, [activeContainers]);
-  // Keep planner code out of the startup bundle so the app shell can render first.
+  // Keep planner work off the UI thread so large plans do not freeze interaction.
   useEffect(() => {
     let active = true;
     setPlan(undefined);
     setPlanError('');
     if (!data || !activeTrip) return () => { active = false; };
-    void import('./optimizer').then(({ buildPlan }) => {
-      if (!active) return;
-      setPlan(buildPlan(activeTrip, planItems, planContainers));
-    }).catch((error: unknown) => {
-      if (active) setPlanError(error instanceof Error ? error.message : 'The packing plan could not be prepared.');
+    const requestId = ++planRequest.current;
+    const buildOnMainThread = () => import('./optimizer').then(({ buildPlan }) => {
+      if (active) setPlan(buildPlan(activeTrip, planItems, planContainers));
     });
-    return () => { active = false; };
+    const instanceCount = activeTrip.entries.reduce((count, entry) => count + Math.max(1, entry.quantity), 0);
+    const needsWorker = instanceCount >= 20 || planItems.some(item => item.packingShape)
+      || planContainers.some(container => container.packingInterior || container.compartments?.length);
+    if (!needsWorker) {
+      void buildOnMainThread().catch((error: unknown) => {
+        if (active) setPlanError(error instanceof Error ? error.message : 'The packing plan could not be prepared.');
+      });
+      return () => { active = false; };
+    }
+    let worker: Worker;
+    try {
+      worker = new Worker(new URL('./optimizer.worker.ts', import.meta.url), { type: 'module', name: 'packing-plan' });
+    } catch {
+      void buildOnMainThread().catch((error: unknown) => {
+        if (active) setPlanError(error instanceof Error ? error.message : 'The packing plan could not be prepared.');
+      });
+      return () => { active = false; };
+    }
+    worker.onmessage = (event: MessageEvent<{ requestId: number; plan?: PackingPlan; error?: string }>) => {
+      if (!active || event.data.requestId !== requestId) return;
+      if (event.data.error) setPlanError(event.data.error);
+      else if (event.data.plan) setPlan(event.data.plan);
+    };
+    worker.onerror = () => {
+      worker.terminate();
+      if (active) void buildOnMainThread().catch((error: unknown) => {
+        if (active) setPlanError(error instanceof Error ? error.message : 'The packing plan could not be prepared.');
+      });
+    };
+    worker.postMessage({ requestId, trip: activeTrip, items: planItems, containers: planContainers });
+    return () => { active = false; worker.terminate(); };
   }, [data !== undefined, planItems, planContainers, activeTrip?.id, activeTrip?.entries, activeTrip?.containerIds, activeTrip?.mode, activeTrip?.lockedPlacements, activeTrip?.unavailableInstanceIds, activeTrip?.rejectedPlacements, activeTrip?.separationRules]);
   useEffect(() => {
     if (data?.settings.automaticPhotoDeletionDays) prunePhotos(data.settings.automaticPhotoDeletionDays).catch(() => undefined);
