@@ -138,6 +138,7 @@ export function fitsGeometrySpaceInValidatedContainer(p:Placement,bag:Container,
 }
 /** Proper axis rotation; negative coordinates are deliberate and retain exact contact. */
 export function gravityBox(box:GeometryBox,up:GravityUp):GeometryBox{
+  if(up.axis===2&&up.sign===1)return box;
   const frame=interiorFrame(up.axis,up.sign),origin=[box.x,box.y,box.z],size=[box.length,box.width,box.height];
   const min=frame.axis.map((a,i)=>frame.sign[i]>0?origin[a]:-origin[a]-size[a]),sides=frame.axis.map(a=>size[a]);
   return {x:min[0],y:min[1],z:min[2],length:sides[0],width:sides[1],height:sides[2]};
@@ -164,7 +165,12 @@ function faces(p:Placement,item:ShapeItem|undefined,side:'bottom'|'down'|'top',u
   return local.map(f=>({...f,x:f.x+p.x,y:f.y+p.y,z:f.z+p.z}));
 }
 export function geometrySupportArea(upper:Placement,lower:Placement,items:Map<string,ShapeItem>,up:GravityUp=packingUp):number {
-  if(upper.containerId!==lower.containerId||upper.compartmentId!==lower.compartmentId||gravityBox(upper,up).z<=gravityBox(lower,up).z+EPS)return 0;
+  if(upper.containerId!==lower.containerId||upper.compartmentId!==lower.compartmentId)return 0;
+  if(up.axis===2&&up.sign===1&&!items.get(upper.instanceId)?.packingShape&&!items.get(lower.instanceId)?.packingShape){
+    if(upper.z<=lower.z+EPS)return 0;
+    return rectangleFaceContact(upper,lower);
+  }
+  if(gravityBox(upper,up).z<=gravityBox(lower,up).z+EPS)return 0;
   return faceContact(upper,lower,items,'bottom',up);
 }
 export function geometryContactArea(upper:Placement,lower:Placement,items:Map<string,ShapeItem>,up:GravityUp=packingUp):number {
@@ -174,10 +180,7 @@ export function geometryContactArea(upper:Placement,lower:Placement,items:Map<st
 function faceContact(upper:Placement,lower:Placement,items:Map<string,ShapeItem>,side:'bottom'|'down',up:GravityUp):number {
   const upperItem=items.get(upper.instanceId),lowerItem=items.get(lower.instanceId);
   if(up.axis===2&&up.sign===1&&!upperItem?.packingShape&&!lowerItem?.packingShape){
-    if(Math.abs(upper.z-(lower.z+lower.height))>EPS)return 0;
-    const length=Math.min(upper.x+upper.length,lower.x+lower.length)-Math.max(upper.x,lower.x);
-    const width=Math.min(upper.y+upper.width,lower.y+lower.width)-Math.max(upper.y,lower.y);
-    return length>EPS&&width>EPS?length*width:0;
+    return rectangleFaceContact(upper,lower);
   }
   let area=0;
   for(const base of faces(upper,upperItem,side,up))for(const top of faces(lower,lowerItem,'top',up))if(Math.abs(base.z-top.z)<=EPS){
@@ -186,7 +189,27 @@ function faceContact(upper:Placement,lower:Placement,items:Map<string,ShapeItem>
   }
   return area;
 }
+function rectangleFaceContact(upper:GeometryBox,lower:GeometryBox):number {
+  if(Math.abs(upper.z-(lower.z+lower.height))>EPS)return 0;
+  const length=Math.min(upper.x+upper.length,lower.x+lower.length)-Math.max(upper.x,lower.x);
+  const width=Math.min(upper.y+upper.width,lower.y+lower.width)-Math.max(upper.y,lower.y);
+  return length>EPS&&width>EPS?length*width:0;
+}
 export function hasGeometrySupport(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,fraction:number,up:GravityUp=packingUp,floor=0):boolean {
+  if(up.axis===2&&up.sign===1&&!items.get(p.instanceId)?.packingShape){
+    const area=p.length*p.width;if(area<=0)return false;if(Math.abs(p.z-floor)<=EPS)return true;
+    const required=area*fraction;let supported=0;
+    for(const lower of placed){
+      if(!items.get(lower.instanceId)?.packingShape&&lower.containerId===p.containerId&&lower.compartmentId===p.compartmentId
+        &&p.z>lower.z+EPS&&Math.abs(p.z-(lower.z+lower.height))<=EPS){
+        const length=Math.min(p.x+p.length,lower.x+lower.length)-Math.max(p.x,lower.x);
+        const width=Math.min(p.y+p.width,lower.y+lower.width)-Math.max(p.y,lower.y);
+        if(length>EPS&&width>EPS)supported+=length*width;
+      }else supported+=geometrySupportArea(p,lower,items,up);
+      if(supported+EPS**2>=required)return true;
+    }
+    return false;
+  }
   const area=faces(p,items.get(p.instanceId),'bottom',up).reduce((sum,f)=>sum+f.length*f.width,0);
   if(area<=0)return false;if(Math.abs(gravityBox(p,up).z-floor)<=EPS)return true;
   const required=area*fraction;let supported=0;
