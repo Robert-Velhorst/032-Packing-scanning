@@ -158,7 +158,9 @@ function faces(p:Placement,item:ShapeItem|undefined,side:'bottom'|'down'|'top',u
   return local.map(f=>({...f,x:f.x+p.x,y:f.y+p.y,z:f.z+p.z}));
 }
 export function geometrySupportArea(upper:Placement,lower:Placement,items:Map<string,ShapeItem>,up:GravityUp=packingUp):number {
-  if(upper.containerId!==lower.containerId||upper.compartmentId!==lower.compartmentId||gravityBox(upper,up).z<=gravityBox(lower,up).z+EPS)return 0;
+  if(upper.containerId!==lower.containerId||upper.compartmentId!==lower.compartmentId)return 0;
+  const notAbove=up.axis===2&&up.sign===1?upper.z<=lower.z+EPS:gravityBox(upper,up).z<=gravityBox(lower,up).z+EPS;
+  if(notAbove)return 0;
   return faceContact(upper,lower,items,'bottom',up);
 }
 export function geometryContactArea(upper:Placement,lower:Placement,items:Map<string,ShapeItem>,up:GravityUp=packingUp):number {
@@ -181,8 +183,11 @@ function faceContact(upper:Placement,lower:Placement,items:Map<string,ShapeItem>
   return area;
 }
 export function hasGeometrySupport(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,fraction:number,up:GravityUp=packingUp,floor=0):boolean {
+  if(up.axis===2&&up.sign===1&&!items.get(p.instanceId)?.packingShape&&Math.abs(p.z-floor)<=EPS)return p.length*p.width>0;
   const area=faces(p,items.get(p.instanceId),'bottom',up).reduce((sum,f)=>sum+f.length*f.width,0);
-  if(area<=0)return false;if(Math.abs(gravityBox(p,up).z-floor)<=EPS)return true;
+  if(area<=0)return false;
+  const onFloor=up.axis===2&&up.sign===1?Math.abs(p.z-floor)<=EPS:Math.abs(gravityBox(p,up).z-floor)<=EPS;
+  if(onFloor)return true;
   return placed.reduce((sum,lower)=>sum+geometrySupportArea(p,lower,items,up),0)+EPS**2>=area*fraction;
 }
 /** Both snapshots must be supported; unavailable-region tops never become supports. */
