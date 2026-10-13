@@ -1,4 +1,3 @@
-import {recordSharedPublication} from './shared-pack-combination';
 import type {SharedPackBaseline} from './shared-pack-baseline';
 import type {SharedCopyWitness} from './shared-packs';
 import type { SeparationRule } from './types';
@@ -18,7 +17,7 @@ import { CompartmentFields } from './components/CompartmentFields';
 import { EntryBagAssignment } from './components/EntryBagAssignment';
 import type {ItemEditorDraft} from './item-photo-draft';
 import {DeviceWorkspace,DeviceWorkspaceSettings,useDeviceWorkspace} from './components/DeviceWorkspace';
-import { openSharedPack, type SharedPackSnapshot } from './shared-packs';
+import type { SharedPackSnapshot } from './shared-packs';
 import { isPackingBackup as isBackup } from './backup';
 import { BagWeightNotes } from './components/BagWeightNotes';
 import { adoptInterior, interiorGeometry, interiorSupportError, interiorTravelLabel } from './packing-interior';
@@ -479,7 +478,7 @@ function PackingApp() {
         {page === 'items' && <LibraryPage items={libraryItems} data={data} activeTrip={activeTrip} search={search} setSearch={setSearch} getPhoto={getPhoto} unit={data.unitSystem} onAdd={() => setCapture({ kind: 'item' })} onEdit={(item) => setCapture({ kind: 'item', item })} onDelete={deleteLibraryItem} onAddEntry={addEntry}/>}
         {page === 'bags' && <BagsPage trip={activeTrip} bags={activeContainers} unit={data.unitSystem} onAdd={() => setCapture({ kind: 'bag' })} onEdit={(bag) => setCapture({ kind: 'bag', bag })} onRemove={removeBag}/>}
         {page === 'carrier-rules' && activeTrip && plan && <CarrierRulesPage trip={activeTrip} bags={activeContainers} summaries={plan.summaries} placements={plan.placements} items={data.libraryItems} unit={data.unitSystem} catalog={data.carrierCatalog} onCatalog={(carrierCatalog) => updateData((current) => ({ ...current, carrierCatalog }))} onReview={(draft) => setCapture({ kind: 'carrier-rule', draft })} onAdd={() => setCapture({ kind: 'carrier-rule' })} onEdit={(rule) => setCapture({ kind: 'carrier-rule', rule })} onDelete={deleteCarrierRule}/>}
-        {page === 'settings' && <SettingsPage data={data} syncStatus={syncStatus} unit={data.unitSystem} onUnit={(unitSystem) => updateData((current) => ({ ...current, unitSystem }))} scanRetention={scanRetention} onScanRetention={(days)=>updateData(current=>({...current,settings:{...current.settings,automaticScanDeletionDays:days}}))} onPhotoRetention={(days) => updateData((current) => ({ ...current, settings: { ...current.settings, automaticPhotoDeletionDays: days } }))} onExport={exportBackup} onImport={importBackup} onDelete={deleteAllData} onOpenShared={(snapshot,baseline,witness) => updateData(current => openSharedPack(current,snapshot,newId(),baseline,witness))} onPublished={(tripId,snapshot,baseline) => updateData(current => recordSharedPublication(current,tripId,snapshot,baseline))}/>}
+        {page === 'settings' && <SettingsPage data={data} syncStatus={syncStatus} unit={data.unitSystem} onUnit={(unitSystem) => updateData((current) => ({ ...current, unitSystem }))} scanRetention={scanRetention} onScanRetention={(days)=>updateData(current=>({...current,settings:{...current.settings,automaticScanDeletionDays:days}}))} onPhotoRetention={(days) => updateData((current) => ({ ...current, settings: { ...current.settings, automaticPhotoDeletionDays: days } }))} onExport={exportBackup} onImport={importBackup} onDelete={deleteAllData} onOpenShared={async (snapshot,baseline,witness) => {const {openSharedPack}=await import('./shared-packs');updateData(current => openSharedPack(current,snapshot,newId(),baseline,witness));}} onPublished={async (tripId,snapshot,baseline) => {const {recordSharedPublication}=await import('./shared-pack-combination');updateData(current => recordSharedPublication(current,tripId,snapshot,baseline));}}/>}
       </>}
     </div>
 
@@ -782,7 +781,7 @@ function BagsPage({ trip, bags, unit, onAdd, onEdit, onRemove }: { trip?:Trip; b
   </main>;
 }
 
-function SettingsPage({ data, unit, syncStatus, scanRetention,onScanRetention,onUnit, onPhotoRetention, onExport, onImport, onDelete, onOpenShared, onPublished }: { data:AppData; unit:UnitSystem; syncStatus:string; scanRetention:{supported:boolean;status:string}; onScanRetention:(days:ScanRetentionDays|null)=>void; onUnit:(unit:UnitSystem)=>void; onPhotoRetention:(days:number|null)=>void; onExport:()=>void; onImport:(file?:File)=>Promise<boolean>; onDelete:()=>void; onOpenShared:(snapshot:SharedPackSnapshot,baseline?:SharedPackBaseline,witness?:SharedCopyWitness)=>void; onPublished:(tripId:string,snapshot:SharedPackSnapshot,baseline:SharedPackBaseline)=>void }) {
+function SettingsPage({ data, unit, syncStatus, scanRetention,onScanRetention,onUnit, onPhotoRetention, onExport, onImport, onDelete, onOpenShared, onPublished }: { data:AppData; unit:UnitSystem; syncStatus:string; scanRetention:{supported:boolean;status:string}; onScanRetention:(days:ScanRetentionDays|null)=>void; onUnit:(unit:UnitSystem)=>void; onPhotoRetention:(days:number|null)=>void; onExport:()=>void; onImport:(file?:File)=>Promise<boolean>; onDelete:()=>void; onOpenShared:(snapshot:SharedPackSnapshot,baseline?:SharedPackBaseline,witness?:SharedCopyWitness)=>void|Promise<void>; onPublished:(tripId:string,snapshot:SharedPackSnapshot,baseline:SharedPackBaseline)=>void|Promise<void> }) {
   const device=useDeviceWorkspace();
   const [restoreBusy,setRestoreBusy]=useState(false),[restoreNotice,setRestoreNotice]=useState('');
   return <main className="secondary-page settings-page"><div className="page-heading"><div><p className="eyebrow">YOUR PREFERENCES</p><h1>Settings</h1><p className="page-subtitle">Control how this device stores and displays your packing data.</p></div></div>
