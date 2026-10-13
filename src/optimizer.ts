@@ -8,7 +8,7 @@ import type {
   BagMassConflict, Container, ExcludedItem, LibraryItem, OptimizationMode, PackingPlan,
   PlanItem, Placement, Trip, SeparationRule,
 } from './types';
-import { assessStackLoads, topLoadError } from './stack-load';
+import { assessStackLoads, StackLoadContactCache, topLoadError } from './stack-load';
 import { packingItem, packingFormKey } from './packing-forms';
 import { isValidRejectedPlacement, samePlacementGeometry } from './packing-progress';
 import { containerBlockedBoxes, containerSpaceError, usableContainerHeight, usableContainerVolume } from './container-space';
@@ -340,6 +340,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     return [container.id,spaces] as const;
   }));
   const itemById = new Map(items.map((item) => [item.instanceId, item]));
+  const stackLoadContactCache = new StackLoadContactCache(itemById);
   // Rectangle-only contacts advance strictly upward; without a fragile or
   // weight-limited item, a candidate cannot create a stacking conflict.
   const stackSensitiveIds = new Set(items.filter(item => item.fragile || item.maxTopLoadGrams !== undefined).map(item => item.instanceId));
@@ -386,7 +387,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     const conflict = placementSeparationError(saved,savedMassPositions,rules,itemById);
     if (conflict) { blockedBagIds.add(saved.containerId); separationConflicts.set(saved.containerId,conflict); }
   }
-  const lockedLoads = assessStackLoads(placements, itemById,containers).map(load => {
+  const lockedLoads = assessStackLoads(placements, itemById,containers,stackLoadContactCache).map(load => {
     const saved = placementByInstanceId.get(load.instanceId)!;
     const bag=containerById.get(saved.containerId)!;
     const bagPlacements=placementsByContainer.get(saved.containerId)??[];
@@ -482,7 +483,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             if (rejected.some((failed) => samePlacementGeometry(failed, placement))) continue;
             const needsStackCheck = useShapeSequence || stackSensitiveIds.has(item.instanceId) || bagPlacements.some(placed => stackSensitiveIds.has(placed.instanceId));
             const conflicts = needsStackCheck
-              ? assessStackLoads([...bagPlacements, placement], itemById, [container]).filter(load => load.status === 'conflict')
+              ? assessStackLoads([...bagPlacements, placement], itemById, [container],stackLoadContactCache).filter(load => load.status === 'conflict')
               : [];
             if (conflicts.length) {
               loadFailure = conflicts.map(load => `${load.orientation==='travel'?'Travel orientation - ':''}${itemById.get(load.instanceId)?.name ?? 'Item'}: ${load.reason}`).join(' ');
@@ -503,14 +504,14 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
                 }
                 const projected=[...bagPlacements,placement,...reservation.placements],reservedVolume=reservation.placements.reduce((sum,p)=>sum+itemById.get(p.instanceId)!.volumeMm3,0);
                 if((container.massLimitGrams!==undefined&&massInContainer(container.id,projected,itemById,container.tareGrams??0)>container.massLimitGrams+EPSILON)
-                  ||assessStackLoads(projected,itemById,[container]).some(load=>load.status==='conflict'))penalty+=reservedVolume*20;
+                  ||assessStackLoads(projected,itemById,[container],stackLoadContactCache).some(load=>load.status==='conflict'))penalty+=reservedVolume*20;
                 lookaheadCache.set(key,penalty);
               }
               lookahead=penalty;
             } else if(future){const possible=geometryOrientations(future,container).some(o=>fitsOpening(o,container)&&cornerPositions(initialSpace(container,usableHeight(container)),o).some(position=>{
               const next:Placement={...position,...o,instanceId:future.instanceId,entryId:future.entryId,itemId:future.itemId,containerId:container.id,layer:1};
               const prior=[...bagPlacements,placement];return !placementSeparationError(next,prior,rules,itemById)&&fitsGeometrySpaceInValidatedContainer(next,container,future,blockedSpaces.get(container.id))&&!prior.some(p=>geometryIntersects(next,p,itemById))&&hasPackingAndTravelSupport(next,prior,itemById,mode==='fragile_protection'?1:.65,container)&&hasVerticalEntry(next,prior,itemById,container,blockedSpaces.get(container.id))
-                && !assessStackLoads([...prior,next],itemById,[container]).some(load=>load.status==='conflict');
+                && !assessStackLoads([...prior,next],itemById,[container],stackLoadContactCache).some(load=>load.status==='conflict');
             }));if(!possible)lookahead=future.volumeMm3*20;}
             const score = placementScore(candidateBase, space, container, item, bagPlacements, massAfter, mode)+lookahead;
             const weightCost = bagCosts.get(container.id), priorCost = best && bagCosts.get(best.container.id);

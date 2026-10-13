@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assessStackLoads, supportArea, topLoadError } from './stack-load';
+import { assessStackLoads, StackLoadContactCache, supportArea, topLoadError } from './stack-load';
 import { buildPlan } from './optimizer';
 import { createInitialData } from './seed';
 import type { LibraryItem, OptimizationMode, Placement, PlanItem } from './types';
@@ -32,6 +32,21 @@ function fixture(items: LibraryItem[]) {
 }
 
 describe('static stacking bounds', () => {
+  it('keeps irregular-shape stack results unchanged when contact geometry is reused', () => {
+    const dimensions = { length: 40, width: 40, height: 40 };
+    const packingShape = { adoptedAt: evidence.collectedAt, sourceEnvelopeMm: dimensions, fittedDimensionsMm: dimensions,
+      solid: { id: '00000000-0000-4000-8000-000000000001', target: 'item' as const, format: 'voxel_solid_v1' as const,
+        units: 'millimetres' as const, sourceHash: 'a'.repeat(64), sourcePointCount: 400, method: 'observed_voxel_shell_fill_v1' as const,
+        resolutionMm: 10, grid: { x: 4, y: 4, z: 4 }, dimensionsMm: dimensions, occupiedCells: Array.from({ length: 64 }, (_, index) => index),
+        observedCellCount: 56, enclosedCellCount: 8, surfaceFaceCount: 96, warnings: [] } };
+    const placements = [placement('base', 0, dimensions), placement('upper', 40, dimensions)];
+    const items = planItems([item('base', 100, { dimensions, packingShape, fragile: true }), item('upper', 20, { dimensions, packingShape })]);
+    const cache = new StackLoadContactCache(items);
+
+    expect(cache.shouldCache(placements, { axis: 2, sign: 1 })).toBe(true);
+    expect(assessStackLoads(placements, items, [], cache)).toEqual(assessStackLoads(placements, items));
+  });
+
   it('carries cumulative upper weight through three layers, excluding own weight', () => {
     const items = planItems([item('base', 1000, { maxTopLoadGrams: 350, topLoadEvidence: evidence }), item('middle', 150), item('top', 100, { massRangeGrams: { min: 90, max: 201 } })]);
     const checks = assessStackLoads([placement('base', 0), placement('middle', 10), placement('top', 20)], items);
