@@ -18,29 +18,30 @@ import { uprightInstruction, uprightTag } from './upright';
 import { StackLoadNotes } from './components/StackLoadNotes';
 import { packingFormsForSelection,packingItem,separablePackingEntryIds,separatePackingCopy,changePackingQuantity } from './packing-forms';
 import { ContainerSpaceNotes } from './components/ContainerSpaceNotes';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AlertTriangle, Backpack, BookOpen, Check, ChevronDown, CircleHelp,
   ClipboardList, Lock, MapPin, MoreHorizontal, Package, PackageCheck, Plus,
   Ruler, Search, Settings, ShieldCheck, Trash2, Weight, X,
 } from 'lucide-react';
 import type { ItemDraft } from './components/ItemCapture';
-import { carrierReviewDate, carrierReviewTimestamp, secureCarrierSourceUrl } from './carrier-rules';
 import { useScannerCapabilities } from './scanning/useScannerCapabilities';
 import { LocalPhoto } from './components/LocalPhoto';
 import type { TripSuggestion } from './trip-assistant';
 import { buildPlan } from './optimizer';
 import {  markPackingItemUnavailable, rejectPackingPlacement, setPackingItemComplete } from './packing-progress';
-import { measurementFromInput, measurementInput } from './measurement-input';
+import { measurementInput } from './measurement-input';
 import {workspaceStorage} from './storage';
 import { createInitialData } from './seed';
-import type { AppData, CarrierLimits, CarrierRule, Container, Evidence, ItemPriority, LibraryItem, OptimizationMode, PackEntry, PackingPlan, Placement, Trip, TripActivity, UnitSystem } from './types';
+import type { AppData, CarrierRule, Container, Evidence, ItemPriority, LibraryItem, OptimizationMode, PackEntry, PackingPlan, Placement, Trip, TripActivity, UnitSystem } from './types';
 
 type Page = 'workspace' | 'items' | 'bags' | 'carrier-rules' | 'settings' | 'steps' | 'sequence';
 type CaptureState = { kind: 'item'; item?: LibraryItem; suggestion?: TripSuggestion; resumed?:{draft:ItemEditorDraft;photo?:Blob} } | { kind: 'bag'; bag?: Container } | { kind: 'trip'; trip?: Trip } | { kind: 'carrier-rule'; rule?: CarrierRule; draft?: CarrierRule } | null;
 
 const ItemCapture = lazy(() => import('./components/ItemCapture').then((module) => ({ default: module.ItemCapture })));
 const BagCapture = lazy(() => import('./components/BagCapture').then((module) => ({ default: module.BagCapture })));
+const CarrierRuleCapture = lazy(() => import('./components/CarrierRuleCapture').then((module) => ({ default: module.CarrierRuleCapture })));
+const TripCapture = lazy(() => import('./components/TripCapture').then((module) => ({ default: module.TripCapture })));
 const SettingsPage = lazy(() => import('./components/SettingsPage').then((module) => ({ default: module.SettingsPage })));
 const CarrierRulesPage = lazy(() => import('./components/CarrierRulesPage').then((module) => ({ default: module.CarrierRulesPage })));
 const PlanSteps = lazy(() => import('./components/PlanSteps').then((module) => ({ default: module.PlanSteps })));
@@ -472,8 +473,8 @@ function PackingApp() {
 
     {capture?.kind === 'item' && <Suspense fallback={<div className="modal-backdrop"><div className="modal" role="status">Opening item editor…</div></div>}><ItemCapture key={capture.item?.id ?? capture.suggestion?.id ?? 'new-item'} initial={capture.item} suggestedItem={capture.suggestion} unit={capture.resumed?.draft.unit??data.unitSystem} resumed={capture.resumed?.draft} resumedPhoto={capture.resumed?.photo} sourceTripId={activeTrip?.id} suggestion={capture.suggestion} scanSupported={scanCapabilities.supported} recognitionSupported={scanCapabilities.supported&&scanCapabilities.platform==='android'&&scanCapabilities.recognitionSupported===true} scanUnavailableReason={scanCapabilities.reason} existingPhotoUrl={editingPhotoUrl} onClose={()=>void closeItemEditor()} onPhotoStaged={()=>setCapture(null)} onSave={saveItem}/></Suspense>}
     {capture?.kind === 'bag' && <Suspense fallback={<div role="status">Opening bag editor…</div>}><BagCapture key={capture.bag?.id ?? 'new-bag'} initial={capture.bag} unit={data.unitSystem} travellers={activeTrip?.travellers ?? []} scanSupported={scanCapabilities.supported} scanUnavailableReason={scanCapabilities.reason} onClose={() => setCapture(null)} onSave={saveBag} helpers={{evidence,mmToDisplay,displayToMm,lengthInput,massInput,dimLabel,sourceLabel}} Modal={Modal}/></Suspense>}
-    {capture?.kind === 'trip' && <TripCapture initial={capture.trip} onClose={() => setCapture(null)} onSave={createTrip} onDelete={capture.trip && !capture.trip.sample ? () => void deleteTrip(capture.trip!.id) : undefined}/>}
-    {capture?.kind === 'carrier-rule' && activeTrip && <CarrierRuleCapture key={capture.rule?.id ?? capture.draft?.fare ?? 'new-carrier-rule'} initial={capture.rule ?? capture.draft} bags={activeContainers} unit={data.unitSystem} onClose={() => setCapture(null)} onSave={saveCarrierRule}/>}
+    {capture?.kind === 'trip' && <Suspense fallback={<div className="modal-backdrop"><div className="modal" role="status">Opening pack editor…</div></div>}><TripCapture initial={capture.trip} onClose={() => setCapture(null)} onSave={createTrip} onDelete={capture.trip && !capture.trip.sample ? () => void deleteTrip(capture.trip!.id) : undefined} Modal={Modal}/></Suspense>}
+    {capture?.kind === 'carrier-rule' && activeTrip && <Suspense fallback={<div className="modal-backdrop"><div className="modal" role="status">Opening carrier record…</div></div>}><CarrierRuleCapture key={capture.rule?.id ?? capture.draft?.fare ?? 'new-carrier-rule'} initial={capture.rule ?? capture.draft} bags={activeContainers} unit={data.unitSystem} onClose={() => setCapture(null)} onSave={saveCarrierRule} helpers={{lengthInput,massInput,dimLabel}} Modal={Modal}/></Suspense>}
   </div>;
 }
 
@@ -616,87 +617,6 @@ function Workspace(props: WorkspaceProps) {
   </main>;
 }
 
-function CarrierRuleCapture({ initial, bags, unit, onClose, onSave }: { initial?:CarrierRule; bags:Container[]; unit:UnitSystem; onClose:()=>void; onSave:(rule:Omit<CarrierRule,'id'>)=>void }) {
-  const today = carrierReviewDate();
-  const initialDate = initial?.retrievedAt && Number.isFinite(Date.parse(initial.retrievedAt)) ? carrierReviewDate(initial.retrievedAt) : today;
-  const [carrier,setCarrier]=useState(initial?.carrier ?? '');
-  const [route,setRoute]=useState(initial?.route ?? '');
-  const [fare,setFare]=useState(initial?.fare ?? '');
-  const [sourceUrl,setSourceUrl]=useState(initial?.sourceUrl ?? '');
-  const [reviewedAt,setReviewedAt]=useState(initialDate);
-  const [staleAfterDays,setStaleAfterDays]=useState(String(initial?.staleAfterDays ?? 7));
-  const [applicableBagIds,setApplicableBagIds]=useState<string[]>(initial?.applicableBagIds ?? []);
-  const [notes,setNotes]=useState(initial?.notes ?? '');
-  const [maxLength,setMaxLength]=useState(lengthInput(initial?.limits?.maxOuterDimensionsMm?.length,unit));
-  const [maxWidth,setMaxWidth]=useState(lengthInput(initial?.limits?.maxOuterDimensionsMm?.width,unit));
-  const [maxHeight,setMaxHeight]=useState(lengthInput(initial?.limits?.maxOuterDimensionsMm?.height,unit));
-  const [maxLinearSum,setMaxLinearSum]=useState(lengthInput(initial?.limits?.maxOuterLinearSumMm,unit));
-  const [maxWeight,setMaxWeight]=useState(massInput(initial?.limits?.maxWeightGrams,unit));
-  const [maxBagCount,setMaxBagCount]=useState(initial?.limits?.maxBagCount?.toString() ?? '');
-  const [weightScope,setWeightScope]=useState<NonNullable<CarrierLimits['weightScope']>>(initial?.limits?.weightScope ?? 'per_bag');
-  const [checkedForBooking,setCheckedForBooking]=useState(initial?.status === 'verified');
-  useEffect(() => {
-    if (initial && (carrier !== initial.carrier || route !== initial.route || fare !== initial.fare || sourceUrl !== initial.sourceUrl
-      || notes !== initial.notes || maxLength !== lengthInput(initial.limits?.maxOuterDimensionsMm?.length,unit)
-      || maxWidth !== lengthInput(initial.limits?.maxOuterDimensionsMm?.width,unit)
-      || maxHeight !== lengthInput(initial.limits?.maxOuterDimensionsMm?.height,unit)
-      || maxLinearSum !== lengthInput(initial.limits?.maxOuterLinearSumMm,unit)
-      || maxWeight !== massInput(initial.limits?.maxWeightGrams,unit)
-      || maxBagCount !== (initial.limits?.maxBagCount?.toString() ?? '')
-      || weightScope !== (initial.limits?.weightScope ?? 'per_bag')
-      || applicableBagIds.join('|') !== initial.applicableBagIds.join('|'))) setCheckedForBooking(false);
-  }, [initial,unit,carrier,route,fare,sourceUrl,notes,maxLength,maxWidth,maxHeight,maxLinearSum,maxWeight,maxBagCount,weightScope,applicableBagIds]);
-  const [error,setError]=useState('');
-  const submit=(event:FormEvent)=>{
-    event.preventDefault();
-    const normalizedSource=secureCarrierSourceUrl(sourceUrl);
-    if(!normalizedSource){setError('Enter a credential-free HTTPS link to the airline or booking source.');return;}
-    const refreshDays=Number(staleAfterDays);
-    if(!carrier.trim()){setError('Enter the airline or carrier name.');return;}
-    if(!notes.trim()){setError('Add the allowance or source note you want to keep with this trip.');return;}
-    let retrievedAt:string;
-    try { retrievedAt=carrierReviewTimestamp(reviewedAt,initial?.retrievedAt); }
-    catch(reviewError){setError(reviewError instanceof Error?reviewError.message:'Enter the date you last checked the source.');return;}
-    if(!Number.isInteger(refreshDays)||refreshDays<1||refreshDays>365){setError('Choose a refresh window from 1 to 365 days.');return;}
-    const validBagIds=new Set(bags.map((bag)=>bag.id));
-    const bagIds=applicableBagIds.filter((id)=>validBagIds.has(id));
-    const axisValues=[maxLength,maxWidth,maxHeight];
-    const hasAxisValues=axisValues.some((value)=>value.trim()!=='');
-    if(hasAxisValues&&axisValues.some((value)=>!Number.isFinite(Number(value))||Number(value)<=0)){setError(`Enter all three maximum outside dimensions in ${dimLabel(unit)}.`);return;}
-    if(maxLinearSum&&(!Number.isFinite(Number(maxLinearSum))||Number(maxLinearSum)<=0)){setError(`Enter a positive combined-dimension limit in ${dimLabel(unit)}.`);return;}
-    if(maxWeight&&(!Number.isFinite(Number(maxWeight))||Number(maxWeight)<=0)){setError(`Enter a positive weight limit in ${unit==='metric'?'grams':'ounces'}.`);return;}
-    const hasCount=maxBagCount.trim()!=='';
-    if(hasCount&&(!Number.isInteger(Number(maxBagCount))||Number(maxBagCount)<0||Number(maxBagCount)>100)){setError('Enter a whole number of bags from 0 to 100, or leave it blank when not recorded.');return;}
-    const hasNumericLimits=hasAxisValues||!!maxLinearSum||!!maxWeight||hasCount;
-    if(hasNumericLimits&&bagIds.length===0){setError('Choose at least one bag for these numeric limits.');return;}
-    const limits:CarrierLimits|undefined=hasNumericLimits?{
-      ...(hasAxisValues?{maxOuterDimensionsMm:{length:measurementFromInput(maxLength,unit==='metric'?1:25.4,initial?.limits?.maxOuterDimensionsMm?.length),width:measurementFromInput(maxWidth,unit==='metric'?1:25.4,initial?.limits?.maxOuterDimensionsMm?.width),height:measurementFromInput(maxHeight,unit==='metric'?1:25.4,initial?.limits?.maxOuterDimensionsMm?.height)}}:{}),
-      ...(maxLinearSum?{maxOuterLinearSumMm:measurementFromInput(maxLinearSum,unit==='metric'?1:25.4,initial?.limits?.maxOuterLinearSumMm)}:{}),
-      ...(maxWeight?{maxWeightGrams:measurementFromInput(maxWeight,unit==='metric'?1:28.3495,initial?.limits?.maxWeightGrams),weightScope}:{}),
-      ...(hasCount?{maxBagCount:Number(maxBagCount)}:{}),
-    }:undefined;
-    onSave({carrier:carrier.trim(),route:route.trim()||'Not specified',fare:fare.trim()||'Not specified',sourceUrl:normalizedSource,retrievedAt,staleAfterDays:refreshDays,applicableBagIds:bagIds,notes:notes.trim(),status:checkedForBooking?'verified':'manual',...(limits?{limits}:{}),...(initial?.retrieval?{retrieval:initial.retrieval}:{})});
-  };
-  return <Modal title={initial?.retrieval?'Review retrieved allowance':initial?'Edit carrier source':'Save a carrier source'} eyebrow="TRIP SOURCE" onClose={onClose}><form className="simple-modal-form carrier-rule-form" onSubmit={submit}>
-    <label className="field"><span>Airline or carrier</span><input autoFocus value={carrier} onChange={(event)=>setCarrier(event.target.value)} maxLength={80} placeholder="e.g. KLM"/></label>
-    <div className="date-fields"><label className="field"><span>Route or itinerary <em>optional</em></span><input value={route} onChange={(event)=>setRoute(event.target.value)} maxLength={120} placeholder="e.g. AMS–LIS, including connections"/></label><label className="field"><span>Fare or cabin <em>optional</em></span><input value={fare} onChange={(event)=>setFare(event.target.value)} maxLength={100} placeholder="e.g. Economy Light"/></label></div>
-    <label className="field"><span>Official source link</span><input type="url" value={sourceUrl} onChange={(event)=>setSourceUrl(event.target.value)} maxLength={500} placeholder="https://airline.example/baggage"/></label>
-    <label className="field"><span>Allowance notes</span><textarea value={notes} onChange={(event)=>setNotes(event.target.value)} maxLength={1500} rows={4} placeholder="Record the allowance shown for this booking, including dimensions, weight and number of bags."/></label>
-    <section className="carrier-limits-form" aria-label="Numeric baggage limits"><div className="field-heading"><span>Optional numeric limits</span></div><p>Copy only values shown by the source you checked. Enter them in your chosen units: {dimLabel(unit)} and {unit==='metric'?'g':'oz'}. A source listing 55 cm means 550 mm.</p>
-      <label className="field"><span>Maximum number of selected bags <em>optional</em></span><input aria-label="Maximum number of bags" type="number" min="0" max="100" step="1" inputMode="numeric" value={maxBagCount} onChange={(event)=>setMaxBagCount(event.target.value)}/><small>This count applies to the bags selected in this record, including empty bags. For a per-passenger allowance, select that passenger's bags and save separate records for other passengers. Counts are not pooled across records.</small></label>
-      <div className="field-block"><div className="field-heading"><span>Maximum outside size per bag · {dimLabel(unit)}</span></div><div className="dimension-fields">{([['length','Length',maxLength,setMaxLength],['width','Width',maxWidth,setMaxWidth],['height','Height',maxHeight,setMaxHeight]] as const).map(([axis,label,value,setter])=><label className="field" key={axis}><span>{label}</span><input aria-label={`Maximum outside ${label}`} type="number" min="0.1" step="any" inputMode="decimal" value={value} onChange={(event)=>setter(event.target.value)}/></label>)}</div></div>
-      <label className="field"><span>Maximum combined outside dimensions per bag · {dimLabel(unit)} <em>optional</em></span><input aria-label="Maximum combined outside dimensions" type="number" min="0.1" step="any" inputMode="decimal" value={maxLinearSum} onChange={(event)=>setMaxLinearSum(event.target.value)}/></label>
-      <div className="date-fields"><label className="field"><span>Weight limit · {unit==='metric'?'grams':'ounces'} <em>optional</em></span><input aria-label="Carrier weight limit" type="number" min="0.1" step="any" inputMode="decimal" value={maxWeight} onChange={(event)=>setMaxWeight(event.target.value)}/></label><label className="field"><span>Weight limit applies to</span><select value={weightScope} onChange={(event)=>setWeightScope(event.target.value as NonNullable<CarrierLimits['weightScope']>)}><option value="per_bag">Each selected bag</option><option value="combined">Selected bags together</option></select></label></div>
-      <small>Outside measurements are checked separately from interior packing space. Measure each outside side including handles and wheels if the source counts them.</small>
-    </section>
-    <div className="date-fields"><label className="field"><span>{initial?.retrieval?'Last checked by you':'Last checked'}</span><input type="date" value={reviewedAt} onChange={(event)=>setReviewedAt(event.target.value)}/></label><label className="field"><span>Recheck after · days</span><input type="number" min="1" max="365" step="1" value={staleAfterDays} onChange={(event)=>setStaleAfterDays(event.target.value)}/></label></div>
-    <div className="traveller-fields"><div className="field-heading"><span>Which bags does this source apply to?</span></div>{bags.length ? bags.map((bag)=><label className="check-row" key={bag.id}><input type="checkbox" checked={applicableBagIds.includes(bag.id)} onChange={(event)=>setApplicableBagIds((current)=>event.target.checked?[...current,bag.id]:current.filter((id)=>id!==bag.id))}/><span>{bag.name}</span></label>) : <small>Add a bag to this pack to attach the source to it.</small>}</div>
-    <label className="check-row carrier-verified-check"><input type="checkbox" checked={checkedForBooking} onChange={(event)=>setCheckedForBooking(event.target.checked)}/><span>I checked the allowance for this exact booking, fare and operating airline.</span></label>
-    <div className="capture-disclosure">{initial?.retrieval?<><strong>Retrieved source with editable limits.</strong> The original page was retrieved {new Date(initial.retrieval.catalog.retrievedAt).toLocaleString()}. Your edits are saved as a manual override and never change that timestamp. Select the bags for one passenger and this allowance; an excess count will be flagged. Check the booking and passenger allowance yourself. This app does not retrieve your booking or guarantee carriage.</>:<><strong>Manual source record.</strong> The app does not fetch this manually entered source or your booking. Comparisons check only the numeric values and bag measurements you entered; they cannot confirm booking applicability or carrier acceptance.</>}</div>
-    {error&&<p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button className="button button-secondary" type="button" onClick={onClose}>Cancel</button><button className="button button-primary" type="submit">Save source</button></div>
-  </form></Modal>;
-}
-
 function LibraryPage({ items, data, activeTrip, search, setSearch, getPhoto, unit, onAdd, onEdit, onDelete, onAddEntry }: { items:LibraryItem[]; data:AppData; activeTrip?:Trip; search:string; setSearch:(value:string)=>void; getPhoto:(id:string)=>Promise<Blob|undefined>; unit:UnitSystem; onAdd:()=>void; onEdit:(item:LibraryItem)=>void; onDelete:(item:LibraryItem)=>void; onAddEntry:(item:LibraryItem)=>void }) {
   const activeItemIds = useMemo(() => new Set(activeTrip?.entries.map((entry) => entry.itemId) ?? []), [activeTrip?.entries]);
   const usedItemIds = useMemo(() => {
@@ -725,36 +645,6 @@ function BagsPage({ trip, bags, unit, onAdd, onEdit, onRemove }: { trip?:Trip; b
 
 function EmptyState({ onNew, onSettings }: { onNew:()=>void; onSettings:()=>void }) {
   return <main className="empty-home"><div className="empty-home-art"><div className="empty-case"><span/><span/><span/></div><div className="empty-tag">READY WHEN YOU ARE</div></div><p className="eyebrow">A LITTLE MORE ROOM TO THINK</p><h1>Make space for<br/>what matters.</h1><p>Your packing plans and item library stay on this device. Start with a bag, add a few things, and see a considered way to pack.</p><button className="button button-primary" onClick={onNew}><Plus size={17}/> Create a pack</button><button className="text-button" onClick={onSettings}>Restore a backup</button></main>;
-}
-
-function TripCapture({ initial, onClose, onSave, onDelete }: { initial?:Trip; onClose:()=>void; onSave:(name:string,destination:string,start:string,end:string,packingOnly:boolean,travellerNames:string[],activities:TripActivity[],laundryAvailable:boolean,existingId?:string)=>void; onDelete?:()=>void }) {
-  const [name,setName] = useState(initial?.sample ? '' : initial?.name ?? '');
-  const [destination,setDestination] = useState(initial?.sample ? '' : initial?.destination ?? '');
-  const [start,setStart] = useState(initial?.sample ? '' : initial?.startDate ?? '');
-  const [end,setEnd] = useState(initial?.sample ? '' : initial?.endDate ?? '');
-  const [packingOnly,setPackingOnly] = useState(initial?.packingOnly ?? true);
-  const [travellers,setTravellers] = useState<string[]>(initial?.travellers.map((traveller)=>traveller.name) ?? ['You']);
-  const [activities,setActivities] = useState<TripActivity[]>(initial?.activities ?? []);
-  const [laundryAvailable,setLaundryAvailable] = useState(initial?.laundryAvailable ?? false);
-  const toggleActivity = (activity:TripActivity) => setActivities((current) => current.includes(activity) ? current.filter((value) => value !== activity) : [...current,activity]);
-  const submit = (event:FormEvent) => {
-    event.preventDefault();
-    const tripName = name.trim() || (destination.trim() ? `${destination.trim()} pack` : 'Packing session');
-    const tripDestination = destination.trim();
-    onSave(tripName,tripDestination,start,end,packingOnly,travellers,activities,laundryAvailable,initial && !initial.sample ? initial.id : undefined);
-  };
-  const activityChoices: Array<[TripActivity,string]> = [['city','City walking'],['business','Business'],['beach','Beach'],['outdoors','Outdoor activities'],['formal_event','Formal event'],['sports','Sports or exercise']];
-  return <Modal title={initial && !initial.sample ? 'Pack details' : 'Create a pack'} eyebrow={initial && !initial.sample ? 'PACK DETAILS' : 'NEW PACK'} onClose={onClose}>
-    <form onSubmit={submit} className="simple-modal-form">
-      <label className="field"><span>Pack name</span><input autoFocus value={name} onChange={(event)=>setName(event.target.value)} placeholder="e.g. Weekend in Lisbon" maxLength={70}/></label>
-      <label className="field"><span>Destination <em>optional</em></span><input value={destination} onChange={(event)=>setDestination(event.target.value)} placeholder="e.g. Lisbon, Portugal" maxLength={100}/></label>
-      <div className="date-fields"><label className="field"><span>Start date</span><input type="date" value={start} onChange={(event)=>setStart(event.target.value)}/></label><label className="field"><span>End date</span><input type="date" min={start||undefined} value={end} onChange={(event)=>setEnd(event.target.value)}/></label></div>
-      <div className="traveller-fields"><div className="field-heading"><span>Travellers · assign personal items and bags</span>{travellers.length<8&&<button type="button" className="text-button" onClick={()=>setTravellers((current)=>[...current,`Traveller ${current.length+1}`])}><Plus size={14}/> Add person</button>}</div>{travellers.map((traveller,index)=><div className="traveller-row" key={index}><label className="field"><span>{index===0?'First traveller':`Traveller ${index+1}`}</span><input value={traveller} onChange={(event)=>setTravellers((current)=>current.map((value,row)=>row===index?event.target.value:value))} maxLength={40}/></label>{index>0&&<button type="button" className="quiet-icon delete-icon" aria-label={`Remove traveller ${index+1}`} onClick={()=>setTravellers((current)=>current.filter((_,row)=>row!==index))}><X size={15}/></button>}</div>)}</div>
-      <div className="choice-block"><span className="field-label">What do you need?</span><label className="radio-row"><input type="radio" checked={packingOnly} onChange={()=>setPackingOnly(true)}/><span><strong>Packing only</strong><small>Start with the items you already have in mind.</small></span></label><label className="radio-row"><input type="radio" checked={!packingOnly} onChange={()=>setPackingOnly(false)}/><span><strong>Trip-aware list</strong><small>Get an editable starter checklist from dates and activities.</small></span></label></div>
-      {!packingOnly && <div className="trip-context-inputs"><div className="field-heading"><span>Activities · choose any that apply</span></div><div className="trip-activity-grid">{activityChoices.map(([value,label])=><label className="check-row" key={value}><input type="checkbox" checked={activities.includes(value)} onChange={()=>toggleActivity(value)}/><span>{label}</span></label>)}</div><label className="check-row laundry-check"><input type="checkbox" checked={laundryAvailable} onChange={(event)=>setLaundryAvailable(event.target.checked)}/><span>Laundry will be available</span></label><small>Starter suggestions use your entries. Optional weather lookup becomes available after saving; health and carrier decisions are not inferred. You can edit the list after creating the pack.</small></div>}
-      <div className="modal-actions">{onDelete && <button className="button button-danger" type="button" onClick={onDelete}>Delete pack</button>}<span className="modal-action-spacer"/><button className="button button-secondary" type="button" onClick={onClose}>Cancel</button><button className="button button-primary" type="submit">{initial && !initial.sample ? 'Save details' : 'Create pack'}</button></div>
-    </form>
-  </Modal>;
 }
 
 function Modal({ title, eyebrow, onClose, children, busy=false }: { title:string; eyebrow:string; onClose:()=>void; children:ReactNode; busy?:boolean }) {
