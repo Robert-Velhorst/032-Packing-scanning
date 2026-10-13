@@ -1,4 +1,3 @@
-import {recordSharedPublication} from './shared-pack-combination';
 import type { SeparationRule } from './types';
 import type { SavedWeather } from './weather';
 import { SeparationRules, SeparationNotes } from './components/SeparationRules';
@@ -10,8 +9,9 @@ import { useRawScanRetention } from './scanning/useRawScanRetention';
 import { recordRemovedScanSources,type ScanRetentionReply } from './scan-retention';
 import { EntryBagAssignment } from './components/EntryBagAssignment';
 import type {ItemEditorDraft} from './item-photo-draft';
+import type { SharedCopyWitness, SharedPackSnapshot } from './shared-packs';
+import type { SharedPackBaseline } from './shared-pack-baseline';
 import {DeviceWorkspace,useDeviceWorkspace} from './components/DeviceWorkspace';
-import { openSharedPack } from './shared-packs';
 import { isPackingBackup as isBackup } from './backup';
 import { BagWeightNotes } from './components/BagWeightNotes';
 import { uprightInstruction, uprightTag } from './upright';
@@ -442,6 +442,12 @@ function PackingApp() {
     await saveAppData(empty);
     setData(empty); setEditingPhotoUrl(undefined); setNotice(scanCleanupFailed ? 'Packing data was deleted, but some native scan files could not be removed from this device.' : 'All local packing data and saved scans have been deleted.'); setPage('workspace');
   };
+  const openSharedPackFromSettings = (snapshot: SharedPackSnapshot, baseline?: SharedPackBaseline, witness?: SharedCopyWitness) => {
+    void import('./shared-packs').then(({ openSharedPack }) => updateData(current => openSharedPack(current, snapshot, newId(), baseline, witness))).catch(() => setNotice('The shared pack could not be opened. Reopen Settings and try again.'));
+  };
+  const recordSharedPublicationFromSettings = (tripId: string, snapshot: SharedPackSnapshot, baseline: SharedPackBaseline) => {
+    void import('./shared-pack-combination').then(({ recordSharedPublication }) => updateData(current => recordSharedPublication(current, tripId, snapshot, baseline))).catch(() => setNotice('The household pack could not be updated. Reopen Settings and try again.'));
+  };
 
   if (!data) return <div className="boot-screen"><div className="brand-mark">P</div><p>{syncStatus === 'error' ? syncError : 'Opening your local packing space…'}</p>{syncStatus === 'error' && <button className="button button-secondary" onClick={() => { setSyncStatus('loading'); loadAppData().then((loaded) => { setData(loaded); setSavedData(loaded); setSyncStatus('saved'); }).catch((error: unknown) => setSyncError(error instanceof Error ? error.message : 'Could not load saved data.')); }}>Try again</button>}</div>;
 
@@ -478,7 +484,7 @@ function PackingApp() {
         {page === 'items' && <LibraryPage items={libraryItems} data={data} activeTrip={activeTrip} search={search} setSearch={setSearch} getPhoto={getPhoto} unit={data.unitSystem} onAdd={() => setCapture({ kind: 'item' })} onEdit={(item) => setCapture({ kind: 'item', item })} onDelete={deleteLibraryItem} onAddEntry={addEntry}/>}
         {page === 'bags' && <BagsPage trip={activeTrip} bags={activeContainers} unit={data.unitSystem} onAdd={() => setCapture({ kind: 'bag' })} onEdit={(bag) => setCapture({ kind: 'bag', bag })} onRemove={removeBag}/>}
         {page === 'carrier-rules' && activeTrip && plan && <Suspense fallback={<div className="secondary-page" role="status">Opening carrier rules…</div>}><CarrierRulesPage trip={activeTrip} bags={activeContainers} summaries={plan.summaries} placements={plan.placements} items={data.libraryItems} unit={data.unitSystem} catalog={data.carrierCatalog} onCatalog={(carrierCatalog) => updateData((current) => ({ ...current, carrierCatalog }))} onReview={(draft) => setCapture({ kind: 'carrier-rule', draft })} onAdd={() => setCapture({ kind: 'carrier-rule' })} onEdit={(rule) => setCapture({ kind: 'carrier-rule', rule })} onDelete={deleteCarrierRule}/></Suspense>}
-        {page === 'settings' && <Suspense fallback={<div className="secondary-page" role="status">Opening settings…</div>}><SettingsPage data={data} syncStatus={syncStatus} unit={data.unitSystem} onUnit={(unitSystem) => updateData((current) => ({ ...current, unitSystem }))} scanRetention={scanRetention} onScanRetention={(days)=>updateData(current=>({...current,settings:{...current.settings,automaticScanDeletionDays:days}}))} onPhotoRetention={(days) => updateData((current) => ({ ...current, settings: { ...current.settings, automaticPhotoDeletionDays: days } }))} onExport={exportBackup} onImport={importBackup} onDelete={deleteAllData} onOpenShared={(snapshot,baseline,witness) => updateData(current => openSharedPack(current,snapshot,newId(),baseline,witness))} onPublished={(tripId,snapshot,baseline) => updateData(current => recordSharedPublication(current,tripId,snapshot,baseline))}/></Suspense>}
+        {page === 'settings' && <Suspense fallback={<div className="secondary-page" role="status">Opening settings…</div>}><SettingsPage data={data} syncStatus={syncStatus} unit={data.unitSystem} onUnit={(unitSystem) => updateData((current) => ({ ...current, unitSystem }))} scanRetention={scanRetention} onScanRetention={(days)=>updateData(current=>({...current,settings:{...current.settings,automaticScanDeletionDays:days}}))} onPhotoRetention={(days) => updateData((current) => ({ ...current, settings: { ...current.settings, automaticPhotoDeletionDays: days } }))} onExport={exportBackup} onImport={importBackup} onDelete={deleteAllData} onOpenShared={openSharedPackFromSettings} onPublished={recordSharedPublicationFromSettings}/></Suspense>}
       </>}
     </div>
 
