@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ThreePackCanvas } from './components/ThreePackCanvas';
-import './styles.css';
+import './three-view.css';
 
 const root = createRoot(document.getElementById('root')!);
 
