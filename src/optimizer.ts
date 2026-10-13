@@ -327,8 +327,10 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
   const placementByInstanceId = new Map<string, Placement>();
   const containerById = new Map(containers.map(container => [container.id, container]));
   const excluded: ExcludedItem[] = [];
+  const shapeSearchRegions = new Map<string, FreeSpace[]>();
   const freeSpaces = new Map(containers.map((container) => {
     let spaces:FreeSpace[]=containerSpaceError(container)||usableContainerHeight(container)<=EPSILON?[]:packingRegions(container);
+    if(useShapeSequence)shapeSearchRegions.set(container.id,spaces.map(region=>({...region,shapeSearch:true})));
     if(!containerSpaceError(container))for(const blocked of [...(container.unavailableSpaces??[])].sort((a,b)=>a.x-b.x||a.y-b.y||a.z-b.z||a.length-b.length||a.width-b.width||a.height-b.height))spaces=splitFreeSpaces(spaces,blocked);
     return [container.id,spaces] as const;
   }));
@@ -436,7 +438,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
         const o=geometryOrientations(future,container)[0];
         return o.length<=container.inside.length&&o.width<=container.inside.width&&o.height<=usableContainerHeight(container)?cornerPositions(initialSpace(container),o).map(position=>({instanceId:future.instanceId,entryId:future.entryId,itemId:future.itemId,containerId:container.id,...position,...o,layer:1})):[];
       })];
-      const spaces = [...(freeSpaces.get(container.id) ?? []),...(hasShapes?packingRegions(container).map(region=>({...region,shapeSearch:true})):[])];
+      const spaces = [...(freeSpaces.get(container.id) ?? []),...(hasShapes?shapeSearchRegions.get(container.id)??[]:[])];
       for (const space of spaces) {
         const compartment=compartmentFor(container,space.compartmentId);if(!eligibleForCompartment(item,compartment))continue;
         const contentsError=compartmentMassError(compartment,bagPlacements,itemById,item);if(contentsError){loadFailure=contentsError;continue;}
