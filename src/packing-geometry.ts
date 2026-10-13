@@ -200,12 +200,14 @@ export function hasGeometrySupport(p:Placement,placed:Placement[],items:Map<stri
     const area=p.length*p.width;if(area<=0)return false;if(Math.abs(p.z-floor)<=EPS)return true;
     const required=area*fraction;let supported=0;
     for(const lower of placed){
-      if(!items.get(lower.instanceId)?.packingShape&&lower.containerId===p.containerId&&lower.compartmentId===p.compartmentId
-        &&p.z>lower.z+EPS&&Math.abs(p.z-(lower.z+lower.height))<=EPS){
+      if(lower.containerId!==p.containerId||lower.compartmentId!==p.compartmentId)continue;
+      if(items.get(lower.instanceId)?.packingShape)supported+=geometrySupportArea(p,lower,items,up);
+      else{
+        if(p.z<=lower.z+EPS||Math.abs(p.z-(lower.z+lower.height))>EPS)continue;
         const length=Math.min(p.x+p.length,lower.x+lower.length)-Math.max(p.x,lower.x);
         const width=Math.min(p.y+p.width,lower.y+lower.width)-Math.max(p.y,lower.y);
         if(length>EPS&&width>EPS)supported+=length*width;
-      }else supported+=geometrySupportArea(p,lower,items,up);
+      }
       if(supported+EPS**2>=required)return true;
     }
     return false;
