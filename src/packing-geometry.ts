@@ -1,7 +1,7 @@
 import {compartmentFor,fitsCompartment} from './compartments.ts';
 import type { Container, DimensionsMm, LibraryItem, PackingShape, Placement } from './types.ts';
 import { parseReconstructedSolid, type SolidSurface } from './scanning/reconstructed-solid.ts';
-import { containerBlockedBoxes,containerSpaceError, usableContainerHeight } from './container-space.ts';
+import { containerBlockedBoxes,containerSpaceError, usableContainerHeight, type SpaceBox } from './container-space.ts';
 import { uprightRecordError } from './upright.ts';
 import { interiorFrame, interiorSupportError, interiorTravelUp } from './packing-interior.ts';
 
@@ -131,10 +131,10 @@ export function fitsGeometrySpace(p:Placement,bag:Container,item?:ShapeItem):boo
   return fitsGeometrySpaceInValidatedContainer(p,bag,item);
 }
 /** Use only after validating this unchanged bag record for the current plan. */
-export function fitsGeometrySpaceInValidatedContainer(p:Placement,bag:Container,item?:ShapeItem):boolean {
+export function fitsGeometrySpaceInValidatedContainer(p:Placement,bag:Container,item?:ShapeItem,blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag)):boolean {
   const usableHeight=bag.inside.height-(bag.lidClearanceMm??0);
   if(!fitsCompartment(p,bag)||p.x<0||p.y<0||p.z<0||p.x+p.length>bag.inside.length+EPS||p.y+p.width>bag.inside.width+EPS||p.z+p.height>usableHeight+EPS)return false;
-  return !placementBoxes(p,item).some(box=>containerBlockedBoxes(bag).some(blocked=>boxesIntersect(box,blocked)));
+  return !placementBoxes(p,item).some(box=>blockedSpaces.some(blocked=>boxesIntersect(box,blocked)));
 }
 /** Proper axis rotation; negative coordinates are deliberate and retain exact contact. */
 export function gravityBox(box:GeometryBox,up:GravityUp):GeometryBox{
@@ -204,14 +204,14 @@ export function hasPackingAndTravelSupport(p:Placement,placed:Placement[],items:
   return hasGeometrySupport(p,placed,items,fraction,up,floor);
 }
 /** Fixed orientation, straight downward entry: recesses must remain reachable from above. */
-export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,bag:Container):boolean {
+export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,bag:Container,blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag)):boolean {
   const top=bag.inside.height;
-  const obstacles=[...containerBlockedBoxes(bag),...placed.filter(other=>other.containerId===p.containerId).flatMap(other=>placementBoxes(other,items.get(other.instanceId)))];
+  const obstacles=[...blockedSpaces,...placed.filter(other=>other.containerId===p.containerId).flatMap(other=>placementBoxes(other,items.get(other.instanceId)))];
   return !placementBoxes(p,items.get(p.instanceId)).some(b=>obstacles.some(o=>boxesIntersect({...b,height:Math.max(b.height,top-b.z+p.height)},o)));
 }
 
-export function contactPositions(bag:Container,orientation:DimensionsMm&{rotation:number},item:ShapeItem,placed:Placement[],items:Map<string,ShapeItem>,region:GeometryBox={x:0,y:0,z:0,...bag.inside,height:usableContainerHeight(bag)}) {
-  const local=placementBoxes({x:0,y:0,z:0,...orientation},item),obstacles=[...placed.flatMap(p=>placementBoxes(p,items.get(p.instanceId))),...containerBlockedBoxes(bag)];
+export function contactPositions(bag:Container,orientation:DimensionsMm&{rotation:number},item:ShapeItem,placed:Placement[],items:Map<string,ShapeItem>,region:GeometryBox={x:0,y:0,z:0,...bag.inside,height:usableContainerHeight(bag)},blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag)) {
+  const local=placementBoxes({x:0,y:0,z:0,...orientation},item),obstacles=[...placed.flatMap(p=>placementBoxes(p,items.get(p.instanceId))),...blockedSpaces];
   const values=[new Set([region.x,region.x+region.length-orientation.length]),new Set([region.y,region.y+region.width-orientation.width]),new Set([region.z])],mins=['x','y','z'] as const;
   for(const b of obstacles)for(const c of local)for(let axis=0;axis<3;axis++){
     values[axis].add(b[mins[axis]]+b[axes[axis]]-c[mins[axis]]);
