@@ -72,6 +72,42 @@ describe('buildPlan', () => {
     }
   });
 
+  it('summarizes placements independently for each selected bag', () => {
+    const { trip, items, bags } = fresh();
+    const firstItem = customItem({ id: 'summary-first', massGrams: 120 });
+    const secondItem = customItem({ id: 'summary-second', massGrams: 240 });
+    items.splice(0, items.length, firstItem, secondItem);
+    const secondBag = { ...structuredClone(bags[0]), id: 'summary-second-bag', name: 'Second bag' };
+    bags.push(secondBag);
+    trip.containerIds = [bags[0].id, secondBag.id];
+    trip.entries = [firstItem, secondItem].map((item, index) => ({
+      id: `summary-entry-${index + 1}`,
+      itemId: item.id,
+      travellerId: trip.travellers[0].id,
+      quantity: index === 0 ? 2 : 1,
+      priority: 'required',
+      accessPriority: 3,
+      required: true,
+      containerId: index === 0 ? bags[0].id : secondBag.id,
+    }));
+
+    const plan = buildPlan(trip, items, bags);
+    const itemByInstance = new Map(plan.placements.map(placement => {
+      const entry = trip.entries.find(candidate => candidate.id === placement.entryId)!;
+      const item = items.find(candidate => candidate.id === entry.itemId)!;
+      return [placement.instanceId, item] as const;
+    }));
+
+    for (const summary of plan.summaries) {
+      const inside = plan.placements.filter(placement => placement.containerId === summary.containerId);
+      const plannedItems = inside.map(placement => itemByInstance.get(placement.instanceId)!);
+      expect(summary.itemCount).toBe(inside.length);
+      expect(summary.usedMassGrams).toBe(plannedItems.reduce((sum, item) => sum + (item.massRangeGrams?.max ?? item.massGrams ?? 0), 0));
+      expect(summary.volumeUsedMm3).toBe(plannedItems.reduce((sum, item) => sum + item.dimensions.length * item.dimensions.width * item.dimensions.height, 0));
+    }
+    expect(plan.summaries.map(summary => summary.itemCount)).toEqual([2, 1]);
+  });
+
   it('keeps a saved placement in place when rebuilding the plan', () => {
     const { trip, items, bags } = fresh();
     const initial = buildPlan(trip, items, bags);
