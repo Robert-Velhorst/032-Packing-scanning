@@ -28,7 +28,6 @@ import type { ItemDraft } from './components/ItemCapture';
 import { useScannerCapabilities } from './scanning/useScannerCapabilities';
 import { LocalPhoto } from './components/LocalPhoto';
 import type { TripSuggestion } from './trip-assistant';
-import { buildPlan } from './optimizer';
 import {  markPackingItemUnavailable, rejectPackingPlacement, setPackingItemComplete } from './packing-progress';
 import { measurementInput } from './measurement-input';
 import {workspaceStorage} from './storage';
@@ -89,6 +88,8 @@ function PackingApp() {
   const [editingPhotoUrl, setEditingPhotoUrl] = useState<string>();
   const [syncStatus, setSyncStatus] = useState<'loading' | 'saved' | 'saving' | 'error'>('loading');
   const [syncError, setSyncError] = useState('');
+  const [plan, setPlan] = useState<PackingPlan>();
+  const [planError, setPlanError] = useState('');
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
@@ -147,9 +148,20 @@ function PackingApp() {
     previousPlanContainers.current = stable;
     return stable;
   }, [activeContainers]);
-  // Solve only when the active pack or one of its referenced records changes.
-  const plan = useMemo(() => data && activeTrip ? buildPlan(activeTrip, planItems, planContainers) : undefined,
-    [data !== undefined, planItems, planContainers, activeTrip?.id, activeTrip?.entries, activeTrip?.containerIds, activeTrip?.mode, activeTrip?.lockedPlacements, activeTrip?.unavailableInstanceIds, activeTrip?.rejectedPlacements, activeTrip?.separationRules]);
+  // Keep planner code out of the startup bundle so the app shell can render first.
+  useEffect(() => {
+    let active = true;
+    setPlan(undefined);
+    setPlanError('');
+    if (!data || !activeTrip) return () => { active = false; };
+    void import('./optimizer').then(({ buildPlan }) => {
+      if (!active) return;
+      setPlan(buildPlan(activeTrip, planItems, planContainers));
+    }).catch((error: unknown) => {
+      if (active) setPlanError(error instanceof Error ? error.message : 'The packing plan could not be prepared.');
+    });
+    return () => { active = false; };
+  }, [data !== undefined, planItems, planContainers, activeTrip?.id, activeTrip?.entries, activeTrip?.containerIds, activeTrip?.mode, activeTrip?.lockedPlacements, activeTrip?.unavailableInstanceIds, activeTrip?.rejectedPlacements, activeTrip?.separationRules]);
   useEffect(() => {
     if (data?.settings.automaticPhotoDeletionDays) prunePhotos(data.settings.automaticPhotoDeletionDays).catch(() => undefined);
   }, [data?.settings.automaticPhotoDeletionDays]);
@@ -453,6 +465,7 @@ function PackingApp() {
       {device.pendingPhoto&&<div className="pending-photo-banner" role="region" aria-label="Pending item photo"><p>{device.photoMatches?'An encrypted item photo draft is waiting. Resume it to review; nothing enters your item library until you save.':'An encrypted photo draft belongs to a different workspace. Open that workspace to resume it.'}</p><div>{device.photoMatches&&<button className="button button-primary" disabled={device.fileBusy||!!capture} onClick={()=>void resumeItemPhoto()}>Resume item photo draft</button>}<button className="button button-secondary" disabled={device.fileBusy||!!capture} onClick={()=>void device.discardItemPhoto().catch(error=>setNotice(error instanceof Error?error.message:'Discard failed.'))}>Discard item photo draft</button></div>{device.photoNotice&&<p role="status">{device.photoNotice}</p>}</div>}
       {notice && <div className="notice-banner" role="status"><span>{notice}</span><button className="icon-button" aria-label="Dismiss" onClick={() => setNotice('')}><X size={16}/></button></div>}
       {!activeTrip && page !== 'settings' ? <EmptyState onNew={() => setCapture({ kind: 'trip' })} onSettings={() => setPage('settings')}/> : <>
+        {activeTrip && !plan && page !== 'items' && page !== 'bags' && page !== 'settings' && <div className="secondary-page" role="status">{planError || 'Preparing your packing plan…'}</div>}
         {page === 'workspace' && activeTrip && plan && <Workspace
           trip={activeTrip} data={data} containers={activeContainers} selectedContainer={selectedContainer} plan={plan} canvasView={canvasView} layer={layer} getPhoto={getPhoto} unit={data.unitSystem}
           onSeparationRules={rules=>updateTrip(trip=>({...trip,separationRules:rules}))}
