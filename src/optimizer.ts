@@ -322,6 +322,8 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
   const useShapeSequence=items.some(item=>item.packingShape)||containers.some(bag=>bag.packingInterior||bag.compartments);
   const placements: Placement[] = [];
   const placementsByContainer = new Map(containers.map(container => [container.id, [] as Placement[]]));
+  const massByContainer = new Map(containers.map(container => [container.id, container.tareGrams ?? 0]));
+  const unweighedByContainer = new Map(containers.map(container => [container.id, 0]));
   const placementByInstanceId = new Map<string, Placement>();
   const containerById = new Map(containers.map(container => [container.id, container]));
   const excluded: ExcludedItem[] = [];
@@ -361,6 +363,8 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     const locked={ ...saved, locked: true,...(useShapeSequence?{insertionOrder:placements.length+1}:{}) };
     placements.push(locked);
     bagPlacements.push(locked);
+    massByContainer.set(saved.containerId, (massByContainer.get(saved.containerId) ?? 0) + (item.upperMassGrams ?? 0));
+    if (item.upperMassGrams === undefined) unweighedByContainer.set(saved.containerId, (unweighedByContainer.get(saved.containerId) ?? 0) + 1);
     placementByInstanceId.set(locked.instanceId,locked);
     let spaces=freeSpaces.get(container.id)??[];for(const box of placementBoxes(saved,item))spaces=splitFreeSpaces(spaces,box);freeSpaces.set(container.id,spaces);
   }
@@ -396,6 +400,8 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
       excluded.push({ instanceId: item.instanceId, entryId: item.entryId, itemId: item.itemId, name: item.name, required: item.required,
         reason: `Saved locked placements conflict with recorded ${separationConflicts.has(bagId) ? 'separation rules' : massConflict ? 'weight limits' : 'geometry, assignments or stacking limits'}. ${detail} Check physically and undo packed or unlock before moving them. New placements in this bag are paused.` });
     }
+    massByContainer.set(bagId, containerById.get(bagId)?.tareGrams ?? 0);
+    unweighedByContainer.set(bagId, 0);
     for (let i = placements.length - 1; i >= 0; i--) if (placements[i].containerId === bagId) placements.splice(i, 1);
     placementsByContainer.set(bagId,[]);
     freeSpaces.set(bagId, []);
@@ -410,11 +416,13 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     let best: { placement: Placement; container: Container; candidate: Candidate; lookahead: number; affinity: boolean } | undefined;
     const lookaheadCache = new Map<string,number>();
     const balancingBags = mode === 'balanced' ? candidateContainers.filter(bag => !blockedBagIds.has(bag.id) && !containerSpaceError(bag) && !interiorSupportError(bag.packingInterior)) : [];
-    const bagCosts = balancedBagCosts(balancingBags, placements, itemById, item.upperMassGrams);
+    const completeBalancedTotals = balancingBags.every(bag => typeof bag.tareGrams === 'number' && Number.isFinite(bag.tareGrams) && bag.tareGrams >= 0
+      && unweighedByContainer.get(bag.id) === 0);
+    const bagCosts = balancedBagCosts(balancingBags, placements, itemById, item.upperMassGrams, completeBalancedTotals ? massByContainer : null);
 
     for (const container of candidateContainers) {
       if (blockedBagIds.has(container.id)||containerSpaceError(container)||interiorSupportError(container.packingInterior)) continue;
-      const massAfter = massInContainer(container.id, placements, itemById, container.tareGrams ?? 0) + (item.upperMassGrams ?? 0);
+      const massAfter = (massByContainer.get(container.id) ?? container.tareGrams ?? 0) + (item.upperMassGrams ?? 0);
       if (container.massLimitGrams !== undefined && massAfter > container.massLimitGrams + EPSILON) continue;
       const futureShapes=container.compartments?[]:shapeItems.filter(i=>i.instanceId!==item.instanceId&&!placedIds.has(i.instanceId)
         && eligibleForBag(i,container)
@@ -526,7 +534,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
           ? candidateContainers.map(container=>container.name+': '+interiorSupportError(container.packingInterior)).join(' ')
           : candidateContainers.every(container=>!!containerSpaceError(container))
           ? candidateContainers.map(container=>container.name+': '+containerSpaceError(container)).join(' ')
-          : item.upperMassGrams !== undefined && candidateContainers.every((container) => container.massLimitGrams !== undefined && massInContainer(container.id, placements, itemById, container.tareGrams ?? 0) + item.upperMassGrams! > container.massLimitGrams!)
+          : item.upperMassGrams !== undefined && candidateContainers.every((container) => container.massLimitGrams !== undefined && (massByContainer.get(container.id) ?? container.tareGrams ?? 0) + item.upperMassGrams! > container.massLimitGrams!)
           ? 'Adding this item would exceed the recorded bag weight limit.'
           : candidateContainers.every(container => blockedBagIds.has(container.id))
           ? massConflicts.some(c => candidateContainers.some(b => b.id === c.containerId))
@@ -547,6 +555,8 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
 
     placements.push(best.placement);
     placementsByContainer.get(best.container.id)?.push(best.placement);
+    massByContainer.set(best.container.id, (massByContainer.get(best.container.id) ?? best.container.tareGrams ?? 0) + (item.upperMassGrams ?? 0));
+    if (item.upperMassGrams === undefined) unweighedByContainer.set(best.container.id, (unweighedByContainer.get(best.container.id) ?? 0) + 1);
     placedIds.add(item.instanceId);
     let remaining=freeSpaces.get(best.container.id)??[];for(const box of placementBoxes(best.placement,item))remaining=splitFreeSpaces(remaining,box);freeSpaces.set(best.container.id,remaining);
   }

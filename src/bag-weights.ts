@@ -59,24 +59,29 @@ function completeTotals(containers: Container[], placements: Placement[], items:
   const totals = new Map<string, number>();
   for (const bag of containers) {
     if (!weight(bag.tareGrams)) return;
-    let total = bag.tareGrams;
-    for (const placement of placements) if (placement.containerId === bag.id) {
-      const mass = items.get(placement.instanceId)?.upperMassGrams;
-      if (!weight(mass)) return;
-      total += mass;
-    }
-    if (!Number.isFinite(total)) return;
-    totals.set(bag.id, total);
+    totals.set(bag.id, bag.tareGrams);
+  }
+  for (const placement of placements) {
+    const total = totals.get(placement.containerId);
+    if (total === undefined) continue;
+    const mass = items.get(placement.instanceId)?.upperMassGrams;
+    if (!weight(mass)) return;
+    const next = total + mass;
+    if (!Number.isFinite(next)) return;
+    totals.set(placement.containerId, next);
   }
   return totals;
 }
 
 /** Incremental squared totals favor the lighter eligible bag, including tare.
  * Missing weights disable this preference; every physical placement gate still runs. */
-export function balancedBagCosts(containers: Container[], placements: Placement[], items: Map<string, PlanItem>, mass: number | undefined): Map<string, number> {
+export function balancedBagCosts(containers: Container[], placements: Placement[], items: Map<string, PlanItem>, mass: number | undefined, currentTotals?: ReadonlyMap<string, number> | null): Map<string, number> {
   const costs = new Map<string, number>();
   if (containers.length < 2 || !weight(mass) || mass === 0) return costs;
-  const totals = completeTotals(containers, placements, items);
+  const totals = currentTotals === undefined ? completeTotals(containers, placements, items)
+    : currentTotals === null ? undefined
+      : containers.every(bag => weight(currentTotals.get(bag.id)))
+        ? new Map(containers.map(bag => [bag.id, currentTotals.get(bag.id)!])) : undefined;
   if (!totals) return costs;
   const scale = Math.max(mass, ...totals.values());
   const normalizedMass = mass / scale;
