@@ -33,6 +33,7 @@ export function separationConflict(rule: SeparationRule,a: Placement,b: Placemen
 }
 
 export function placementSeparationError(candidate: Placement,positions: Placement[],rules: SeparationRule[],items: Map<string,ShapeItem>): string | undefined {
+  if(!rules.length)return;
   for (const other of positions) if (other.instanceId !== candidate.instanceId)
     for (const rule of rules) { const conflict = separationConflict(rule,candidate,other,items); if (conflict) return conflict; }
 }

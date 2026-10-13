@@ -468,7 +468,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
               length: orientation.length,
               width: orientation.width,
               height: orientation.height,
-              layer: 1 + bagPlacements.reduce((maxLayer, placed) => placed.compartmentId===space.compartmentId && placed.z + placed.height <= position.z + EPSILON ? Math.max(maxLayer, placed.layer) : maxLayer, 0),
+              layer: 1,
               rotation: orientation.rotation,
               ...(useShapeSequence?{insertionOrder:placements.length+1}:{}),
               ...(item.packingShape?{shapeKey:shapeKey(item.packingShape)}:{}),
@@ -478,7 +478,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             if(!fitsGeometrySpaceInValidatedContainer(placement,container,item,blockedSpaces.get(container.id))||!hasPackingAndTravelSupport(placement,bagPlacements,itemById,mode==='fragile_protection'?1:.65,container))continue;
             if(bagPlacements.some(p=>geometryIntersects(placement,p,itemById)))continue;
             if(hasShapes&&!hasVerticalEntry(placement,bagPlacements,itemById,container,blockedSpaces.get(container.id)))continue;
-            const separationError = placementSeparationError(placement,[...placements,...savedMassPositions],rules,itemById);
+            const separationError = rules.length?placementSeparationError(placement,[...placements,...savedMassPositions],rules,itemById):undefined;
             if(separationError){separationFailure=separationError;continue;}
             if (rejected.some((failed) => samePlacementGeometry(failed, placement))) continue;
             const needsStackCheck = useShapeSequence || stackSensitiveIds.has(item.instanceId) || bagPlacements.some(placed => stackSensitiveIds.has(placed.instanceId));
@@ -524,6 +524,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             const compareWeight = best && container.id !== best.container.id && lookahead === 0 && best.lookahead === 0
               && weightCost !== undefined && priorCost !== undefined && Math.abs(weightCost - priorCost) > 1e-12;
             if (!best || (compareAffinity ? affinity : compareWeight ? weightCost! < priorCost! : score < best.candidate.score)) {
+              placement.layer=1+bagPlacements.reduce((maxLayer, placed) => placed.compartmentId===space.compartmentId && placed.z + placed.height <= position.z + EPSILON ? Math.max(maxLayer, placed.layer) : maxLayer, 0);
               best = { placement, container, lookahead, affinity, candidate: { ...candidateBase, rotation: orientation.rotation, score, dimensions: orientation } };
             }
           }
