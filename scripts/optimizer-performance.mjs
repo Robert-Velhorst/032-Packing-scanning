@@ -137,16 +137,23 @@ try {
     assertRectangularPlacementsDoNotOverlap(warmup);
     const expectedFingerprint = fingerprint(warmup);
     const samples = [];
+    const cpuSamples = [];
     for (let run = 0; run < runs; run += 1) {
+      const cpuStart = process.cpuUsage();
       const start = performance.now();
       const plan = buildPlan(input.trip, input.items, input.bags);
       samples.push((performance.now() - start) / 1000);
+      const cpu = process.cpuUsage(cpuStart);
+      cpuSamples.push((cpu.user + cpu.system) / 1_000_000);
       if (plan.placements.length !== count) throw new Error(`Run ${run + 1} placed ${plan.placements.length} of ${count} items.`);
       if (fingerprint(plan) !== expectedFingerprint) throw new Error(`Run ${run + 1} changed the warm-up placements.`);
       assertRectangularPlacementsDoNotOverlap(plan);
     }
     const sorted = [...samples].sort((left, right) => left - right);
-    results.push({ itemCount: count, medianSeconds: sorted[Math.floor(sorted.length / 2)], samplesSeconds: samples, placed: count, placementFingerprint: expectedFingerprint });
+    const sortedCpu = [...cpuSamples].sort((left, right) => left - right);
+    results.push({ itemCount: count, medianSeconds: sorted[Math.floor(sorted.length / 2)], samplesSeconds: samples,
+      medianCpuSeconds: sortedCpu[Math.floor(sortedCpu.length / 2)], samplesCpuSeconds: cpuSamples,
+      placed: count, placementFingerprint: expectedFingerprint });
   }
   console.log(JSON.stringify({
     fixture: shapeCount ? `varied rectangles with ${shapeCount} synthetic voxel U-shapes in a 1000x800x500 mm bag`
