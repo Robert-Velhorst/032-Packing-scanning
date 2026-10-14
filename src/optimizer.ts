@@ -795,7 +795,11 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
       if(!containsOuter||candidate.index<inner.index){keep[inner.index]=false;break;}
     }
   }
-  return unique.filter((_,index)=>keep[index]);
+  // Reuse the already allocated geometry array instead of allocating a filtered copy.
+  let remainingCount=0;
+  for(let index=0;index<unique.length;index++)if(keep[index])unique[remainingCount++]=unique[index];
+  unique.length=remainingCount;
+  return unique;
 }
 
 function containsSpace(outer: FreeSpace, inner: FreeSpace) {
