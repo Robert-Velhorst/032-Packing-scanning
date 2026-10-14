@@ -1,5 +1,6 @@
 import { performance } from 'node:perf_hooks';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { createServer } from 'vite';
 
 const value = (name, fallback) => {
@@ -9,6 +10,7 @@ const value = (name, fallback) => {
 const counts = value('counts', '50,100,250').split(',').map(Number);
 const runs = Number(value('runs', '3'));
 const shapeCount = Number(value('shapes', '0'));
+const optimizerRef = value('optimizer-ref', '');
 const assertRectangularPlacementsDoNotOverlap = (plan) => {
   if (shapeCount > 0) return;
   const placements = plan.placements;
@@ -72,7 +74,17 @@ function benchmarkShape() {
   };
 }
 
-const vite = await createServer({ optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+const vite = await createServer({
+  plugins: optimizerRef ? [{
+    name: 'optimizer-benchmark-source',
+    enforce: 'pre',
+    transform(_source, id) {
+      if (!id.replaceAll('\\', '/').endsWith('/src/optimizer.ts')) return null;
+      return execFileSync('git', ['show', `${optimizerRef}:src/optimizer.ts`], { encoding: 'utf8' });
+    },
+  }] : [],
+  optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error',
+});
 try {
   const { createInitialData } = await vite.ssrLoadModule('/src/seed.ts');
   const { buildPlan } = await vite.ssrLoadModule('/src/optimizer.ts');
@@ -160,6 +172,7 @@ try {
       : 'varied rectangular items in a 1000x800x500 mm bag',
     dimensions: shapeCount ? '120x100x60 mm voxel U-shapes mixed with 48-200 x 36-162 x 18-120 mm rectangles'
       : '48-200 x 36-162 x 18-120 mm, deterministic per item index',
+    optimizerRef: optimizerRef || 'working tree',
     node: process.version,
     shapeCount,
     warmupRunsPerSize: 1,
