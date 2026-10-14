@@ -62,13 +62,14 @@ const ShapeDirectionView=memo(function ShapeDirectionView({shape,face,upright}:{
     scene.add(new THREE.HemisphereLight('#ffffff','#cad7cb',2));const light=new THREE.DirectionalLight('#ffffff',2);light.position.set(2,3,4);scene.add(light);
     const camera=new THREE.PerspectiveCamera(38,1,.01,30),home=new THREE.Vector3(2.1,1.5,2.5);camera.position.copy(home);
     const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.minDistance=1.4;controls.maxDistance=5;controls.enablePan=false;controls.update();api.current={camera,controls,home};
-    const resize=()=>{if(!active)return;const width=Math.max(1,host.clientWidth),height=Math.max(1,host.clientHeight);renderer.setSize(width,height);camera.aspect=width/height;camera.updateProjectionMatrix();};
-    const observer=new ResizeObserver(resize);observer.observe(host);resize();
     let frame=0;
-    const draw=()=>{if(!active)return;controls.update();renderer.render(scene,camera);const labels=labelsRef.current?.querySelectorAll<HTMLElement>('[data-face]');labelPoints.forEach((point,index)=>{const p=point.clone().project(camera),label=labels?.[index];if(label){label.style.left=`${(p.x+1)*host.clientWidth/2}px`;label.style.top=`${(1-p.y)*host.clientHeight/2}px`;label.hidden=p.z>1||p.z< -1;}});frame=requestAnimationFrame(draw);};
-    const lost=(event:Event)=>{event.preventDefault();if(active){setState('unavailable');cancelAnimationFrame(frame);}};
-    renderer.domElement.addEventListener('webglcontextlost',lost);draw();setState('ready');
-    return()=>{active=false;cancelAnimationFrame(frame);observer.disconnect();controls.dispose();api.current=undefined;renderer.domElement.removeEventListener('webglcontextlost',lost);
+    const draw=()=>{frame=0;if(!active||renderer.getContext().isContextLost())return;const moving=controls.update();renderer.render(scene,camera);const labels=labelsRef.current?.querySelectorAll<HTMLElement>('[data-face]');labelPoints.forEach((point,index)=>{const p=point.clone().project(camera),label=labels?.[index];if(label){label.style.left=`${(p.x+1)*host.clientWidth/2}px`;label.style.top=`${(1-p.y)*host.clientHeight/2}px`;label.hidden=p.z>1||p.z< -1;}});if(moving)scheduleDraw();};
+    const scheduleDraw=()=>{if(active&&!frame)frame=requestAnimationFrame(draw);};
+    const resize=()=>{if(!active)return;const width=Math.max(1,host.clientWidth),height=Math.max(1,host.clientHeight);renderer.setSize(width,height);camera.aspect=width/height;camera.updateProjectionMatrix();scheduleDraw();};
+    const observer=new ResizeObserver(resize);observer.observe(host);resize();
+    const changed=()=>scheduleDraw(),lost=(event:Event)=>{event.preventDefault();if(active){setState('unavailable');cancelAnimationFrame(frame);frame=0;}},restored=()=>{if(active){resize();setState('ready');scheduleDraw();}};
+    controls.addEventListener('change',changed);renderer.domElement.addEventListener('webglcontextlost',lost);renderer.domElement.addEventListener('webglcontextrestored',restored);scheduleDraw();setState('ready');
+    return()=>{active=false;cancelAnimationFrame(frame);observer.disconnect();controls.removeEventListener('change',changed);controls.dispose();api.current=undefined;renderer.domElement.removeEventListener('webglcontextlost',lost);renderer.domElement.removeEventListener('webglcontextrestored',restored);
       const geometries=new Set<THREE.BufferGeometry>(),materials=new Set<THREE.Material>();scene.traverse(object=>{if(object instanceof THREE.Mesh||object instanceof THREE.Line){geometries.add(object.geometry);for(const material of Array.isArray(object.material)?object.material:[object.material])materials.add(material);}});geometries.forEach(value=>value.dispose());materials.forEach(value=>value.dispose());const context=renderer.getContext(),releaseContext=!context.isContextLost()&&!!context.getExtension('WEBGL_lose_context');renderer.dispose();if(releaseContext)renderer.forceContextLoss();renderer.domElement.remove();};
   // The review record and selected label do not rebuild an unchanged source-frame mesh.
   },[key,direction]);

@@ -1,7 +1,7 @@
 import {compartmentFor,fitsCompartment} from './compartments.ts';
 import type { Container, DimensionsMm, LibraryItem, PackingShape, Placement } from './types.ts';
 import { parseReconstructedSolid, type SolidSurface } from './scanning/reconstructed-solid.ts';
-import { containerBlockedBoxes,containerSpaceError, usableContainerHeight } from './container-space.ts';
+import { containerBlockedBoxes,containerSpaceError, usableContainerHeight, type SpaceBox } from './container-space.ts';
 import { uprightRecordError } from './upright.ts';
 import { interiorFrame, interiorSupportError, interiorTravelUp } from './packing-interior.ts';
 
@@ -124,14 +124,22 @@ export function boxesIntersect(a:GeometryBox,b:GeometryBox):boolean {
 }
 export function geometryIntersects(a:Placement,b:Placement,items:Map<string,ShapeItem>):boolean {
   if(!boxesIntersect(a,b))return false;
+  if(!items.get(a.instanceId)?.packingShape&&!items.get(b.instanceId)?.packingShape)return true;
   return placementBoxes(a,items.get(a.instanceId)).some(left=>placementBoxes(b,items.get(b.instanceId)).some(right=>boxesIntersect(left,right)));
 }
 export function fitsGeometrySpace(p:Placement,bag:Container,item?:ShapeItem):boolean {
-  if(containerSpaceError(bag)||!fitsCompartment(p,bag)||p.x<0||p.y<0||p.z<0||p.x+p.length>bag.inside.length+EPS||p.y+p.width>bag.inside.width+EPS||p.z+p.height>usableContainerHeight(bag)+EPS)return false;
-  return !placementBoxes(p,item).some(box=>containerBlockedBoxes(bag).some(blocked=>boxesIntersect(box,blocked)));
+  if(containerSpaceError(bag))return false;
+  return fitsGeometrySpaceInValidatedContainer(p,bag,item);
+}
+/** Use only after validating this unchanged bag record for the current plan. */
+export function fitsGeometrySpaceInValidatedContainer(p:Placement,bag:Container,item?:ShapeItem,blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag)):boolean {
+  const usableHeight=bag.inside.height-(bag.lidClearanceMm??0);
+  if(!fitsCompartment(p,bag)||p.x<0||p.y<0||p.z<0||p.x+p.length>bag.inside.length+EPS||p.y+p.width>bag.inside.width+EPS||p.z+p.height>usableHeight+EPS)return false;
+  return !placementBoxes(p,item).some(box=>blockedSpaces.some(blocked=>boxesIntersect(box,blocked)));
 }
 /** Proper axis rotation; negative coordinates are deliberate and retain exact contact. */
 export function gravityBox(box:GeometryBox,up:GravityUp):GeometryBox{
+  if(up.axis===2&&up.sign===1)return box;
   const frame=interiorFrame(up.axis,up.sign),origin=[box.x,box.y,box.z],size=[box.length,box.width,box.height];
   const min=frame.axis.map((a,i)=>frame.sign[i]>0?origin[a]:-origin[a]-size[a]),sides=frame.axis.map(a=>size[a]);
   return {x:min[0],y:min[1],z:min[2],length:sides[0],width:sides[1],height:sides[2]};
@@ -142,7 +150,7 @@ function contactFaces(boxes:GeometryBox[],floor:number):ContactFaces{
   const down=boxes.flatMap(b=>{let patches:Face[]=[{x:b.x,y:b.y,z:b.z,length:b.length,width:b.width}];for(const below of boxes)if(Math.abs(below.z+below.height-b.z)<=EPS)patches=patches.flatMap(f=>subtractFace(f,below));return patches;});
   return {bottom,down,top};
 }
-function faces(p:Placement,item:ShapeItem|undefined,side:'bottom'|'down'|'top',up:GravityUp=packingUp):Face[] {
+function facePatches(p:Placement,item:ShapeItem|undefined,side:'bottom'|'down'|'top',up:GravityUp=packingUp):{patches:Face[];offsetX:number;offsetY:number;offsetZ:number} {
   if(up.axis!==2||up.sign!==1){
     const frame=interiorFrame(up.axis,up.sign),origin=[p.x,p.y,p.z],offset=frame.axis.map((a,i)=>frame.sign[i]*origin[a]);
     let patches:ContactFaces;
@@ -152,48 +160,136 @@ function faces(p:Placement,item:ShapeItem|undefined,side:'bottom'|'down'|'top',u
       patches=geometry.directional.get(key)??contactFaces(geometry.boxes.map(b=>gravityBox(b,up)),localBounds.z);
       geometry.directional.set(key,patches);
     }else patches=contactFaces([localBounds],localBounds.z);
-    return patches[side].map(f=>({...f,x:f.x+offset[0],y:f.y+offset[1],z:f.z+offset[2]}));
+    return {patches:patches[side],offsetX:offset[0],offsetY:offset[1],offsetZ:offset[2]};
   }
   const local=item?.packingShape?localGeometry(item.packingShape,p.rotation)[side]:[{x:0,y:0,z:side==='top'?p.height:0,length:p.length,width:p.width}];
-  return local.map(f=>({...f,x:f.x+p.x,y:f.y+p.y,z:f.z+p.z}));
+  return {patches:local,offsetX:p.x,offsetY:p.y,offsetZ:p.z};
 }
 export function geometrySupportArea(upper:Placement,lower:Placement,items:Map<string,ShapeItem>,up:GravityUp=packingUp):number {
   if(upper.containerId!==lower.containerId||upper.compartmentId!==lower.compartmentId)return 0;
-  const notAbove=up.axis===2&&up.sign===1?upper.z<=lower.z+EPS:gravityBox(upper,up).z<=gravityBox(lower,up).z+EPS;
-  if(notAbove)return 0;
+  const upperItem=items.get(upper.instanceId),lowerItem=items.get(lower.instanceId);
+  if(up.axis===2&&up.sign===1&&upperItem?.packingShape&&!lowerItem?.packingShape){
+    if(upper.z<=lower.z+EPS||Math.abs(upper.z-(lower.z+lower.height))>EPS)return 0;
+    if(Math.min(upper.x+upper.length,lower.x+lower.length)-Math.max(upper.x,lower.x)<=EPS
+      ||Math.min(upper.y+upper.width,lower.y+lower.width)-Math.max(upper.y,lower.y)<=EPS)return 0;
+    let area=0;
+    for(const base of localGeometry(upperItem.packingShape,upper.rotation??0).bottom){
+      const length=Math.min(upper.x+base.x+base.length,lower.x+lower.length)-Math.max(upper.x+base.x,lower.x);
+      const width=Math.min(upper.y+base.y+base.width,lower.y+lower.width)-Math.max(upper.y+base.y,lower.y);
+      if(length>EPS&&width>EPS)area+=length*width;
+    }
+    return area;
+  }
+  if(up.axis===2&&up.sign===1&&!items.get(upper.instanceId)?.packingShape&&!items.get(lower.instanceId)?.packingShape){
+    if(upper.z<=lower.z+EPS)return 0;
+    return rectangleFaceContact(upper,lower);
+  }
+  const upperBounds=gravityBox(upper,up),lowerBounds=gravityBox(lower,up);
+  if(upperBounds.z<=lowerBounds.z+EPS||upperBounds.z>lowerBounds.z+lowerBounds.height+EPS
+    ||upperBounds.x+upperBounds.length<=lowerBounds.x+EPS||lowerBounds.x+lowerBounds.length<=upperBounds.x+EPS
+    ||upperBounds.y+upperBounds.width<=lowerBounds.y+EPS||lowerBounds.y+lowerBounds.width<=upperBounds.y+EPS)return 0;
   return faceContact(upper,lower,items,'bottom',up);
 }
 export function geometryContactArea(upper:Placement,lower:Placement,items:Map<string,ShapeItem>,up:GravityUp=packingUp):number {
   if(upper.instanceId===lower.instanceId||upper.containerId!==lower.containerId||upper.compartmentId!==lower.compartmentId)return 0;
+  const upperBounds=gravityBox(upper,up),lowerBounds=gravityBox(lower,up);
+  if(upperBounds.x+upperBounds.length<=lowerBounds.x+EPS||lowerBounds.x+lowerBounds.length<=upperBounds.x+EPS
+    ||upperBounds.y+upperBounds.width<=lowerBounds.y+EPS||lowerBounds.y+lowerBounds.width<=upperBounds.y+EPS
+    ||upperBounds.z+upperBounds.height<lowerBounds.z-EPS||lowerBounds.z+lowerBounds.height<upperBounds.z-EPS)return 0;
   return faceContact(upper,lower,items,'down',up);
 }
 function faceContact(upper:Placement,lower:Placement,items:Map<string,ShapeItem>,side:'bottom'|'down',up:GravityUp):number {
   const upperItem=items.get(upper.instanceId),lowerItem=items.get(lower.instanceId);
   if(up.axis===2&&up.sign===1&&!upperItem?.packingShape&&!lowerItem?.packingShape){
-    if(Math.abs(upper.z-(lower.z+lower.height))>EPS)return 0;
-    const length=Math.min(upper.x+upper.length,lower.x+lower.length)-Math.max(upper.x,lower.x);
-    const width=Math.min(upper.y+upper.width,lower.y+lower.width)-Math.max(upper.y,lower.y);
-    return length>EPS&&width>EPS?length*width:0;
+    return rectangleFaceContact(upper,lower);
   }
   let area=0;
-  for(const base of faces(upper,upperItem,side,up))for(const top of faces(lower,lowerItem,'top',up))if(Math.abs(base.z-top.z)<=EPS){
-    const l=Math.min(base.x+base.length,top.x+top.length)-Math.max(base.x,top.x),w=Math.min(base.y+base.width,top.y+top.width)-Math.max(base.y,top.y);
+  const bases=facePatches(upper,upperItem,side,up),tops=facePatches(lower,lowerItem,'top',up);
+  for(const base of bases.patches)for(const top of tops.patches)if(Math.abs(base.z+bases.offsetZ-top.z-tops.offsetZ)<=EPS){
+    const l=Math.min(base.x+bases.offsetX+base.length,top.x+tops.offsetX+top.length)-Math.max(base.x+bases.offsetX,top.x+tops.offsetX),w=Math.min(base.y+bases.offsetY+base.width,top.y+tops.offsetY+top.width)-Math.max(base.y+bases.offsetY,top.y+tops.offsetY);
     if(l>EPS&&w>EPS)area+=l*w;
   }
   return area;
 }
-export function hasGeometrySupport(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,fraction:number,up:GravityUp=packingUp,floor=0):boolean {
-  if(up.axis===2&&up.sign===1&&!items.get(p.instanceId)?.packingShape&&Math.abs(p.z-floor)<=EPS)return p.length*p.width>0;
-  const area=faces(p,items.get(p.instanceId),'bottom',up).reduce((sum,f)=>sum+f.length*f.width,0);
-  if(area<=0)return false;
-  const onFloor=up.axis===2&&up.sign===1?Math.abs(p.z-floor)<=EPS:Math.abs(gravityBox(p,up).z-floor)<=EPS;
-  if(onFloor)return true;
-  return placed.reduce((sum,lower)=>sum+geometrySupportArea(p,lower,items,up),0)+EPS**2>=area*fraction;
+function rectangleFaceContact(upper:GeometryBox,lower:GeometryBox):number {
+  if(Math.abs(upper.z-(lower.z+lower.height))>EPS)return 0;
+  const length=Math.min(upper.x+upper.length,lower.x+lower.length)-Math.max(upper.x,lower.x);
+  const width=Math.min(upper.y+upper.width,lower.y+lower.width)-Math.max(upper.y,lower.y);
+  return length>EPS&&width>EPS?length*width:0;
+}
+type SupportPlaneGroup={shapes:Placement[];rectangles:Map<number,Placement[]>};
+/** Incremental candidate index for rectangular supports; shaped tops may be stepped. */
+export class RectangularSupportIndex {
+  private readonly groups=new Map<string,Map<string|undefined,SupportPlaneGroup>>();
+  private readonly order=new Map<string,number>();
+  private readonly candidateCache=new Map<SupportPlaneGroup,Map<number,Placement[]>>();
+  private nextOrder=0;
+  private readonly items:Map<string,ShapeItem>;
+  constructor(items:Map<string,ShapeItem>,placements:Placement[]=[]){this.items=items;for(const placement of placements)this.add(placement);}
+  add(placement:Placement){
+    let compartments=this.groups.get(placement.containerId);if(!compartments){compartments=new Map();this.groups.set(placement.containerId,compartments);}
+    let group=compartments.get(placement.compartmentId);if(!group){group={shapes:[],rectangles:new Map()};compartments.set(placement.compartmentId,group);}
+    this.candidateCache.delete(group);
+    this.order.set(placement.instanceId,this.nextOrder++);
+    if(this.items.get(placement.instanceId)?.packingShape){group.shapes.push(placement);return;}
+    const plane=Math.floor((placement.z+placement.height)/(2*EPS)),bucket=group.rectangles.get(plane)??[];
+    bucket.push(placement);group.rectangles.set(plane,bucket);
+  }
+  candidates(placement:Placement){
+    const group=this.groups.get(placement.containerId)?.get(placement.compartmentId);if(!group)return [];
+    const plane=Math.floor(placement.z/(2*EPS)),lower=group.rectangles.get(plane-1),center=group.rectangles.get(plane),upper=group.rectangles.get(plane+1);
+    const rectanglePlanes=Number(!!lower)+Number(!!center)+Number(!!upper);
+    if(!group.shapes.length&&rectanglePlanes===1)return lower??center??upper!;
+    if(!group.shapes.length&&rectanglePlanes===0)return [];
+    const cached=this.candidateCache.get(group)?.get(plane);if(cached)return cached;
+    const candidates=group.shapes.length?[...group.shapes]:[];
+    if(lower)candidates.push(...lower);if(center)candidates.push(...center);if(upper)candidates.push(...upper);
+    if(rectanglePlanes>1||(group.shapes.length>0&&rectanglePlanes>0))candidates.sort((left,right)=>(this.order.get(left.instanceId)??0)-(this.order.get(right.instanceId)??0));
+    let byPlane=this.candidateCache.get(group);if(!byPlane){byPlane=new Map();this.candidateCache.set(group,byPlane);}if(byPlane.size>=64)byPlane.clear();byPlane.set(plane,candidates);
+    return candidates;
+  }
+}
+export function hasGeometrySupport(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,fraction:number,up:GravityUp=packingUp,floor=0,supportIndex?:RectangularSupportIndex):boolean {
+  if(up.axis===2&&up.sign===1&&!items.get(p.instanceId)?.packingShape){
+    const area=p.length*p.width;if(area<=0)return false;if(Math.abs(p.z-floor)<=EPS)return true;
+    const required=area*fraction;let supported=0;
+    const indexedCandidates=supportIndex?.candidates(p);
+    for(const lower of indexedCandidates??placed){
+      if(!indexedCandidates&&(lower.containerId!==p.containerId||lower.compartmentId!==p.compartmentId))continue;
+      if(items.get(lower.instanceId)?.packingShape){
+        if(up.axis===2&&up.sign===1&&!maySharePackingSupportFace(p,lower))continue;
+        supported+=geometrySupportArea(p,lower,items,up);
+      }
+      else{
+        if(p.z<=lower.z+EPS||Math.abs(p.z-(lower.z+lower.height))>EPS)continue;
+        const length=Math.min(p.x+p.length,lower.x+lower.length)-Math.max(p.x,lower.x);
+        const width=Math.min(p.y+p.width,lower.y+lower.width)-Math.max(p.y,lower.y);
+        if(length>EPS&&width>EPS)supported+=length*width;
+      }
+      if(supported+EPS**2>=required)return true;
+    }
+    return false;
+  }
+  const area=facePatches(p,items.get(p.instanceId),'bottom',up).patches.reduce((sum,f)=>sum+f.length*f.width,0);
+  if(area<=0)return false;if(Math.abs(gravityBox(p,up).z-floor)<=EPS)return true;
+  const required=area*fraction;let supported=0;
+  const candidates=up.axis===2&&up.sign===1&&supportIndex?supportIndex.candidates(p):placed;
+  for(const lower of candidates){
+    if(up.axis===2&&up.sign===1&&!maySharePackingSupportFace(p,lower))continue;
+    supported+=geometrySupportArea(p,lower,items,up);if(supported+EPS**2>=required)return true;
+  }
+  return false;
+}
+function maySharePackingSupportFace(upper:Placement,lower:Placement):boolean{
+  return upper.z>lower.z+EPS&&upper.z<=lower.z+lower.height+EPS
+    &&upper.x+upper.length>lower.x+EPS&&lower.x+lower.length>upper.x+EPS
+    &&upper.y+upper.width>lower.y+EPS&&lower.y+lower.width>upper.y+EPS;
 }
 /** Both snapshots must be supported; unavailable-region tops never become supports. */
-export function hasPackingAndTravelSupport(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,fraction:number,bag:Container):boolean{
+export function hasPackingAndTravelSupport(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,fraction:number,bag:Container,supportIndex?:RectangularSupportIndex):boolean{
   const compartment=compartmentFor(bag,p.compartmentId);
-  if(!hasGeometrySupport(p,placed,items,fraction,packingUp,compartment?.z??0))return false;
+  const supported=supportIndex?hasGeometrySupport(p,placed,items,fraction,packingUp,compartment?.z??0,supportIndex):hasGeometrySupport(p,placed,items,fraction,packingUp,compartment?.z??0);
+  if(!supported)return false;
   if(!bag.packingInterior)return true;
   if(interiorSupportError(bag.packingInterior))return false;
   const up=interiorTravelUp(bag.packingInterior);
@@ -203,14 +299,18 @@ export function hasPackingAndTravelSupport(p:Placement,placed:Placement[],items:
   return hasGeometrySupport(p,placed,items,fraction,up,floor);
 }
 /** Fixed orientation, straight downward entry: recesses must remain reachable from above. */
-export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,bag:Container):boolean {
+export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,bag:Container,blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[]):boolean {
   const top=bag.inside.height;
-  const obstacles=[...containerBlockedBoxes(bag),...placed.filter(other=>other.containerId===p.containerId).flatMap(other=>placementBoxes(other,items.get(other.instanceId)))];
-  return !placementBoxes(p,items.get(p.instanceId)).some(b=>obstacles.some(o=>boxesIntersect({...b,height:Math.max(b.height,top-b.z+p.height)},o)));
+  const obstacles=cachedObstacles??[...blockedSpaces,...placed.filter(other=>other.containerId===p.containerId).flatMap(other=>placementBoxes(other,items.get(other.instanceId)))];
+  for(const b of placementBoxes(p,items.get(p.instanceId))){
+    const sweepTop=b.z+Math.max(b.height,top-b.z+p.height),right=b.x+b.length,back=b.y+b.width;
+    for(const o of obstacles)if(b.x<o.x+o.length-EPS&&right>o.x+EPS&&b.y<o.y+o.width-EPS&&back>o.y+EPS&&b.z<o.z+o.height-EPS&&sweepTop>o.z+EPS)return false;
+  }
+  return true;
 }
 
-export function contactPositions(bag:Container,orientation:DimensionsMm&{rotation:number},item:ShapeItem,placed:Placement[],items:Map<string,ShapeItem>,region:GeometryBox={x:0,y:0,z:0,...bag.inside,height:usableContainerHeight(bag)}) {
-  const local=placementBoxes({x:0,y:0,z:0,...orientation},item),obstacles=[...placed.flatMap(p=>placementBoxes(p,items.get(p.instanceId))),...containerBlockedBoxes(bag)];
+export function contactPositions(bag:Container,orientation:DimensionsMm&{rotation:number},item:ShapeItem,placed:Placement[],items:Map<string,ShapeItem>,region:GeometryBox={x:0,y:0,z:0,...bag.inside,height:usableContainerHeight(bag)},blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[]) {
+  const local=placementBoxes({x:0,y:0,z:0,...orientation},item),obstacles=cachedObstacles??[...placed.flatMap(p=>placementBoxes(p,items.get(p.instanceId))),...blockedSpaces];
   const values=[new Set([region.x,region.x+region.length-orientation.length]),new Set([region.y,region.y+region.width-orientation.width]),new Set([region.z])],mins=['x','y','z'] as const;
   for(const b of obstacles)for(const c of local)for(let axis=0;axis<3;axis++){
     values[axis].add(b[mins[axis]]+b[axes[axis]]-c[mins[axis]]);

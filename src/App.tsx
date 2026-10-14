@@ -1,69 +1,57 @@
-import {recordSharedPublication} from './shared-pack-combination';
-import type {SharedPackBaseline} from './shared-pack-baseline';
-import type {SharedCopyWitness} from './shared-packs';
 import type { SeparationRule } from './types';
 import type { SavedWeather } from './weather';
 import { SeparationRules, SeparationNotes } from './components/SeparationRules';
 import { entryHasSeparation, separationRuleError, MAX_SEPARATION_RULES } from './item-separation';
-import { bagMassRecordError } from './mass-constraints';
 import { checklistInstanceState } from './checklist-state';
-import { ScanRetentionSettings } from './components/ScanRetentionSettings';
-import { PackingEvidenceReview } from './components/PackingEvidenceReview';
-import { PropertyEvidenceFields } from './components/PropertyEvidenceFields';
-import { HandlingPropertyNotes, OpeningEvidenceNotes } from './components/HandlingPropertyNotes';
-import { changedPropertyEvidence } from './property-evidence';
+import { OpeningEvidenceNotes } from './components/HandlingPropertyNotes';
 import { useRawScanRetention } from './scanning/useRawScanRetention';
-import { recordRemovedScanSources,type ScanRetentionDays,type ScanRetentionReply } from './scan-retention';
-import { CompartmentFields } from './components/CompartmentFields';
+import { recordRemovedScanSources,type ScanRetentionReply } from './scan-retention';
 import { EntryBagAssignment } from './components/EntryBagAssignment';
 import type {ItemEditorDraft} from './item-photo-draft';
-import {DeviceWorkspace,DeviceWorkspaceSettings,useDeviceWorkspace} from './components/DeviceWorkspace';
-import { openSharedPack, type SharedPackSnapshot } from './shared-packs';
-import { isPackingBackup as isBackup } from './backup';
+import type { SharedCopyWitness, SharedPackSnapshot } from './shared-packs';
+import type { SharedPackBaseline } from './shared-pack-baseline';
+import {DeviceWorkspace,useDeviceWorkspace} from './components/DeviceWorkspace';
 import { BagWeightNotes } from './components/BagWeightNotes';
-import { adoptInterior, interiorGeometry, interiorSupportError, interiorTravelLabel } from './packing-interior';
-import type { ReconstructedInterior } from './scanning/interior-cavity';
-import type { PackingInterior } from './types';
 import { uprightInstruction, uprightTag } from './upright';
 import { StackLoadNotes } from './components/StackLoadNotes';
 import { packingFormsForSelection,packingItem,separablePackingEntryIds,separatePackingCopy,changePackingQuantity } from './packing-forms';
-import { InteriorSupportReview } from './components/InteriorSupportReview';
-import { UnavailableSpaceFields } from './components/UnavailableSpaceFields';
 import { ContainerSpaceNotes } from './components/ContainerSpaceNotes';
-import { containerSpaceError } from './container-space';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AlertTriangle, Backpack, BookOpen, Check, ChevronDown, CircleHelp,
-  ClipboardList, Download, Lock, MapPin, MoreHorizontal, Package, PackageCheck, Plus,
-  Ruler, ScanLine, Search, Settings, ShieldCheck, Trash2, Upload, Weight, X,
+  ClipboardList, Lock, MapPin, MoreHorizontal, Package, PackageCheck, Plus,
+  Settings, ShieldCheck, Trash2, Weight, X,
 } from 'lucide-react';
 import type { ItemDraft } from './components/ItemCapture';
-import { calibrateLongestEdge } from './scanning/calibration';
-import { assessCarrierRule, carrierReviewDate, carrierReviewTimestamp, formatComparisonNumber, isCarrierRuleStale, secureCarrierSourceUrl, type CarrierLimitCheck } from './carrier-rules';
+import type { InventoryFormatters } from './components/InventoryPages';
 import { useScannerCapabilities } from './scanning/useScannerCapabilities';
 import { LocalPhoto } from './components/LocalPhoto';
-import { carrierRuleOverridden, carrierRuleHasUpdatedLimits,  type CarrierCatalog } from './carrier-catalog';
 import type { TripSuggestion } from './trip-assistant';
-import { buildPlan } from './optimizer';
 import {  markPackingItemUnavailable, rejectPackingPlacement, setPackingItemComplete } from './packing-progress';
-import { measurementFromInput, measurementInput } from './measurement-input';
+import { measurementInput } from './measurement-input';
 import {workspaceStorage} from './storage';
 import { createInitialData } from './seed';
-import type { AppData, CarrierLimits, CarrierRule, Container, ContainerSummary, Evidence, ItemPriority, LibraryItem, OptimizationMode, PackEntry, PackingPlan, Placement, Traveller, Trip, TripActivity, UnavailableSpace, ContainerCompartment, UnitSystem } from './types';
+import { PlannerWorkerClient } from './optimizer-worker-client';
+import type { AppData, CarrierRule, Container, Evidence, ItemPriority, LibraryItem, OptimizationMode, PackEntry, PackingPlan, Placement, Trip, TripActivity, UnitSystem } from './types';
 
 type Page = 'workspace' | 'items' | 'bags' | 'carrier-rules' | 'settings' | 'steps' | 'sequence';
 type CaptureState = { kind: 'item'; item?: LibraryItem; suggestion?: TripSuggestion; resumed?:{draft:ItemEditorDraft;photo?:Blob} } | { kind: 'bag'; bag?: Container } | { kind: 'trip'; trip?: Trip } | { kind: 'carrier-rule'; rule?: CarrierRule; draft?: CarrierRule } | null;
 
 const ItemCapture = lazy(() => import('./components/ItemCapture').then((module) => ({ default: module.ItemCapture })));
-const AccountPanel = lazy(() => import('./components/AccountPanel').then((module) => ({ default: module.AccountPanel })));
+const BagCapture = lazy(() => import('./components/BagCapture').then((module) => ({ default: module.BagCapture })));
+const CarrierRuleCapture = lazy(() => import('./components/CarrierRuleCapture').then((module) => ({ default: module.CarrierRuleCapture })));
+const TripCapture = lazy(() => import('./components/TripCapture').then((module) => ({ default: module.TripCapture })));
+const SettingsPage = lazy(() => import('./components/SettingsPage').then((module) => ({ default: module.SettingsPage })));
+const CarrierRulesPage = lazy(() => import('./components/CarrierRulesPage').then((module) => ({ default: module.CarrierRulesPage })));
 const PlanSteps = lazy(() => import('./components/PlanSteps').then((module) => ({ default: module.PlanSteps })));
 const PackingSequence = lazy(() => import('./components/PackingSequence').then((module) => ({ default: module.PackingSequence })));
-const SavedScanPreview = lazy(() => import('./components/SavedScanPreview').then((module) => ({ default: module.SavedScanPreview })));
-const CarrierLookup = lazy(() => import('./components/CarrierLookup').then((module) => ({ default: module.CarrierLookup })));
+const PackingEvidenceReview = lazy(() => import('./components/PackingEvidenceReview').then((module) => ({ default: module.PackingEvidenceReview })));
 const PlanReview = lazy(() => import('./components/PlanComparison').then((module) => ({ default: module.PlanReview })));
 const WeatherLookup = lazy(() => import('./components/WeatherLookup').then((module) => ({ default: module.WeatherLookup })));
 const TripListAssistant = lazy(() => import('./components/TripListAssistant').then((module) => ({ default: module.TripListAssistant })));
 const PackCanvas = lazy(() => import('./components/PackCanvas').then((module) => ({ default: module.PackCanvas })));
+const LibraryPage = lazy(() => import('./components/InventoryPages').then((module) => ({ default: module.LibraryPage })));
+const BagsPage = lazy(() => import('./components/InventoryPages').then((module) => ({ default: module.BagsPage })));
 
 const newId = () => globalThis.crypto?.randomUUID?.() ?? `id-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const reuseIdenticalReferences = <T,>(previous: T[], next: T[]) => previous.length === next.length && previous.every((value, index) => value === next[index]) ? previous : next;
@@ -77,6 +65,7 @@ const dimLabel = (unit: UnitSystem) => unit === 'metric' ? 'mm' : 'in';
 const instanceIds = (entry: PackEntry) => Array.from({ length: Math.max(1, entry.quantity) }, (_, index) => `${entry.id}#${index + 1}`);
 const sourceLabel = (source: Evidence['source']) => ({ measured: 'Measured', known: 'Known', estimated: 'Estimated', user_confirmed: 'Confirmed', provider: 'Provider' })[source];
 const evidenceLabel = (value:Evidence) => value.source === 'estimated' ? 'Estimate · unverified' : `${sourceLabel(value.source)} · ${Math.round(value.confidence*100)}%`;
+const inventoryFormatters: InventoryFormatters = { mmToDisplay, gramToDisplay, dimLabel, sourceLabel, evidenceLabel, uprightInstruction, uprightTag };
 const modeCopy: Record<OptimizationMode, { title: string; detail: string }> = {
   balanced: { title: 'Balanced', detail: 'Space, weight & careful placement' },
   maximum_capacity: { title: 'Maximum capacity', detail: 'Prioritize fitting more items' },
@@ -103,7 +92,15 @@ function PackingApp() {
   const [editingPhotoUrl, setEditingPhotoUrl] = useState<string>();
   const [syncStatus, setSyncStatus] = useState<'loading' | 'saved' | 'saving' | 'error'>('loading');
   const [syncError, setSyncError] = useState('');
+  const [plan, setPlan] = useState<PackingPlan>();
+  const [planError, setPlanError] = useState('');
   const [notice, setNotice] = useState('');
+  const planRequest = useRef(0);
+  const plannerWorker = useRef<PlannerWorkerClient | null>(null);
+  if (!plannerWorker.current) plannerWorker.current = new PlannerWorkerClient(
+    () => new Worker(new URL('./optimizer.worker.ts', import.meta.url), { type: 'module', name: 'packing-plan' }),
+  );
+  useEffect(() => () => plannerWorker.current?.dispose(), []);
 
   useEffect(() => {
     let active = true;
@@ -161,9 +158,38 @@ function PackingApp() {
     previousPlanContainers.current = stable;
     return stable;
   }, [activeContainers]);
-  // Solve only when the active pack or one of its referenced records changes.
-  const plan = useMemo(() => data && activeTrip ? buildPlan(activeTrip, planItems, planContainers) : undefined,
-    [data !== undefined, planItems, planContainers, activeTrip?.id, activeTrip?.entries, activeTrip?.containerIds, activeTrip?.mode, activeTrip?.lockedPlacements, activeTrip?.unavailableInstanceIds, activeTrip?.rejectedPlacements, activeTrip?.separationRules]);
+  // Keep planner work off the UI thread so large plans do not freeze interaction.
+  useEffect(() => {
+    let active = true;
+    setPlan(undefined);
+    setPlanError('');
+    if (!data || !activeTrip) return () => { active = false; };
+    const requestId = ++planRequest.current;
+    const buildOnMainThread = () => import('./optimizer').then(({ buildPlan }) => {
+      if (active) setPlan(buildPlan(activeTrip, planItems, planContainers));
+    });
+    const instanceCount = activeTrip.entries.reduce((count, entry) => count + Math.max(1, entry.quantity), 0);
+    const needsWorker = instanceCount >= 20 || planItems.some(item => item.packingShape)
+      || planContainers.some(container => container.packingInterior || container.compartments?.length);
+    if (!needsWorker) {
+      void buildOnMainThread().catch((error: unknown) => {
+        if (active) setPlanError(error instanceof Error ? error.message : 'The packing plan could not be prepared.');
+      });
+      return () => { active = false; };
+    }
+    void plannerWorker.current!.calculate({ requestId, trip: activeTrip, items: planItems, containers: planContainers })
+      .then((result) => {
+        if (!active) return;
+        if (result.error) setPlanError(result.error);
+        else if (result.plan) setPlan(result.plan);
+      })
+      .catch(() => {
+        if (active) void buildOnMainThread().catch((error: unknown) => {
+          if (active) setPlanError(error instanceof Error ? error.message : 'The packing plan could not be prepared.');
+        });
+      });
+    return () => { active = false; plannerWorker.current?.cancel(requestId); };
+  }, [data !== undefined, planItems, planContainers, activeTrip?.id, activeTrip?.entries, activeTrip?.containerIds, activeTrip?.mode, activeTrip?.lockedPlacements, activeTrip?.unavailableInstanceIds, activeTrip?.rejectedPlacements, activeTrip?.separationRules]);
   useEffect(() => {
     if (data?.settings.automaticPhotoDeletionDays) prunePhotos(data.settings.automaticPhotoDeletionDays).catch(() => undefined);
   }, [data?.settings.automaticPhotoDeletionDays]);
@@ -395,7 +421,8 @@ function PackingApp() {
     let committed = false;
     try {
       const parsed: unknown = JSON.parse(await file.text());
-      if (!isBackup(parsed)) throw new Error('This file is not a supported Packing Scanning backup.');
+      const { isPackingBackup } = await import('./backup');
+      if (!isPackingBackup(parsed)) throw new Error('This file is not a supported Packing Scanning backup.');
       device.checkActive();
       if (!window.confirm(device.session ? 'Replace the packing records and photos in this protected workspace with this backup? Existing original scan files in this workspace will also be removed because JSON backups do not include them. Guest packs and other workspaces remain.' : 'Import this backup and replace the guest packing data saved on this device? JSON backups do not contain native 3D files, so existing saved guest scans on this device will also be removed. Protected workspaces remain.')) return false;
       const photoIds = new Map<string,string>();
@@ -444,6 +471,12 @@ function PackingApp() {
     await saveAppData(empty);
     setData(empty); setEditingPhotoUrl(undefined); setNotice(scanCleanupFailed ? 'Packing data was deleted, but some native scan files could not be removed from this device.' : 'All local packing data and saved scans have been deleted.'); setPage('workspace');
   };
+  const openSharedPackFromSettings = (snapshot: SharedPackSnapshot, baseline?: SharedPackBaseline, witness?: SharedCopyWitness) => {
+    void import('./shared-packs').then(({ openSharedPack }) => updateData(current => openSharedPack(current, snapshot, newId(), baseline, witness))).catch(() => setNotice('The shared pack could not be opened. Reopen Settings and try again.'));
+  };
+  const recordSharedPublicationFromSettings = (tripId: string, snapshot: SharedPackSnapshot, baseline: SharedPackBaseline) => {
+    void import('./shared-pack-combination').then(({ recordSharedPublication }) => updateData(current => recordSharedPublication(current, tripId, snapshot, baseline))).catch(() => setNotice('The household pack could not be updated. Reopen Settings and try again.'));
+  };
 
   if (!data) return <div className="boot-screen"><div className="brand-mark">P</div><p>{syncStatus === 'error' ? syncError : 'Opening your local packing space…'}</p>{syncStatus === 'error' && <button className="button button-secondary" onClick={() => { setSyncStatus('loading'); loadAppData().then((loaded) => { setData(loaded); setSavedData(loaded); setSyncStatus('saved'); }).catch((error: unknown) => setSyncError(error instanceof Error ? error.message : 'Could not load saved data.')); }}>Try again</button>}</div>;
 
@@ -467,6 +500,7 @@ function PackingApp() {
       {device.pendingPhoto&&<div className="pending-photo-banner" role="region" aria-label="Pending item photo"><p>{device.photoMatches?'An encrypted item photo draft is waiting. Resume it to review; nothing enters your item library until you save.':'An encrypted photo draft belongs to a different workspace. Open that workspace to resume it.'}</p><div>{device.photoMatches&&<button className="button button-primary" disabled={device.fileBusy||!!capture} onClick={()=>void resumeItemPhoto()}>Resume item photo draft</button>}<button className="button button-secondary" disabled={device.fileBusy||!!capture} onClick={()=>void device.discardItemPhoto().catch(error=>setNotice(error instanceof Error?error.message:'Discard failed.'))}>Discard item photo draft</button></div>{device.photoNotice&&<p role="status">{device.photoNotice}</p>}</div>}
       {notice && <div className="notice-banner" role="status"><span>{notice}</span><button className="icon-button" aria-label="Dismiss" onClick={() => setNotice('')}><X size={16}/></button></div>}
       {!activeTrip && page !== 'settings' ? <EmptyState onNew={() => setCapture({ kind: 'trip' })} onSettings={() => setPage('settings')}/> : <>
+        {activeTrip && !plan && page !== 'items' && page !== 'bags' && page !== 'settings' && <div className="secondary-page" role="status">{planError || 'Preparing your packing plan…'}</div>}
         {page === 'workspace' && activeTrip && plan && <Workspace
           trip={activeTrip} data={data} containers={activeContainers} selectedContainer={selectedContainer} plan={plan} canvasView={canvasView} layer={layer} getPhoto={getPhoto} unit={data.unitSystem}
           onSeparationRules={rules=>updateTrip(trip=>({...trip,separationRules:rules}))}
@@ -476,19 +510,19 @@ function PackingApp() {
           onView={setCanvasView} onLayer={setLayer} onSelectContainer={setSelectedContainerId} onMode={setMode} onAddItem={() => { setSearch(''); setPage('items'); }} onAddSuggestion={addSuggestedItem} onAddBag={() => setCapture({ kind: 'bag' })} onAddTrip={() => setCapture({ kind: 'trip' })} onRemoveEntry={removeEntry} onToggleComplete={toggleComplete} onToggleLock={toggleLock} onUnavailable={setUnavailable} onStartSteps={() => setPage('steps')} onEditTrip={() => setCapture({ kind: 'trip', trip: activeTrip })} onPriority={setEntryPriority} onAccess={setEntryAccess} onTraveller={setEntryTraveller} onAssignment={setEntryBagAssignment} onPackingForm={setEntryPackingForm} onSeparateCopy={splitPackingCopy} onQuantity={changeEntryQuantity}/>}
         {page === 'steps' && activeTrip && plan && <Suspense fallback={<div className="secondary-page" role="status">Opening packing steps…</div>}><PlanSteps getPhoto={getPhoto} key={activeTrip.id} trip={activeTrip} plan={plan} containers={activeContainers} items={data.libraryItems} onExit={() => setPage('workspace')} onComplete={toggleComplete} onUnavailable={(id) => updateTrip((trip) => markPackingItemUnavailable(trip, id))} onLock={lockPlacement} onDoesNotFit={rejectPlacement} onResetFailed={() => updateTrip((trip) => ({ ...trip, rejectedPlacements: [] }))} onSelectStep={(id) => updateTrip((trip) => ({ ...trip, packingCursor: id }))} onPrintSequence={() => setPage('sequence')}/></Suspense>}
         {page === 'sequence' && activeTrip && plan && <Suspense fallback={<div className="secondary-page" role="status">Opening packing sequence…</div>}><PackingSequence trip={activeTrip} plan={plan} containers={activeContainers} items={data.libraryItems} getPhoto={getPhoto} onExit={() => setPage('steps')}/></Suspense>}
-        {page === 'items' && <LibraryPage items={libraryItems} data={data} activeTrip={activeTrip} search={search} setSearch={setSearch} getPhoto={getPhoto} unit={data.unitSystem} onAdd={() => setCapture({ kind: 'item' })} onEdit={(item) => setCapture({ kind: 'item', item })} onDelete={deleteLibraryItem} onAddEntry={addEntry}/>}
-        {page === 'bags' && <BagsPage trip={activeTrip} bags={activeContainers} unit={data.unitSystem} onAdd={() => setCapture({ kind: 'bag' })} onEdit={(bag) => setCapture({ kind: 'bag', bag })} onRemove={removeBag}/>}
-        {page === 'carrier-rules' && activeTrip && plan && <CarrierRulesPage trip={activeTrip} bags={activeContainers} summaries={plan.summaries} placements={plan.placements} items={data.libraryItems} unit={data.unitSystem} catalog={data.carrierCatalog} onCatalog={(carrierCatalog) => updateData((current) => ({ ...current, carrierCatalog }))} onReview={(draft) => setCapture({ kind: 'carrier-rule', draft })} onAdd={() => setCapture({ kind: 'carrier-rule' })} onEdit={(rule) => setCapture({ kind: 'carrier-rule', rule })} onDelete={deleteCarrierRule}/>}
-        {page === 'settings' && <SettingsPage data={data} syncStatus={syncStatus} unit={data.unitSystem} onUnit={(unitSystem) => updateData((current) => ({ ...current, unitSystem }))} scanRetention={scanRetention} onScanRetention={(days)=>updateData(current=>({...current,settings:{...current.settings,automaticScanDeletionDays:days}}))} onPhotoRetention={(days) => updateData((current) => ({ ...current, settings: { ...current.settings, automaticPhotoDeletionDays: days } }))} onExport={exportBackup} onImport={importBackup} onDelete={deleteAllData} onOpenShared={(snapshot,baseline,witness) => updateData(current => openSharedPack(current,snapshot,newId(),baseline,witness))} onPublished={(tripId,snapshot,baseline) => updateData(current => recordSharedPublication(current,tripId,snapshot,baseline))}/>}
+        {page === 'items' && <Suspense fallback={<div className="secondary-page" role="status">Opening items…</div>}><LibraryPage items={libraryItems} data={data} activeTrip={activeTrip} search={search} setSearch={setSearch} getPhoto={getPhoto} unit={data.unitSystem} onAdd={() => setCapture({ kind: 'item' })} onEdit={(item) => setCapture({ kind: 'item', item })} onDelete={deleteLibraryItem} onAddEntry={addEntry} formatters={inventoryFormatters}/></Suspense>}
+        {page === 'bags' && <Suspense fallback={<div className="secondary-page" role="status">Opening bags…</div>}><BagsPage trip={activeTrip} bags={activeContainers} unit={data.unitSystem} onAdd={() => setCapture({ kind: 'bag' })} onEdit={(bag) => setCapture({ kind: 'bag', bag })} onRemove={removeBag} formatters={inventoryFormatters}/></Suspense>}
+        {page === 'carrier-rules' && activeTrip && plan && <Suspense fallback={<div className="secondary-page" role="status">Opening carrier rules…</div>}><CarrierRulesPage trip={activeTrip} bags={activeContainers} summaries={plan.summaries} placements={plan.placements} items={data.libraryItems} unit={data.unitSystem} catalog={data.carrierCatalog} onCatalog={(carrierCatalog) => updateData((current) => ({ ...current, carrierCatalog }))} onReview={(draft) => setCapture({ kind: 'carrier-rule', draft })} onAdd={() => setCapture({ kind: 'carrier-rule' })} onEdit={(rule) => setCapture({ kind: 'carrier-rule', rule })} onDelete={deleteCarrierRule}/></Suspense>}
+        {page === 'settings' && <Suspense fallback={<div className="secondary-page" role="status">Opening settings…</div>}><SettingsPage data={data} syncStatus={syncStatus} unit={data.unitSystem} onUnit={(unitSystem) => updateData((current) => ({ ...current, unitSystem }))} scanRetention={scanRetention} onScanRetention={(days)=>updateData(current=>({...current,settings:{...current.settings,automaticScanDeletionDays:days}}))} onPhotoRetention={(days) => updateData((current) => ({ ...current, settings: { ...current.settings, automaticPhotoDeletionDays: days } }))} onExport={exportBackup} onImport={importBackup} onDelete={deleteAllData} onOpenShared={openSharedPackFromSettings} onPublished={recordSharedPublicationFromSettings}/></Suspense>}
       </>}
     </div>
 
     <nav className="mobile-nav" aria-label="Mobile navigation"><button className={page === 'workspace' || page === 'steps' ? 'selected' : ''} onClick={() => setPage('workspace')}><ClipboardList size={19}/><span>Plan</span></button><button className={page === 'items' ? 'selected' : ''} onClick={() => setPage('items')}><Package size={19}/><span>Items</span></button><button className={page === 'bags' ? 'selected' : ''} onClick={() => setPage('bags')}><Backpack size={19}/><span>Bags</span></button><button className={page === 'carrier-rules' ? 'selected' : ''} onClick={() => setPage('carrier-rules')}><BookOpen size={19}/><span>Rules</span></button><button className={page === 'settings' ? 'selected' : ''} onClick={() => setPage('settings')}><Settings size={19}/><span>Settings</span></button></nav>
 
     {capture?.kind === 'item' && <Suspense fallback={<div className="modal-backdrop"><div className="modal" role="status">Opening item editor…</div></div>}><ItemCapture key={capture.item?.id ?? capture.suggestion?.id ?? 'new-item'} initial={capture.item} suggestedItem={capture.suggestion} unit={capture.resumed?.draft.unit??data.unitSystem} resumed={capture.resumed?.draft} resumedPhoto={capture.resumed?.photo} sourceTripId={activeTrip?.id} suggestion={capture.suggestion} scanSupported={scanCapabilities.supported} recognitionSupported={scanCapabilities.supported&&scanCapabilities.platform==='android'&&scanCapabilities.recognitionSupported===true} scanUnavailableReason={scanCapabilities.reason} existingPhotoUrl={editingPhotoUrl} onClose={()=>void closeItemEditor()} onPhotoStaged={()=>setCapture(null)} onSave={saveItem}/></Suspense>}
-    {capture?.kind === 'bag' && <BagCapture key={capture.bag?.id ?? 'new-bag'} initial={capture.bag} unit={data.unitSystem} travellers={activeTrip?.travellers ?? []} scanSupported={scanCapabilities.supported} scanUnavailableReason={scanCapabilities.reason} onClose={() => setCapture(null)} onSave={saveBag}/>}
-    {capture?.kind === 'trip' && <TripCapture initial={capture.trip} onClose={() => setCapture(null)} onSave={createTrip} onDelete={capture.trip && !capture.trip.sample ? () => void deleteTrip(capture.trip!.id) : undefined}/>}
-    {capture?.kind === 'carrier-rule' && activeTrip && <CarrierRuleCapture key={capture.rule?.id ?? capture.draft?.fare ?? 'new-carrier-rule'} initial={capture.rule ?? capture.draft} bags={activeContainers} unit={data.unitSystem} onClose={() => setCapture(null)} onSave={saveCarrierRule}/>}
+    {capture?.kind === 'bag' && <Suspense fallback={<div role="status">Opening bag editor…</div>}><BagCapture key={capture.bag?.id ?? 'new-bag'} initial={capture.bag} unit={data.unitSystem} travellers={activeTrip?.travellers ?? []} scanSupported={scanCapabilities.supported} scanUnavailableReason={scanCapabilities.reason} onClose={() => setCapture(null)} onSave={saveBag} helpers={{evidence,mmToDisplay,displayToMm,lengthInput,massInput,dimLabel,sourceLabel}} Modal={Modal}/></Suspense>}
+    {capture?.kind === 'trip' && <Suspense fallback={<div className="modal-backdrop"><div className="modal" role="status">Opening pack editor…</div></div>}><TripCapture initial={capture.trip} onClose={() => setCapture(null)} onSave={createTrip} onDelete={capture.trip && !capture.trip.sample ? () => void deleteTrip(capture.trip!.id) : undefined} Modal={Modal}/></Suspense>}
+    {capture?.kind === 'carrier-rule' && activeTrip && <Suspense fallback={<div className="modal-backdrop"><div className="modal" role="status">Opening carrier record…</div></div>}><CarrierRuleCapture key={capture.rule?.id ?? capture.draft?.fare ?? 'new-carrier-rule'} initial={capture.rule ?? capture.draft} bags={activeContainers} unit={data.unitSystem} onClose={() => setCapture(null)} onSave={saveCarrierRule} helpers={{lengthInput,massInput,dimLabel}} Modal={Modal}/></Suspense>}
   </div>;
 }
 
@@ -507,6 +541,8 @@ function Workspace(props: WorkspaceProps) {
   const visualStageRef = useRef<HTMLDivElement>(null);
   const [planReviewRequested, setPlanReviewRequested] = useState(false);
   const [canvasRequested, setCanvasRequested] = useState(false);
+  const [evidenceReviewOpen, setEvidenceReviewOpen] = useState(false);
+  const [evidenceReviewCount, setEvidenceReviewCount] = useState<number>();
   const referencedItemIds = useMemo(() => new Set(trip.entries.map(entry => entry.itemId)), [trip.entries]);
   const itemById = useMemo(() => {
     const byId = new Map<string, LibraryItem>();
@@ -615,11 +651,18 @@ function Workspace(props: WorkspaceProps) {
         </> : <div className="bag-empty"><div className="bag-outline"><Backpack size={42}/></div><h3>Start with your bag</h3><p>Enter the usable inside dimensions and opening width. The plan will use them as a rectangular approximation.</p><button className="button button-primary" onClick={props.onAddBag}><Plus size={16}/> Add your first bag</button></div>}
       </section>
     </div>
-    <PackingEvidenceReview key={trip.id} trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit} onReview={group=>{
+    <details className="packing-evidence-review" onToggle={event=>{
+      const open=event.currentTarget.open;
+      setEvidenceReviewOpen(open);
+      if(!open)setEvidenceReviewCount(undefined);
+    }}>
+      <summary><span>Review packing evidence</span><span>{evidenceReviewCount===undefined?'Open to calculate':`${evidenceReviewCount} ${evidenceReviewCount===1?'property':'properties'} to check`}</span></summary>
+      {evidenceReviewOpen&&<Suspense fallback={<p role="status">Opening evidence review…</p>}><PackingEvidenceReview key={trip.id} contentOnly onCount={setEvidenceReviewCount} trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit} onReview={group=>{
       if(group.kind==='item'){const item=data.libraryItems.find(item=>item.id===group.recordId);if(item)props.onReviewItem(item);}
       else if(group.kind==='container'){const bag=data.containers.find(bag=>bag.id===group.recordId);if(bag)props.onReviewBag(bag);}
       else props.onReviewMissing();
-    }}/>
+      }}/></Suspense>}
+    </details>
     {selectedContainer&&<OpeningEvidenceNotes bag={selectedContainer}/>}
     <StackLoadNotes plan={plan} items={data.libraryItems} unit={unit} containerId={selectedContainer?.id}/>
     <SeparationRules trip={trip} items={data.libraryItems} unit={unit} onChange={props.onSeparationRules}/>
@@ -631,387 +674,8 @@ function Workspace(props: WorkspaceProps) {
   </main>;
 }
 
-function CarrierRulesPage({ trip, bags, summaries, placements, items, unit, catalog, onCatalog, onReview, onAdd, onEdit, onDelete }: { trip:Trip; bags:Container[]; summaries:ContainerSummary[]; placements:Placement[]; items:LibraryItem[]; unit:UnitSystem; catalog?:CarrierCatalog; onCatalog:(catalog:CarrierCatalog)=>void; onReview:(draft:CarrierRule)=>void; onAdd:()=>void; onEdit:(rule:CarrierRule)=>void; onDelete:(rule:CarrierRule)=>void }) {
-  return <main className="secondary-page carrier-rules-page"><div className="page-heading"><div><p className="eyebrow">TRIP SOURCES</p><h1>Carrier rules</h1><p className="page-subtitle">Keep the rule you checked for this booking beside its official source.</p></div><button className="button button-primary" onClick={onAdd}><Plus size={16}/> Add source record</button></div>
-    <div className="carrier-rules-disclaimer"><ShieldCheck size={18}/><span>General baggage pages can differ from a booked flight. Check the exact itinerary, fare, operating airline, and each bag in your booking. The comparisons below check only the limits and measurements you entered; estimated or missing values need confirmation.</span></div>
-    <Suspense fallback={<div className="secondary-page" role="status">Opening carrier lookup…</div>}><CarrierLookup catalog={catalog} onCatalog={onCatalog} onReview={onReview}/></Suspense>
-    {trip.carrierRules.length === 0 ? <div className="library-empty"><div className="empty-icon"><BookOpen size={22}/></div><h2>No carrier source saved</h2><p>Open the airline's official source or booking details, then save the exact allowance, review date, and the bags it applies to.</p><button className="button button-secondary" onClick={onAdd}><Plus size={15}/> Add a source record</button></div> : <div className="carrier-rule-list">{trip.carrierRules.map((rule) => {
-      const updatedLimits = carrierRuleHasUpdatedLimits(rule, catalog);
-      const stale = isCarrierRuleStale(rule) || updatedLimits;
-      const applicableBags = bags.filter((bag) => rule.applicableBagIds.includes(bag.id));
-      const assessment = assessCarrierRule(rule, bags, summaries, { placements, lockedPlacements: trip.lockedPlacements, items });
-      const checkedDate = Date.parse(rule.retrievedAt);
-      return <article className={`carrier-rule-card ${stale ? 'stale' : ''}`} key={rule.id}>
-        <div className="carrier-rule-heading"><div><h2>{rule.carrier}</h2><p>{rule.route || 'Route not specified'} <span>·</span> {rule.fare || 'Fare not specified'}</p></div><span className={`rule-status ${stale ? 'needs-review' : rule.status}`}>{updatedLimits ? 'Updated source needs review' : stale ? 'Recheck source' : rule.status === 'verified' ? 'Checked by you' : rule.retrieval ? 'Booking needs confirmation' : 'Manual note'}</span></div>
-        {updatedLimits && <p className="carrier-lookup-warning" role="status">A newer retrieved source has different numeric limits for this allowance. Your saved record and manual overrides are unchanged. Review and save the latest allowance above, then choose which record to keep for your booking.</p>}
-        {rule.retrieval && <div className="carrier-provenance"><strong>{carrierRuleOverridden(rule) ? 'Manual override of retrieved limits' : 'Limits from retrieved official page'}</strong><span>Original retrieval: {new Date(rule.retrieval.catalog.retrievedAt).toLocaleString()}</span><span>Allowance: {rule.retrieval.catalog.allowances.find((entry) => entry.id === rule.retrieval!.allowanceId)?.title}</span><small>Refreshing the lookup does not replace this saved record. The bag count checks this record's selected set; passenger entitlements across records are not pooled.</small></div>}
-        {rule.notes && <p className="carrier-rule-notes">{rule.notes}</p>}
-        <div className="carrier-rule-meta"><span>{applicableBags.length ? `For: ${applicableBags.map((bag) => bag.name).join(', ')}` : 'No bag selected'}</span><span>Reviewed {Number.isFinite(checkedDate) ? new Date(checkedDate).toLocaleDateString() : 'date unavailable'}</span><span>Refresh after {rule.staleAfterDays} days</span></div>
-        {(rule.limits || assessment.needsBagSelection) && <CarrierLimitResults assessment={assessment} unit={unit}/>}
-        <div className="carrier-rule-actions">{secureCarrierSourceUrl(rule.sourceUrl) ? <a className="text-button" href={secureCarrierSourceUrl(rule.sourceUrl)} target="_blank" rel="noreferrer">Open official source <BookOpen size={14}/></a> : <span className="scan-availability">Source link needs correction</span>}<button className="button button-secondary" onClick={() => onEdit(rule)}>Edit record</button><button className="quiet-icon delete-icon" aria-label={`Remove ${rule.carrier} source record`} onClick={() => onDelete(rule)}><Trash2 size={16}/></button></div>
-      </article>;
-    })}</div>}
-    <div className="privacy-callout"><Lock size={16}/><span>Source records and notes are stored with this trip on this device. The app does not sign in to airline accounts or retrieve booking details.</span></div>
-  </main>;
-}
-
-function CarrierLimitResults({ assessment, unit }: { assessment:ReturnType<typeof assessCarrierRule>; unit:UnitSystem }) {
-  if (assessment.error) return <div className="carrier-limit-results" role="alert"><strong>Cannot compare limits</strong><p>{assessment.error}</p></div>;
-  if (assessment.needsBagSelection) return <div className="carrier-limit-results"><strong>Cannot compare limits yet</strong><p>Select the bags this source applies to, then add their outside measurements and empty weights.</p></div>;
-  const statusLabel:Record<CarrierLimitCheck['status'],string>={within:'Within entered limit',over:'Over entered limit',unknown:'Cannot check',estimate_within:'Estimated within limit',estimate_over:'Estimate above limit',subtotal_over:'Saved subtotal above limit'};
-  const formatValue=(value:number,check:CarrierLimitCheck)=>check.unit==='bags'?`${value} bag${value===1?'':'s'}`:check.unit==='g'?`${formatComparisonNumber(value/(unit==='metric'?1:28.3495))} ${unit==='metric'?'g':'oz'}`:`${formatComparisonNumber(value/(unit==='metric'?1:25.4))} ${dimLabel(unit)}`;
-  const allChecks=[...assessment.bags.flatMap((bag)=>bag.checks),...(assessment.combinedWeight?[assessment.combinedWeight]:[]),...(assessment.bagCount?[assessment.bagCount]:[])];
-  return <div className="carrier-limit-results"><div className="carrier-limit-heading"><strong>Recorded limits comparison</strong><span>Traveller-entered values</span></div>
-    {assessment.bags.map((bag)=>bag.checks.length>0&&<section className="carrier-limit-bag" key={bag.bagId}><h3>{bag.bagName}</h3>{bag.checks.map((check)=><CarrierCheckRow key={check.key} check={check} statusLabel={statusLabel} formatValue={formatValue}/>)}</section>)}
-    {assessment.combinedWeight&&<section className="carrier-limit-bag"><h3>Selected bags together</h3><CarrierCheckRow check={assessment.combinedWeight} statusLabel={statusLabel} formatValue={formatValue}/></section>}
-    {assessment.bagCount&&<section className="carrier-limit-bag carrier-piece-count"><h3>Selected bag allowance</h3><CarrierCheckRow check={assessment.bagCount} statusLabel={statusLabel} formatValue={formatValue}/></section>}
-    {!allChecks.length&&<p>Add numeric limits to compare this source with the packing plan.</p>}
-    {allChecks.some((check)=>check.unit==='g')&&<p className="carrier-limit-caveat">Weight uses saved item weights plus the recorded empty bag weight. Estimated or missing weights are flagged; weigh the packed bags before travel.</p>}
-    <p className="carrier-limit-caveat">A comparison checks your entered measurements against your saved source. It does not confirm the airline will accept a bag or that the source applies to your booking.</p>
-  </div>;
-}
-
-function CarrierCheckRow({ check, statusLabel, formatValue }: { check:CarrierLimitCheck; statusLabel:Record<CarrierLimitCheck['status'],string>; formatValue:(value:number,check:CarrierLimitCheck)=>string }) {
-  return <div className={`carrier-limit-check ${check.status}`}><div><strong>{check.label}</strong><span className={`carrier-check-status ${check.status}`}>{statusLabel[check.status]}</span></div><p>{check.detail}</p>{check.margin!==undefined&&check.limit!==undefined&&<small>{check.margin===0?'At entered limit':check.margin>0?`${formatValue(check.margin,check)} below limit`:`${formatValue(Math.abs(check.margin),check)} over limit`}</small>}</div>;
-}
-
-function CarrierRuleCapture({ initial, bags, unit, onClose, onSave }: { initial?:CarrierRule; bags:Container[]; unit:UnitSystem; onClose:()=>void; onSave:(rule:Omit<CarrierRule,'id'>)=>void }) {
-  const today = carrierReviewDate();
-  const initialDate = initial?.retrievedAt && Number.isFinite(Date.parse(initial.retrievedAt)) ? carrierReviewDate(initial.retrievedAt) : today;
-  const [carrier,setCarrier]=useState(initial?.carrier ?? '');
-  const [route,setRoute]=useState(initial?.route ?? '');
-  const [fare,setFare]=useState(initial?.fare ?? '');
-  const [sourceUrl,setSourceUrl]=useState(initial?.sourceUrl ?? '');
-  const [reviewedAt,setReviewedAt]=useState(initialDate);
-  const [staleAfterDays,setStaleAfterDays]=useState(String(initial?.staleAfterDays ?? 7));
-  const [applicableBagIds,setApplicableBagIds]=useState<string[]>(initial?.applicableBagIds ?? []);
-  const [notes,setNotes]=useState(initial?.notes ?? '');
-  const [maxLength,setMaxLength]=useState(lengthInput(initial?.limits?.maxOuterDimensionsMm?.length,unit));
-  const [maxWidth,setMaxWidth]=useState(lengthInput(initial?.limits?.maxOuterDimensionsMm?.width,unit));
-  const [maxHeight,setMaxHeight]=useState(lengthInput(initial?.limits?.maxOuterDimensionsMm?.height,unit));
-  const [maxLinearSum,setMaxLinearSum]=useState(lengthInput(initial?.limits?.maxOuterLinearSumMm,unit));
-  const [maxWeight,setMaxWeight]=useState(massInput(initial?.limits?.maxWeightGrams,unit));
-  const [maxBagCount,setMaxBagCount]=useState(initial?.limits?.maxBagCount?.toString() ?? '');
-  const [weightScope,setWeightScope]=useState<NonNullable<CarrierLimits['weightScope']>>(initial?.limits?.weightScope ?? 'per_bag');
-  const [checkedForBooking,setCheckedForBooking]=useState(initial?.status === 'verified');
-  useEffect(() => {
-    if (initial && (carrier !== initial.carrier || route !== initial.route || fare !== initial.fare || sourceUrl !== initial.sourceUrl
-      || notes !== initial.notes || maxLength !== lengthInput(initial.limits?.maxOuterDimensionsMm?.length,unit)
-      || maxWidth !== lengthInput(initial.limits?.maxOuterDimensionsMm?.width,unit)
-      || maxHeight !== lengthInput(initial.limits?.maxOuterDimensionsMm?.height,unit)
-      || maxLinearSum !== lengthInput(initial.limits?.maxOuterLinearSumMm,unit)
-      || maxWeight !== massInput(initial.limits?.maxWeightGrams,unit)
-      || maxBagCount !== (initial.limits?.maxBagCount?.toString() ?? '')
-      || weightScope !== (initial.limits?.weightScope ?? 'per_bag')
-      || applicableBagIds.join('|') !== initial.applicableBagIds.join('|'))) setCheckedForBooking(false);
-  }, [initial,unit,carrier,route,fare,sourceUrl,notes,maxLength,maxWidth,maxHeight,maxLinearSum,maxWeight,maxBagCount,weightScope,applicableBagIds]);
-  const [error,setError]=useState('');
-  const submit=(event:FormEvent)=>{
-    event.preventDefault();
-    const normalizedSource=secureCarrierSourceUrl(sourceUrl);
-    if(!normalizedSource){setError('Enter a credential-free HTTPS link to the airline or booking source.');return;}
-    const refreshDays=Number(staleAfterDays);
-    if(!carrier.trim()){setError('Enter the airline or carrier name.');return;}
-    if(!notes.trim()){setError('Add the allowance or source note you want to keep with this trip.');return;}
-    let retrievedAt:string;
-    try { retrievedAt=carrierReviewTimestamp(reviewedAt,initial?.retrievedAt); }
-    catch(reviewError){setError(reviewError instanceof Error?reviewError.message:'Enter the date you last checked the source.');return;}
-    if(!Number.isInteger(refreshDays)||refreshDays<1||refreshDays>365){setError('Choose a refresh window from 1 to 365 days.');return;}
-    const validBagIds=new Set(bags.map((bag)=>bag.id));
-    const bagIds=applicableBagIds.filter((id)=>validBagIds.has(id));
-    const axisValues=[maxLength,maxWidth,maxHeight];
-    const hasAxisValues=axisValues.some((value)=>value.trim()!=='');
-    if(hasAxisValues&&axisValues.some((value)=>!Number.isFinite(Number(value))||Number(value)<=0)){setError(`Enter all three maximum outside dimensions in ${dimLabel(unit)}.`);return;}
-    if(maxLinearSum&&(!Number.isFinite(Number(maxLinearSum))||Number(maxLinearSum)<=0)){setError(`Enter a positive combined-dimension limit in ${dimLabel(unit)}.`);return;}
-    if(maxWeight&&(!Number.isFinite(Number(maxWeight))||Number(maxWeight)<=0)){setError(`Enter a positive weight limit in ${unit==='metric'?'grams':'ounces'}.`);return;}
-    const hasCount=maxBagCount.trim()!=='';
-    if(hasCount&&(!Number.isInteger(Number(maxBagCount))||Number(maxBagCount)<0||Number(maxBagCount)>100)){setError('Enter a whole number of bags from 0 to 100, or leave it blank when not recorded.');return;}
-    const hasNumericLimits=hasAxisValues||!!maxLinearSum||!!maxWeight||hasCount;
-    if(hasNumericLimits&&bagIds.length===0){setError('Choose at least one bag for these numeric limits.');return;}
-    const limits:CarrierLimits|undefined=hasNumericLimits?{
-      ...(hasAxisValues?{maxOuterDimensionsMm:{length:measurementFromInput(maxLength,unit==='metric'?1:25.4,initial?.limits?.maxOuterDimensionsMm?.length),width:measurementFromInput(maxWidth,unit==='metric'?1:25.4,initial?.limits?.maxOuterDimensionsMm?.width),height:measurementFromInput(maxHeight,unit==='metric'?1:25.4,initial?.limits?.maxOuterDimensionsMm?.height)}}:{}),
-      ...(maxLinearSum?{maxOuterLinearSumMm:measurementFromInput(maxLinearSum,unit==='metric'?1:25.4,initial?.limits?.maxOuterLinearSumMm)}:{}),
-      ...(maxWeight?{maxWeightGrams:measurementFromInput(maxWeight,unit==='metric'?1:28.3495,initial?.limits?.maxWeightGrams),weightScope}:{}),
-      ...(hasCount?{maxBagCount:Number(maxBagCount)}:{}),
-    }:undefined;
-    onSave({carrier:carrier.trim(),route:route.trim()||'Not specified',fare:fare.trim()||'Not specified',sourceUrl:normalizedSource,retrievedAt,staleAfterDays:refreshDays,applicableBagIds:bagIds,notes:notes.trim(),status:checkedForBooking?'verified':'manual',...(limits?{limits}:{}),...(initial?.retrieval?{retrieval:initial.retrieval}:{})});
-  };
-  return <Modal title={initial?.retrieval?'Review retrieved allowance':initial?'Edit carrier source':'Save a carrier source'} eyebrow="TRIP SOURCE" onClose={onClose}><form className="simple-modal-form carrier-rule-form" onSubmit={submit}>
-    <label className="field"><span>Airline or carrier</span><input autoFocus value={carrier} onChange={(event)=>setCarrier(event.target.value)} maxLength={80} placeholder="e.g. KLM"/></label>
-    <div className="date-fields"><label className="field"><span>Route or itinerary <em>optional</em></span><input value={route} onChange={(event)=>setRoute(event.target.value)} maxLength={120} placeholder="e.g. AMS–LIS, including connections"/></label><label className="field"><span>Fare or cabin <em>optional</em></span><input value={fare} onChange={(event)=>setFare(event.target.value)} maxLength={100} placeholder="e.g. Economy Light"/></label></div>
-    <label className="field"><span>Official source link</span><input type="url" value={sourceUrl} onChange={(event)=>setSourceUrl(event.target.value)} maxLength={500} placeholder="https://airline.example/baggage"/></label>
-    <label className="field"><span>Allowance notes</span><textarea value={notes} onChange={(event)=>setNotes(event.target.value)} maxLength={1500} rows={4} placeholder="Record the allowance shown for this booking, including dimensions, weight and number of bags."/></label>
-    <section className="carrier-limits-form" aria-label="Numeric baggage limits"><div className="field-heading"><span>Optional numeric limits</span></div><p>Copy only values shown by the source you checked. Enter them in your chosen units: {dimLabel(unit)} and {unit==='metric'?'g':'oz'}. A source listing 55 cm means 550 mm.</p>
-      <label className="field"><span>Maximum number of selected bags <em>optional</em></span><input aria-label="Maximum number of bags" type="number" min="0" max="100" step="1" inputMode="numeric" value={maxBagCount} onChange={(event)=>setMaxBagCount(event.target.value)}/><small>This count applies to the bags selected in this record, including empty bags. For a per-passenger allowance, select that passenger's bags and save separate records for other passengers. Counts are not pooled across records.</small></label>
-      <div className="field-block"><div className="field-heading"><span>Maximum outside size per bag · {dimLabel(unit)}</span></div><div className="dimension-fields">{([['length','Length',maxLength,setMaxLength],['width','Width',maxWidth,setMaxWidth],['height','Height',maxHeight,setMaxHeight]] as const).map(([axis,label,value,setter])=><label className="field" key={axis}><span>{label}</span><input aria-label={`Maximum outside ${label}`} type="number" min="0.1" step="any" inputMode="decimal" value={value} onChange={(event)=>setter(event.target.value)}/></label>)}</div></div>
-      <label className="field"><span>Maximum combined outside dimensions per bag · {dimLabel(unit)} <em>optional</em></span><input aria-label="Maximum combined outside dimensions" type="number" min="0.1" step="any" inputMode="decimal" value={maxLinearSum} onChange={(event)=>setMaxLinearSum(event.target.value)}/></label>
-      <div className="date-fields"><label className="field"><span>Weight limit · {unit==='metric'?'grams':'ounces'} <em>optional</em></span><input aria-label="Carrier weight limit" type="number" min="0.1" step="any" inputMode="decimal" value={maxWeight} onChange={(event)=>setMaxWeight(event.target.value)}/></label><label className="field"><span>Weight limit applies to</span><select value={weightScope} onChange={(event)=>setWeightScope(event.target.value as NonNullable<CarrierLimits['weightScope']>)}><option value="per_bag">Each selected bag</option><option value="combined">Selected bags together</option></select></label></div>
-      <small>Outside measurements are checked separately from interior packing space. Measure each outside side including handles and wheels if the source counts them.</small>
-    </section>
-    <div className="date-fields"><label className="field"><span>{initial?.retrieval?'Last checked by you':'Last checked'}</span><input type="date" value={reviewedAt} onChange={(event)=>setReviewedAt(event.target.value)}/></label><label className="field"><span>Recheck after · days</span><input type="number" min="1" max="365" step="1" value={staleAfterDays} onChange={(event)=>setStaleAfterDays(event.target.value)}/></label></div>
-    <div className="traveller-fields"><div className="field-heading"><span>Which bags does this source apply to?</span></div>{bags.length ? bags.map((bag)=><label className="check-row" key={bag.id}><input type="checkbox" checked={applicableBagIds.includes(bag.id)} onChange={(event)=>setApplicableBagIds((current)=>event.target.checked?[...current,bag.id]:current.filter((id)=>id!==bag.id))}/><span>{bag.name}</span></label>) : <small>Add a bag to this pack to attach the source to it.</small>}</div>
-    <label className="check-row carrier-verified-check"><input type="checkbox" checked={checkedForBooking} onChange={(event)=>setCheckedForBooking(event.target.checked)}/><span>I checked the allowance for this exact booking, fare and operating airline.</span></label>
-    <div className="capture-disclosure">{initial?.retrieval?<><strong>Retrieved source with editable limits.</strong> The original page was retrieved {new Date(initial.retrieval.catalog.retrievedAt).toLocaleString()}. Your edits are saved as a manual override and never change that timestamp. Select the bags for one passenger and this allowance; an excess count will be flagged. Check the booking and passenger allowance yourself. This app does not retrieve your booking or guarantee carriage.</>:<><strong>Manual source record.</strong> The app does not fetch this manually entered source or your booking. Comparisons check only the numeric values and bag measurements you entered; they cannot confirm booking applicability or carrier acceptance.</>}</div>
-    {error&&<p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button className="button button-secondary" type="button" onClick={onClose}>Cancel</button><button className="button button-primary" type="submit">Save source</button></div>
-  </form></Modal>;
-}
-
-function LibraryPage({ items, data, activeTrip, search, setSearch, getPhoto, unit, onAdd, onEdit, onDelete, onAddEntry }: { items:LibraryItem[]; data:AppData; activeTrip?:Trip; search:string; setSearch:(value:string)=>void; getPhoto:(id:string)=>Promise<Blob|undefined>; unit:UnitSystem; onAdd:()=>void; onEdit:(item:LibraryItem)=>void; onDelete:(item:LibraryItem)=>void; onAddEntry:(item:LibraryItem)=>void }) {
-  const activeItemIds = useMemo(() => new Set(activeTrip?.entries.map((entry) => entry.itemId) ?? []), [activeTrip?.entries]);
-  const usedItemIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const trip of data.trips) for (const entry of trip.entries) ids.add(entry.itemId);
-    return ids;
-  }, [data.trips]);
-  return <main className="secondary-page"><div className="page-heading"><div><p className="eyebrow">REUSABLE INVENTORY</p><h1>My items</h1><p className="page-subtitle">Keep a record of the things you pack often. Photos and measurements stay on this device.</p></div><button className="button button-primary" onClick={onAdd}><Plus size={16}/> Add item</button></div>
-    <div className="library-tools"><label className="search-box"><Search size={17}/><input placeholder="Search your items" value={search} onChange={(event) => setSearch(event.target.value)}/>{search && <button className="icon-button" onClick={() => setSearch('')}><X size={15}/></button>}</label><span>{data.libraryItems.length} saved {data.libraryItems.length === 1 ? 'item' : 'items'}</span></div>
-    {!items.length ? <div className="library-empty"><div className="empty-icon"><Package size={22}/></div><h2>{search ? 'No matching items' : 'Your item library is empty'}</h2><p>{search ? 'Try another name or category.' : 'Add an item with dimensions to reuse it across your packing lists.'}</p>{!search && <button className="button button-primary" onClick={onAdd}><Plus size={16}/> Add your first item</button>}</div> : <div className="library-list">{items.map((item) => {
-      const inPack = activeItemIds.has(item.id);
-      const usedInAnyTrip = usedItemIds.has(item.id);
-      const packingFormCount = packingFormsForSelection(item).length;
-      return <article className="library-item-card" key={item.id}><div className="library-item-visual">{item.photoId ? <LocalPhoto photoId={item.photoId} getPhoto={getPhoto} className="library-photo" alt="" fallback={<div className={`item-monogram large ${item.category}`}>{item.name.slice(0,1).toUpperCase()}</div>}/> : <div className={`item-monogram large ${item.category}`}>{item.name.slice(0,1).toUpperCase()}</div>}</div><div className="library-item-info"><div className="library-title-row"><h2>{item.name}</h2><span className={`evidence-pill ${item.dimensionEvidence.source}`} title={item.dimensionEvidence.note ?? `${evidenceLabel(item.dimensionEvidence)} confidence`}>{evidenceLabel(item.dimensionEvidence)} size</span></div><p>{item.category.replace('_',' ')}<span>·</span>{mmToDisplay(item.dimensions.length,unit)} × {mmToDisplay(item.dimensions.width,unit)} × {mmToDisplay(item.dimensions.height,unit)} {dimLabel(unit)}<span>·</span>{item.massGrams !== undefined ? `${item.massEvidence?.source==='estimated'?'~':''}${gramToDisplay(item.massGrams,unit)}${item.massEvidence ? ` · ${evidenceLabel(item.massEvidence)} weight` : ''}` : 'Weight unknown'}</p>{(item.dimensionEvidence.note || item.massEvidence?.note) && <small>{item.dimensionEvidence.note ?? item.massEvidence?.note}</small>}<div className="library-tags">{item.fragile && <span>Fragile · no stacking</span>}{item.maxTopLoadGrams !== undefined && <span>Above limit {gramToDisplay(item.maxTopLoadGrams,unit)}</span>}{item.keepUpright && <span title={uprightInstruction(item)}>{uprightTag(item)}</span>}<span>{item.flexibility.replace('_',' ')}</span>{packingFormCount>0&&<span>{packingFormCount} packing forms</span>}{usedInAnyTrip && <span>Used in a pack</span>}</div><HandlingPropertyNotes item={item}/></div><div className="library-item-actions"><button className="button button-secondary" onClick={() => onAddEntry(item)} disabled={!activeTrip || inPack}><Plus size={15}/>{inPack ? 'In this pack' : 'Add to pack'}</button><button className="quiet-icon" title={`Edit ${item.name}`} onClick={() => onEdit(item)}><Ruler size={16}/></button><button className="quiet-icon delete-icon" title={`Delete ${item.name}`} onClick={() => onDelete(item)}><Trash2 size={16}/></button></div></article>;
-    })}</div>}
-    <div className="privacy-callout"><ShieldCheck size={17}/><span><strong>Local by design.</strong> Reference photos are stored in this browser and included in backups you download.</span></div>
-  </main>;
-}
-
-function BagsPage({ trip, bags, unit, onAdd, onEdit, onRemove }: { trip?:Trip; bags:Container[]; unit:UnitSystem; onAdd:()=>void; onEdit:(bag:Container)=>void; onRemove:(bag:Container)=>void }) {
-  return <main className="secondary-page"><div className="page-heading"><div><p className="eyebrow">BAG INVENTORY</p><h1>My bags</h1><p className="page-subtitle">Add inside measurements for packing and outside measurements for carrier checks.</p></div><button className="button button-primary" onClick={onAdd}><Plus size={16}/> Add bag</button></div>
-    {!bags.length ? <div className="library-empty"><div className="empty-icon"><Backpack size={22}/></div><h2>No bags in this pack</h2><p>The solver needs the usable inside dimensions and opening of at least one bag.</p><button className="button button-primary" onClick={onAdd}><Plus size={16}/> Add a bag</button></div> : <div className="bag-card-list">{bags.map((bag) => <article className="bag-card" key={bag.id}><div className="bag-card-icon"><Backpack size={23}/></div><div className="bag-card-main"><div className="library-title-row"><h2>{bag.name}</h2><span className={`evidence-pill ${bag.insideEvidence.source}`} title={bag.insideEvidence.note ?? `${evidenceLabel(bag.insideEvidence)} confidence`}>{evidenceLabel(bag.insideEvidence)} inside</span>{bag.outerDimensionsMm&&<span className={`evidence-pill ${bag.outerDimensionsEvidence?.source ?? 'estimated'}`} title={bag.outerDimensionsEvidence?.note ?? 'Outside size entered by the traveller'}>{bag.outerDimensionsEvidence ? evidenceLabel(bag.outerDimensionsEvidence) : 'Unverified'} outside</span>}</div><p>{bag.kind.replace('_',' ')}<span>·</span>{mmToDisplay(bag.inside.length,unit)} × {mmToDisplay(bag.inside.width,unit)} × {mmToDisplay(bag.inside.height,unit)} {dimLabel(unit)} inside</p><small>{bag.outerDimensionsMm ? `Outside: ${mmToDisplay(bag.outerDimensionsMm.length,unit)} × ${mmToDisplay(bag.outerDimensionsMm.width,unit)} × ${mmToDisplay(bag.outerDimensionsMm.height,unit)} ${dimLabel(unit)} (including handles/wheels)` : 'Outside dimensions not recorded'} · Opening: {mmToDisplay(bag.opening.length,unit)} × {mmToDisplay(bag.opening.width,unit)} {dimLabel(unit)}{bag.tareGrams !== undefined ? ` · empty weight ${gramToDisplay(bag.tareGrams,unit)}` : ' · empty weight not recorded'}{bag.massLimitGrams ? ` · limit ${gramToDisplay(bag.massLimitGrams,unit)}` : ''}</small><OpeningEvidenceNotes bag={bag}/><ContainerSpaceNotes bag={bag}/></div><div className="bag-card-actions"><button className="button button-secondary" onClick={() => onEdit(bag)}>Edit bag</button><button className="quiet-icon delete-icon" title={`Remove ${bag.name}`} onClick={() => onRemove(bag)}><Trash2 size={16}/></button></div></article>)}</div>}
-    {trip && <div className="privacy-callout"><AlertTriangle size={17}/><span>Recorded dimensions are rectangular estimates. An explicitly adopted scan cavity also keeps its unavailable cells empty. Physically check the clear interior, narrowest opening and any unseen intrusions.</span></div>}
-  </main>;
-}
-
-function SettingsPage({ data, unit, syncStatus, scanRetention,onScanRetention,onUnit, onPhotoRetention, onExport, onImport, onDelete, onOpenShared, onPublished }: { data:AppData; unit:UnitSystem; syncStatus:string; scanRetention:{supported:boolean;status:string}; onScanRetention:(days:ScanRetentionDays|null)=>void; onUnit:(unit:UnitSystem)=>void; onPhotoRetention:(days:number|null)=>void; onExport:()=>void; onImport:(file?:File)=>Promise<boolean>; onDelete:()=>void; onOpenShared:(snapshot:SharedPackSnapshot,baseline?:SharedPackBaseline,witness?:SharedCopyWitness)=>void; onPublished:(tripId:string,snapshot:SharedPackSnapshot,baseline:SharedPackBaseline)=>void }) {
-  const device=useDeviceWorkspace();
-  const [restoreBusy,setRestoreBusy]=useState(false),[restoreNotice,setRestoreNotice]=useState('');
-  return <main className="secondary-page settings-page"><div className="page-heading"><div><p className="eyebrow">YOUR PREFERENCES</p><h1>Settings</h1><p className="page-subtitle">Control how this device stores and displays your packing data.</p></div></div>
-    <DeviceWorkspaceSettings/>
-    <Suspense fallback={<div role="status">Opening account tools…</div>}><AccountPanel data={data} onRestore={onImport} onOpenShared={onOpenShared} onPublished={onPublished}/></Suspense>
-    <section className="settings-section"><div className="settings-section-title"><div className="settings-icon"><Ruler size={18}/></div><div><h2>Measurements</h2><p>Choose the units you use. Stored sizes are converted as needed.</p></div></div><label className="field compact-field"><span>Units</span><select aria-label="Units" value={unit} onChange={(event) => onUnit(event.target.value as UnitSystem)}><option value="metric">Metric · mm and grams</option><option value="imperial">Imperial · inches and ounces</option></select></label></section>
-    <section className="settings-section"><div className="settings-section-title"><div className="settings-icon"><ShieldCheck size={18}/></div><div><h2>Local storage & photos</h2><p>Packing records are saved on this device. Optional account backups require a separate consented upload.</p></div></div><div className="settings-detail-row"><div><strong>Save status</strong><span>{syncStatus === 'saved' ? 'Saved to this device' : syncStatus === 'saving' ? 'Saving…' : 'There may be unsaved changes'}</span></div><span className="storage-indicator"><span className={syncStatus === 'error' ? 'status-dot error' : 'status-dot'}/>{syncStatus === 'error' ? 'Needs attention' : 'Local'}</span></div><label className="field compact-field"><span>Automatically delete photos after</span><select value={data.settings.automaticPhotoDeletionDays ?? ''} onChange={(event) => onPhotoRetention(event.target.value ? Number(event.target.value) : null)}><option value="">Keep until I remove them</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option></select></label><p className="settings-note">Automatic deletion removes reference photos. Native scan files can be removed from an item or bag editor, or by deleting all local data. JSON backups do not contain original scan files or source images. They retain explicitly adopted item shapes and bag cavities for offline planning.</p></section>
-    <section className="settings-section"><ScanRetentionSettings key={data.settings.automaticScanDeletionDays??'off'} days={data.settings.automaticScanDeletionDays??null} supported={scanRetention.supported} status={scanRetention.status} saving={syncStatus!=='saved'} onApply={onScanRetention}/></section>
-    <section className="settings-section"><div className="settings-section-title"><div className="settings-icon"><Download size={18}/></div><div><h2>Back up or restore</h2><p>Backups include trips, bags, item records, and the photos saved with those items.</p></div></div><div className="backup-actions"><button className="button button-secondary" disabled={device.fileBusy||(device.native&&!device.filesSupported)} onClick={onExport}><Download size={16}/>{device.native?'Save backup file':'Download backup'}</button>{device.native?<button className="button button-secondary" disabled={device.fileBusy||!device.filesSupported||!!device.pendingBackup} onClick={()=>void device.pickBackup()}><Upload size={16}/> Choose backup file</button>:<label className="button button-secondary import-button"><Upload size={16}/> Restore backup<input type="file" accept="application/json,.json" onChange={(event) => { onImport(event.currentTarget.files?.[0]); event.currentTarget.value = ''; }}/></label>}</div><p className="settings-note">Backup files are unencrypted and may contain personal item photos. Store them somewhere you trust. {device.native&&'The system picker can include cloud providers; choosing one can copy your backup there. Protected workspaces lock while a provider is open.'}</p>
-      {device.native&&!device.filesSupported&&<p className="settings-note">Native backup files are unavailable in this installation. This flow requires the updated Android app.</p>}
-      {device.pendingBackup&&<div className="backup-review"><p className="backup-review-description">{device.backupMatches?'The selected backup is ready for review. Confirming restore replaces this workspace’s records and photos and removes its existing original scan files. Other workspaces remain.':'This backup was selected in a different workspace. Open that workspace before reviewing it.'}</p>{device.backupMatches&&<button className="button button-primary" disabled={restoreBusy||device.fileBusy} onClick={()=>{setRestoreBusy(true);setRestoreNotice('');void device.reviewBackup().then(onImport).then(restored=>{if(restored)return device.discardBackup(true);}).catch(error=>setRestoreNotice(error instanceof Error?error.message:'Backup review failed.')).finally(()=>setRestoreBusy(false));}}>Review selected backup</button>}<button className="button button-secondary" disabled={restoreBusy||device.fileBusy} onClick={()=>void device.discardBackup().catch(error=>setRestoreNotice(error instanceof Error?error.message:'Discard failed.'))}>Discard selected backup</button></div>}
-      {device.fileNotice&&<p role="status" className="settings-note account-notice">{device.fileNotice}</p>}{restoreNotice&&<p role="status" className="settings-note account-notice">{restoreNotice}</p>}
-    </section>
-    <section className="settings-section danger-section"><div className="settings-section-title"><div className="settings-icon"><Trash2 size={18}/></div><div><h2>Delete local data</h2><p>{device.session ? "Remove the packing records and photos in this protected workspace. Guest packs, other workspaces and server records remain." : "Remove guest trips, bags, items, photos and native scan files from this device. Protected workspaces and server records remain."}</p></div></div><button className="button button-danger" onClick={onDelete}><Trash2 size={16}/> Delete all local data</button></section>
-    <div className="settings-foot"><Lock size={15}/> Photos and original scans stay on this device. Account backups and household packs upload only after explicit consent.</div>
-  </main>;
-}
-
 function EmptyState({ onNew, onSettings }: { onNew:()=>void; onSettings:()=>void }) {
   return <main className="empty-home"><div className="empty-home-art"><div className="empty-case"><span/><span/><span/></div><div className="empty-tag">READY WHEN YOU ARE</div></div><p className="eyebrow">A LITTLE MORE ROOM TO THINK</p><h1>Make space for<br/>what matters.</h1><p>Your packing plans and item library stay on this device. Start with a bag, add a few things, and see a considered way to pack.</p><button className="button button-primary" onClick={onNew}><Plus size={17}/> Create a pack</button><button className="text-button" onClick={onSettings}>Restore a backup</button></main>;
-}
-
-function TripCapture({ initial, onClose, onSave, onDelete }: { initial?:Trip; onClose:()=>void; onSave:(name:string,destination:string,start:string,end:string,packingOnly:boolean,travellerNames:string[],activities:TripActivity[],laundryAvailable:boolean,existingId?:string)=>void; onDelete?:()=>void }) {
-  const [name,setName] = useState(initial?.sample ? '' : initial?.name ?? '');
-  const [destination,setDestination] = useState(initial?.sample ? '' : initial?.destination ?? '');
-  const [start,setStart] = useState(initial?.sample ? '' : initial?.startDate ?? '');
-  const [end,setEnd] = useState(initial?.sample ? '' : initial?.endDate ?? '');
-  const [packingOnly,setPackingOnly] = useState(initial?.packingOnly ?? true);
-  const [travellers,setTravellers] = useState<string[]>(initial?.travellers.map((traveller)=>traveller.name) ?? ['You']);
-  const [activities,setActivities] = useState<TripActivity[]>(initial?.activities ?? []);
-  const [laundryAvailable,setLaundryAvailable] = useState(initial?.laundryAvailable ?? false);
-  const toggleActivity = (activity:TripActivity) => setActivities((current) => current.includes(activity) ? current.filter((value) => value !== activity) : [...current,activity]);
-  const submit = (event:FormEvent) => {
-    event.preventDefault();
-    const tripName = name.trim() || (destination.trim() ? `${destination.trim()} pack` : 'Packing session');
-    const tripDestination = destination.trim();
-    onSave(tripName,tripDestination,start,end,packingOnly,travellers,activities,laundryAvailable,initial && !initial.sample ? initial.id : undefined);
-  };
-  const activityChoices: Array<[TripActivity,string]> = [['city','City walking'],['business','Business'],['beach','Beach'],['outdoors','Outdoor activities'],['formal_event','Formal event'],['sports','Sports or exercise']];
-  return <Modal title={initial && !initial.sample ? 'Pack details' : 'Create a pack'} eyebrow={initial && !initial.sample ? 'PACK DETAILS' : 'NEW PACK'} onClose={onClose}>
-    <form onSubmit={submit} className="simple-modal-form">
-      <label className="field"><span>Pack name</span><input autoFocus value={name} onChange={(event)=>setName(event.target.value)} placeholder="e.g. Weekend in Lisbon" maxLength={70}/></label>
-      <label className="field"><span>Destination <em>optional</em></span><input value={destination} onChange={(event)=>setDestination(event.target.value)} placeholder="e.g. Lisbon, Portugal" maxLength={100}/></label>
-      <div className="date-fields"><label className="field"><span>Start date</span><input type="date" value={start} onChange={(event)=>setStart(event.target.value)}/></label><label className="field"><span>End date</span><input type="date" min={start||undefined} value={end} onChange={(event)=>setEnd(event.target.value)}/></label></div>
-      <div className="traveller-fields"><div className="field-heading"><span>Travellers · assign personal items and bags</span>{travellers.length<8&&<button type="button" className="text-button" onClick={()=>setTravellers((current)=>[...current,`Traveller ${current.length+1}`])}><Plus size={14}/> Add person</button>}</div>{travellers.map((traveller,index)=><div className="traveller-row" key={index}><label className="field"><span>{index===0?'First traveller':`Traveller ${index+1}`}</span><input value={traveller} onChange={(event)=>setTravellers((current)=>current.map((value,row)=>row===index?event.target.value:value))} maxLength={40}/></label>{index>0&&<button type="button" className="quiet-icon delete-icon" aria-label={`Remove traveller ${index+1}`} onClick={()=>setTravellers((current)=>current.filter((_,row)=>row!==index))}><X size={15}/></button>}</div>)}</div>
-      <div className="choice-block"><span className="field-label">What do you need?</span><label className="radio-row"><input type="radio" checked={packingOnly} onChange={()=>setPackingOnly(true)}/><span><strong>Packing only</strong><small>Start with the items you already have in mind.</small></span></label><label className="radio-row"><input type="radio" checked={!packingOnly} onChange={()=>setPackingOnly(false)}/><span><strong>Trip-aware list</strong><small>Get an editable starter checklist from dates and activities.</small></span></label></div>
-      {!packingOnly && <div className="trip-context-inputs"><div className="field-heading"><span>Activities · choose any that apply</span></div><div className="trip-activity-grid">{activityChoices.map(([value,label])=><label className="check-row" key={value}><input type="checkbox" checked={activities.includes(value)} onChange={()=>toggleActivity(value)}/><span>{label}</span></label>)}</div><label className="check-row laundry-check"><input type="checkbox" checked={laundryAvailable} onChange={(event)=>setLaundryAvailable(event.target.checked)}/><span>Laundry will be available</span></label><small>Starter suggestions use your entries. Optional weather lookup becomes available after saving; health and carrier decisions are not inferred. You can edit the list after creating the pack.</small></div>}
-      <div className="modal-actions">{onDelete && <button className="button button-danger" type="button" onClick={onDelete}>Delete pack</button>}<span className="modal-action-spacer"/><button className="button button-secondary" type="button" onClick={onClose}>Cancel</button><button className="button button-primary" type="submit">{initial && !initial.sample ? 'Save details' : 'Create pack'}</button></div>
-    </form>
-  </Modal>;
-}
-
-function BagCapture({ initial, unit, travellers, scanSupported, scanUnavailableReason, onClose, onSave }: { initial?:Container; unit:UnitSystem; travellers:Traveller[]; scanSupported:boolean; scanUnavailableReason?:string; onClose:()=>void; onSave:(bag:Omit<Container,'id'|'createdAt'>,draftSourceIds:string[])=>Promise<void> }) {
-  const {scanObject,deleteScanCapture}=useDeviceWorkspace().capture;
-  const [name,setName]=useState(initial?.name ?? '');
-  const [kind,setKind]=useState<Container['kind']>(initial?.kind ?? 'cabin_case');
-  const [length,setLength]=useState(lengthInput(initial?.inside.length,unit));
-  const [width,setWidth]=useState(lengthInput(initial?.inside.width,unit));
-  const [height,setHeight]=useState(lengthInput(initial?.inside.height,unit));
-  const [openLength,setOpenLength]=useState(lengthInput(initial?.opening.length,unit));
-  const [openWidth,setOpenWidth]=useState(lengthInput(initial?.opening.width,unit));
-  const [openingEvidence,setOpeningEvidence]=useState<Evidence|undefined>(initial?.openingEvidence);
-  const [outerLength,setOuterLength]=useState(lengthInput(initial?.outerDimensionsMm?.length,unit));
-  const [outerWidth,setOuterWidth]=useState(lengthInput(initial?.outerDimensionsMm?.width,unit));
-  const [outerHeight,setOuterHeight]=useState(lengthInput(initial?.outerDimensionsMm?.height,unit));
-  const [outerSource,setOuterSource]=useState<Evidence['source']>(initial?.outerDimensionsEvidence?.source ?? 'user_confirmed');
-  const [tare,setTare]=useState(massInput(initial?.tareGrams,unit));
-  const [tareSource,setTareSource]=useState<Evidence['source']>(initial?.tareEvidence?.source ?? 'user_confirmed');
-  const [limit,setLimit]=useState(massInput(initial?.massLimitGrams,unit));
-  const [compartments,setCompartments]=useState<ContainerCompartment[]>(()=>structuredClone(initial?.compartments??[]));
-  const reviewCompartmentsAgain=()=>setCompartments(current=>current.map(c=>({...c,supportEvidence:evidence('estimated','Inside frame changed; check the recorded compartment positions, openings and supporting bases again.')})));
-  const [unavailableSpaces,setUnavailableSpaces]=useState<UnavailableSpace[]>(()=>structuredClone(initial?.unavailableSpaces??[]));
-  const [lidClearance,setLidClearance]=useState(lengthInput(initial?.lidClearanceMm,unit));
-  const [lidSource,setLidSource]=useState<Evidence['source']>(initial?.lidClearanceEvidence?.source??'estimated');
-  const [insideEvidence,setInsideEvidence]=useState<Evidence>(initial?.insideEvidence ?? evidence('user_confirmed','Inside dimensions entered by the user; not instrument-verified. Opening evidence is reviewed separately.'));
-  const [packingInterior,setPackingInterior]=useState<PackingInterior|undefined>(()=>initial?.packingInterior?structuredClone(initial.packingInterior):undefined);
-  const interiorDraft=useMemo(()=>{try{return packingInterior?interiorGeometry(packingInterior):undefined;}catch{return undefined;}},[packingInterior]);
-  const [scan,setScan]=useState(initial?.scan);
-  const [calibrationBasis,setCalibrationBasis]=useState(initial?.scan ? initial.scan.dimensionsEstimateMm ?? initial.inside : undefined);
-  const [scaleCalibration,setScaleCalibration]=useState(initial?.scaleCalibration);
-  const [scanDimensionsEdited,setScanDimensionsEdited]=useState(false);
-  const [scaleReference,setScaleReference]=useState(initial?.scaleCalibration ? mmToDisplay(initial.scaleCalibration.referenceLengthMm,unit) : '');
-  const [travellerIds,setTravellerIds]=useState<string[]>(initial?.travellerIds ?? travellers.map((person)=>person.id));
-  const [error,setError]=useState('');
-  const [scanning,setScanning]=useState(false),[saving,setSaving]=useState(false),[cleaning,setCleaning]=useState(false);
-  const operation=useRef(false),draftSources=useRef(new Set<string>());
-  const busy=scanning||saving||cleaning;
-  const captureInterior=async()=>{
-    if(operation.current)return;operation.current=true;
-    setScanning(true); setError('');
-    try {
-      const result=await scanObject('container_interior');
-      if(result.record.id!==initial?.scan?.id)draftSources.current.add(result.record.id);
-      let cleanupFailed=false;
-      if(scan&&scan.id!==initial?.scan?.id)try{await deleteScanCapture(scan.id);draftSources.current.delete(scan.id);}catch{cleanupFailed=true;}
-      setLength(mmToDisplay(result.dimensionsMm.length,unit)); setWidth(mmToDisplay(result.dimensionsMm.width,unit)); setHeight(mmToDisplay(result.dimensionsMm.height,unit));
-      setInsideEvidence({source:'estimated',confidence:0.5,collectedAt:result.record.createdAt,note:'Uncalibrated 3D estimate from a guided scan. Check usable interior dimensions and the narrowest opening with a physical measurement.'});
-      setPackingInterior(undefined);
-      setOpeningEvidence(changedPropertyEvidence(openingEvidence));
-      reviewCompartmentsAgain();
-      setScan(result.record);
-      setCalibrationBasis(result.dimensionsMm);
-      setScaleCalibration(undefined);
-      setScanDimensionsEdited(false);
-      setScaleReference('');
-      setError([...(cleanupFailed?['The new scan is ready, but the previous draft source could not be removed. Save or cancel will retry its cleanup.']:[]),...result.warnings].join(' '));
-    } catch(scanError) { const message=scanError instanceof Error?scanError.message:'The scan could not be completed.';if(message!=='Scan cancelled.')setError(message); }
-    finally { operation.current=false;setScanning(false); }
-  };
-  const closeEditor=async()=>{
-    if(operation.current)return;operation.current=true;setCleaning(true);setError('');
-    try{for(const id of [...draftSources.current]){await deleteScanCapture(id);draftSources.current.delete(id);}onClose();}
-    catch{setError('The draft source captures could not all be removed. Your saved bag is unchanged. Save the draft or try cancelling again.');}
-    finally{operation.current=false;setCleaning(false);}
-  };
-  const removeScan=async()=>{
-    if(operation.current)return;operation.current=true;setCleaning(true);
-    try{if(scan&&scan.id!==initial?.scan?.id){await deleteScanCapture(scan.id);draftSources.current.delete(scan.id);}setScan(undefined);setScaleReference('');}
-    catch{setError('The new 3D source capture could not be removed. The draft is retained.');}
-    finally{operation.current=false;setCleaning(false);}
-  };
-  const editInsideDimension=(axis:'length'|'width'|'height',setter:(value:string)=>void,value:string)=>{
-    setter(value);
-    const oldValue=axis==='length'?length:axis==='width'?width:height;
-    if(value!==oldValue)reviewCompartmentsAgain();
-    setPackingInterior(undefined);
-    if(!scan&&!packingInterior)return;
-    setScanDimensionsEdited(true);
-    const nextValues={
-      length:displayToMm(Number(axis==='length'?value:length),unit),
-      width:displayToMm(Number(axis==='width'?value:width),unit),
-      height:displayToMm(Number(axis==='height'?value:height),unit),
-    };
-    if(Object.values(nextValues).every((part)=>Number.isFinite(part)&&part>0))setCalibrationBasis(nextValues);
-    setScaleCalibration(undefined);
-    setInsideEvidence({source:'estimated',confidence:0.5,collectedAt:new Date().toISOString(),note:'Scan-based interior dimensions were edited by the traveller; confirm all displayed values and the narrowest opening before relying on fit.'});
-  };
-  const calibrateInteriorScale=()=>{
-    if(!scan&&!packingInterior)return;
-    const referenceLengthMm=displayToMm(Number(scaleReference),unit);
-    try{
-      const estimate=packingInterior?.cavity.boundsMm??calibrationBasis??scan?.dimensionsEstimateMm??{length:displayToMm(Number(length),unit),width:displayToMm(Number(width),unit),height:displayToMm(Number(height),unit)};
-      const calibrated=calibrateLongestEdge(estimate,referenceLengthMm);
-      const ratio=packingInterior?referenceLengthMm/Math.max(...Object.values(packingInterior.cavity.boundsMm)):undefined;
-      const model=packingInterior?{...packingInterior,scale:ratio!,supportReview:ratio===packingInterior.scale?packingInterior.supportReview:undefined}:undefined;
-      const dimensions=model?interiorGeometry(model).dimensions:calibrated.dimensionsMm;
-      if(model)setPackingInterior(model);
-      if(model)setOpeningEvidence(changedPropertyEvidence(openingEvidence));
-      if(dimensions.length!==Number(length)*(unit==='metric'?1:25.4)||dimensions.width!==Number(width)*(unit==='metric'?1:25.4)||dimensions.height!==Number(height)*(unit==='metric'?1:25.4))reviewCompartmentsAgain();
-      setLength(lengthInput(dimensions.length,unit));setWidth(lengthInput(dimensions.width,unit));setHeight(lengthInput(dimensions.height,unit));
-      setScaleCalibration({method:'measured_longest_edge',referenceLengthMm,calibratedAt:new Date().toISOString()});
-      setInsideEvidence({source:'estimated',confidence:0.65,collectedAt:new Date().toISOString(),note:`3D scan scale calibrated with a traveller-measured longest edge (${Math.round(referenceLengthMm)} mm). Rounded corners, intrusions, compartments and the opening remain unmeasured; confirm usable space physically.`});
-      setScanDimensionsEdited(false);setError('');
-    }catch(calibrationError){setError(calibrationError instanceof Error?calibrationError.message:'The scan scale could not be calibrated.');}
-  };
-  const adoptCavity=(geometry:ReconstructedInterior,travelUp:PackingInterior['travelUp'])=>{
-    const basis=geometry.cavity.boundsMm;
-    if(scanDimensionsEdited)throw Error('The scan dimensions were edited independently. Calibrate the original source scale before adopting a cavity.');
-    const ratio=scaleCalibration?scaleCalibration.referenceLengthMm/Math.max(...Object.values(basis)):1;
-    const model=adoptInterior(geometry.cavity,travelUp,ratio);
-    const dimensions=interiorGeometry(model).dimensions;
-    setPackingInterior(model);
-    setOpeningEvidence(changedPropertyEvidence(openingEvidence));
-    reviewCompartmentsAgain();
-    setLength(lengthInput(dimensions.length,unit));setWidth(lengthInput(dimensions.width,unit));setHeight(lengthInput(dimensions.height,unit));
-    setInsideEvidence({source:'estimated',confidence:0.5,collectedAt:model.adoptedAt,note:'Estimated connected scan cavity in the reviewed opening-up frame. The traveller reviewed the lowest floor, inside corner and travel-up end; physical completeness and fit remain unverified.'});
-    setError('');
-  };
-  const submit=async(event:FormEvent)=>{
-    event.preventDefault();if(operation.current)return;
-    const dims=[length,width,height,openLength,openWidth].map(Number);
-    const outerValues=[outerLength,outerWidth,outerHeight];
-    const hasOuterValues=outerValues.some((value)=>value.trim()!=='');
-    if(!name.trim()){setError('Name this bag.');return;}
-    if(dims.some((value)=>!Number.isFinite(value)||value<=0)){setError('Enter all inside dimensions and opening dimensions.');return;}
-    if(hasOuterValues&&outerValues.some((value)=>!Number.isFinite(Number(value))||Number(value)<=0)){setError(`Enter all three outside dimensions in ${dimLabel(unit)}, or leave them blank.`);return;}
-    if(dims[3]>dims[0]||dims[4]>dims[1]){setError('Opening dimensions should not be larger than the bag interior.');return;}
-    if(travellers.length>0&&travellerIds.length===0){setError('Choose at least one traveller for this bag.');return;}
-    const scale=(value:string,original?:number)=>measurementFromInput(value,unit==='metric'?1:25.4,original);
-    const weight=(value:string,original?:number)=>measurementFromInput(value,unit==='metric'?1:28.3495,original);
-    const massError = bagMassRecordError({ tareGrams: tare.trim() === '' ? undefined : Number(tare), massLimitGrams: limit.trim() === '' ? undefined : Number(limit) });
-    if(massError){setError(massError);return;}
-    const preciseInside=interiorDraft?.dimensions??initial?.inside;
-    const inside={length:scale(length,preciseInside?.length),width:scale(width,preciseInside?.width),height:scale(height,preciseInside?.height)};
-    const lidClearanceMm=lidClearance.trim()===''?undefined:scale(lidClearance,initial?.lidClearanceMm);
-    const lidClearanceEvidence=lidClearanceMm!==undefined?(lidClearanceMm===initial?.lidClearanceMm&&lidSource===initial?.lidClearanceEvidence?.source?initial.lidClearanceEvidence:{...evidence(lidSource,'Vertical space deliberately left below the lid; physically confirm closure.'),confidence:lidSource==='estimated'?.5:1}):undefined;
-    const spaceError=containerSpaceError({inside,packingInterior,compartments:compartments.length?compartments:undefined,unavailableSpaces,lidClearanceMm,lidClearanceEvidence})??interiorSupportError(packingInterior);
-    if(spaceError){setError(spaceError);return;}
-    const outerDimensionsMm=hasOuterValues?{length:scale(outerLength,initial?.outerDimensionsMm?.length),width:scale(outerWidth,initial?.outerDimensionsMm?.width),height:scale(outerHeight,initial?.outerDimensionsMm?.height)}:undefined;
-    if(outerDimensionsMm){
-      const outsideSides=Object.values(outerDimensionsMm).sort((a,b)=>b-a);
-      const insideSides=Object.values(inside).sort((a,b)=>b-a);
-      if(outsideSides.some((side,index)=>side<insideSides[index])){setError('Outside measurements cannot be smaller than the usable inside space. Check the measurements and units.');return;}
-    }
-    const outerUnchanged=outerDimensionsMm&&initial?.outerDimensionsMm&&Object.keys(outerDimensionsMm).every((axis)=>outerDimensionsMm[axis as keyof typeof outerDimensionsMm]===initial.outerDimensionsMm![axis as keyof typeof outerDimensionsMm]);
-    operation.current=true;setSaving(true);setError('');
-    try{await onSave({
-      name:name.trim(),kind,inside,...(compartments.length?{compartments}:{}),...(packingInterior?{packingInterior}:{}),
-      ...(unavailableSpaces.length?{unavailableSpaces}:{}),...(lidClearanceMm!==undefined?{lidClearanceMm,lidClearanceEvidence}:{}),
-      ...(outerDimensionsMm?{outerDimensionsMm,outerDimensionsEvidence:outerUnchanged&&initial?.outerDimensionsEvidence?.source===outerSource?initial.outerDimensionsEvidence:{...evidence(outerSource,'Outside dimensions entered by the traveller. Include handles and wheels when the carrier source counts them.'),confidence:outerSource==='estimated'?0.5:1}}:{}),
-      opening:{length:scale(openLength,initial?.opening.length),width:scale(openWidth,initial?.opening.width)},openingEvidence,insideEvidence,
-      ...(scan?{scan}:{}),...(scaleCalibration?{scaleCalibration}:{}),
-      ...(tare?{tareGrams:weight(tare,initial?.tareGrams),tareEvidence:weight(tare,initial?.tareGrams)===initial?.tareGrams&&initial?.tareEvidence?.source===tareSource?initial.tareEvidence:{...evidence(tareSource,'Empty bag weight entered by the traveller.'),confidence:tareSource==='estimated'?0.5:1}}:{}),
-      ...(limit?{massLimitGrams:weight(limit,initial?.massLimitGrams),massLimitEvidence:weight(limit,initial?.massLimitGrams)===initial?.massLimitGrams&&initial?.massLimitEvidence?initial.massLimitEvidence:evidence('user_confirmed','Weight limit entered by the user; verify the applicable rule.')}:{ }),travellerIds,
-    },[...draftSources.current]);}
-    catch(saveError){setError(saveError instanceof Error&& !['AbortError','QuotaExceededError','UnknownError'].includes(saveError.name)?saveError.message:'The bag could not be saved on this device. Your draft has not been saved; your previous bag is retained. Retry saving or cancel the draft.');}
-    finally{operation.current=false;setSaving(false);}
-  };
-  return <Modal title={initial?'Edit bag':'Add a bag'} eyebrow="BAG INVENTORY" onClose={()=>void closeEditor()} busy={busy}><form className="simple-modal-form bag-form" onSubmit={event=>void submit(event)} aria-busy={busy}><fieldset className="bag-editor-fields" disabled={busy}>
-    <label className="field"><span>Bag name</span><input autoFocus value={name} onChange={(event)=>setName(event.target.value)} placeholder="e.g. Blue cabin case" maxLength={70}/></label>
-    <label className="field"><span>Type</span><select value={kind} onChange={(event)=>setKind(event.target.value as Container['kind'])}>{[['cabin_case','Cabin case'],['checked_case','Checked case'],['personal_item','Personal item'],['backpack','Backpack'],['duffel','Duffel'],['other','Other']].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
-    <div className="field-block"><div className="field-heading"><span>Usable inside dimensions · {dimLabel(unit)}</span><Ruler size={15}/></div>
-      <button className="button button-secondary scan-size-button" type="button" onClick={captureInterior} disabled={!scanSupported||scanning}><ScanLine size={16}/>{scanning?'Scanning…':'Scan empty interior'}</button>
-      {!scanSupported&&<small className="scan-availability">{scanUnavailableReason ?? 'Guided 3D scanning is not available on this device. You can enter or measure the size here.'}</small>}
-      {(scan||packingInterior)&&<div className="scan-calibration"><p>Measure the longest edge of the original source envelope to set its uniform scale. For an adopted cavity, the displayed usable inside dimensions exclude observed boundary cells and may be smaller. Check all boundaries and the narrowest opening physically.</p><label className="field"><span>Measured longest source edge · {dimLabel(unit)}</span><input aria-label="Measured longest inside edge" type="number" inputMode="decimal" min="0.1" max={unit==='metric'?10000:393.7} step="any" value={scaleReference} onChange={event=>setScaleReference(event.target.value)} placeholder={unit==='metric'?'e.g. 500':'e.g. 19.7'}/></label><button className="button button-secondary" type="button" onClick={calibrateInteriorScale} disabled={!scaleReference}>Calibrate scan scale</button>{scaleCalibration&&!scanDimensionsEdited&&<small className="scan-availability">Uniform scale calibrated; remaining boundaries and physical fit are estimates.</small>}</div>}
-      {scan&&<><Suspense fallback={<div role="status">Opening saved scan preview…</div>}><SavedScanPreview key={scan.id} record={scan} onAdoptInterior={adoptCavity}/></Suspense><button className="text-button" type="button" onClick={removeScan}>Remove saved 3D scan</button></>}
-      {packingInterior&&<section className="adopted-interior" aria-label="Adopted estimated cavity"><h3>Estimated cavity in this draft</h3>{interiorDraft?<><p>{interiorDraft.freeCells.length.toLocaleString()} free cells · {(interiorDraft.surface.volumeMm3/1e6).toFixed(3)} estimated litres · uniform scale {packingInterior.scale.toFixed(4)}. The reviewed opening faces up for packing; the bag's {interiorTravelLabel(packingInterior)} end in that view faces up during travel.</p><p>Inside dimensions use the new corner at the smallest free side edges and lowest free floor. Recheck recorded restrictions in this frame. Editing a size independently switches this draft to rectangular space.</p><small>Source {packingInterior.cavity.id} · {packingInterior.cavity.sourcePointCount.toLocaleString()} original points. Original capture unchanged. Save applies this draft; cancel keeps the saved bag.</small><InteriorSupportReview key={packingInterior.cavity.id+':'+packingInterior.scale+':'+packingInterior.travelUp.axis+':'+packingInterior.travelUp.sign} model={packingInterior} onChange={setPackingInterior}/></>:<p className="form-error" role="alert">The saved cavity needs correction. Review the source again or explicitly switch this draft to recorded rectangular space. Cancel preserves the saved record and packed positions.</p>}<button className="button button-secondary" type="button" onClick={()=>{setPackingInterior(undefined);reviewCompartmentsAgain();}}>Use recorded rectangular space</button></section>}
-      <div className="dimension-fields">{([['length','Length',length,setLength],['width','Width',width,setWidth],['height','Height',height,setHeight]] as const).map(([axis,label,value,setter])=><label className="field" key={axis}><span>{label}</span><input aria-label={`Inside ${label}`} type="number" inputMode="decimal" min="0.1" step="any" value={value} onChange={event=>editInsideDimension(axis,setter,event.target.value)}/></label>)}</div>
-    </div>
-    <div className="field-block"><div className="field-heading"><span>Narrowest opening · {dimLabel(unit)}</span></div><div className="dimension-fields">{[['Length',openLength,setOpenLength],['Width',openWidth,setOpenWidth]].map(([label,value,setter])=><label className="field" key={String(label)}><span>{String(label)}</span><input aria-label={`Opening ${String(label)}`} type="number" inputMode="decimal" min="0.1" step="any" value={String(value)} onChange={event=>{(setter as (value:string)=>void)(event.target.value);setOpeningEvidence(changedPropertyEvidence(openingEvidence));}}/></label>)}</div><PropertyEvidenceFields label="Opening" measurable evidence={openingEvidence} onChange={setOpeningEvidence}/></div>
-    <CompartmentFields compartments={compartments} onChange={setCompartments} unit={unit}/>
-    <UnavailableSpaceFields spaces={unavailableSpaces} onChange={setUnavailableSpaces} unit={unit}/>
-    <div className="field-block lid-clearance-fields"><h3>Space below the lid</h3><p>Leave this vertical space free across the whole bag. Measure it below the opening in the packing view. This view may differ from the travel-up direction you reviewed. It does not establish closure or cushioning.</p><label className="field"><span>Lid clearance · {dimLabel(unit)} <em>optional</em></span><input aria-label="Lid clearance" type="number" min="0" step="any" inputMode="decimal" value={lidClearance} onChange={event=>setLidClearance(event.target.value)}/></label>{lidClearance.trim()!==''&&<label className="field"><span>Lid clearance source</span><select aria-label="Lid clearance source" value={lidSource} onChange={event=>setLidSource(event.target.value as Evidence['source'])}>{(['estimated','measured','user_confirmed'] as const).map(source=><option key={source} value={source}>{sourceLabel(source)}</option>)}{!['estimated','measured','user_confirmed'].includes(lidSource)&&<option value={lidSource}>{sourceLabel(lidSource)}</option>}</select></label>}</div>
-    <div className="field-block carrier-outer-dimensions"><div className="field-heading"><span>Outside dimensions for carrier checks · {dimLabel(unit)} <em>optional</em></span></div><p>Measure the full outside as the bag will travel. Include handles and wheels when the carrier counts them.</p><div className="dimension-fields">{([['length','Length',outerLength,setOuterLength],['width','Width',outerWidth,setOuterWidth],['height','Height',outerHeight,setOuterHeight]] as const).map(([axis,label,value,setter])=><label className="field" key={axis}><span>{label}</span><input aria-label={`Outside ${label}`} type="number" inputMode="decimal" min="0.1" step="any" value={value} onChange={(event)=>setter(event.target.value)}/></label>)}</div><label className="field"><span>Outside size source</span><select value={outerSource} onChange={(event)=>setOuterSource(event.target.value as Evidence['source'])}>{(['measured','known','estimated','user_confirmed'] as const).map((source)=><option key={source} value={source}>{sourceLabel(source)}</option>)}{outerSource==='provider'&&<option value="provider">Provider record</option>}</select></label></div>
-    <div className="mass-row"><label className="field"><span>Empty weight <em>optional · {unit==='metric'?'grams':'ounces'}</em></span><input aria-label="Empty bag weight" type="number" min="0" step="any" inputMode="decimal" value={tare} onChange={(event)=>setTare(event.target.value)}/></label><label className="field"><span>Weight limit <em>optional · {unit==='metric'?'grams':'ounces'}</em></span><input aria-label="Bag weight limit" type="number" min="0.1" step="any" inputMode="decimal" value={limit} onChange={(event)=>setLimit(event.target.value)}/></label></div>
-    {tare&&<label className="field"><span>Empty weight source</span><select value={tareSource} onChange={(event)=>setTareSource(event.target.value as Evidence['source'])}>{(['measured','known','estimated','user_confirmed'] as const).map((source)=><option key={source} value={source}>{sourceLabel(source)}</option>)}{tareSource==='provider'&&<option value="provider">Provider record</option>}</select></label>}
-    {travellers.length>1&&<div className="traveller-fields"><div className="field-heading"><span>Who can use this bag?</span></div>{travellers.map((person)=><label className="check-row" key={person.id}><input type="checkbox" checked={travellerIds.includes(person.id)} onChange={(event)=>setTravellerIds((current)=>event.target.checked?[...current,person.id]:current.filter((id)=>id!==person.id))}/><span>{person.name}</span></label>)}</div>}
-    <div className="capture-disclosure"><strong>Confirm the usable interior.</strong> Review alone estimates an envelope; explicit cavity adoption changes the usable inside frame. Hidden intrusions, corners and compartments may reduce real space. Measure the narrowest opening and physically check fit.</div>{error&&<p className="form-error" role="alert">{error}</p>}<div className="modal-actions"><button className="button button-secondary" type="button" onClick={closeEditor}>Cancel</button><button className="button button-primary" type="submit">{saving?'Saving bag…':cleaning?'Removing draft scans…':initial?'Save bag':'Add bag'}</button></div>
-  </fieldset></form></Modal>;
 }
 
 function Modal({ title, eyebrow, onClose, children, busy=false }: { title:string; eyebrow:string; onClose:()=>void; children:ReactNode; busy?:boolean }) {

@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest';
 import {buildPlan} from './optimizer';
 import {assessStackLoads} from './stack-load';
 import {orderPackingSteps} from './packing-sequence';
-import {boxesIntersect,geometryContactArea,geometryIntersects,geometryOrientations,geometrySupportArea,hasVerticalEntry,packingShapeError,placementBoxes,placementSurface,shapeDimensions,shapeKey,shapeVolume} from './packing-geometry';
+import {boxesIntersect,contactPositions,geometryContactArea,geometryIntersects,geometryOrientations,geometrySupportArea,hasGeometrySupport,hasVerticalEntry,packingShapeError,placementBoxes,placementSurface,RectangularSupportIndex,shapeDimensions,shapeKey,shapeVolume} from './packing-geometry';
 import type {Container,LibraryItem,PackingShape,Placement,PlanItem,Trip} from './types';
 const date='2026-10-01T00:00:00Z',evidence={source:'estimated' as const,confidence:.5,collectedAt:date};
 function shape(portal=false):PackingShape {
@@ -21,6 +21,34 @@ const bag:Container={id:'bag',name:'bag',kind:'other',inside:{length:120,width:1
 function trip(items:LibraryItem[]):Trip{return {id:'trip',name:'trip',destination:'',packingOnly:true,sample:false,travellers:[{id:'person',name:'person'}],containerIds:['bag'],entries:items.map(i=>({id:i.id,itemId:i.id,travellerId:'person',quantity:1,priority:'required',required:true,accessPriority:1})),mode:'balanced',completedInstanceIds:[],unavailableInstanceIds:[],lockedPlacements:[],carrierRules:[],createdAt:date,updatedAt:date};}
 function placement(id:string,patch:Partial<Placement>={}):Placement{return {instanceId:id+'#1',entryId:id,itemId:id,containerId:'bag',x:0,y:0,z:0,length:120,width:100,height:60,rotation:0,layer:1,...patch};}
 describe('adopted occupied-cell planning',()=>{
+ it('reuses precomputed obstacle boxes without changing shape contact candidates',()=>{
+  const shaped=shape(),obstacle=placement('U'),shapeItem=item('U',shaped.fittedDimensionsMm,shaped),candidate=item('candidate',{length:40,width:30,height:20}),items=new Map<string,LibraryItem>([[obstacle.instanceId,shapeItem],[candidate.id+'#1',candidate]]),orientation=geometryOrientations(candidate,bag)[0];
+  const full=contactPositions(bag,orientation,candidate,[obstacle],items),cached=contactPositions(bag,orientation,candidate,[],items,undefined,[],placementBoxes(obstacle,shapeItem));
+  expect(cached).toEqual(full);
+ });
+ it('indexes rectangular support planes without losing epsilon or shaped support candidates',()=>{
+  const shaped=shape(),support=placement('U',{height:60}),upper=placement('upper',{z:60.005,height:10}),decoys=Array.from({length:64},(_,index)=>placement(`decoy-${index}`,{z:10+index*.4,height:5,width:20}));
+  const placed=[...decoys,support],items=new Map<string,LibraryItem>(placed.map(p=>[p.instanceId,item(p.itemId)]));items.set(support.instanceId,item('U',shaped.fittedDimensionsMm,shaped));
+  const index=new RectangularSupportIndex(items,placed);
+  expect(index.candidates(upper)).toContain(support);expect(index.candidates(upper)).not.toContain(decoys[0]);
+  expect(hasGeometrySupport(upper,placed,items,.65)).toBe(true);expect(hasGeometrySupport(upper,placed,items,.65,undefined,0,index)).toBe(true);
+   const addedShape=placement('added-shape',{height:60});items.set(addedShape.instanceId,item('added-shape',shaped.fittedDimensionsMm,shaped));index.add(addedShape);expect(index.candidates(upper)).toContain(addedShape);
+  const nearPlane=placement('near-plane',{height:60.004}),adjacentPlane=placement('adjacent-plane',{height:59.997}),otherCompartment=placement('other-compartment',{height:60,compartmentId:'separate'}),otherBag=placement('other-bag',{height:60,containerId:'other'}),ordered=[nearPlane,otherCompartment,adjacentPlane,otherBag],orderedItems=new Map<string,LibraryItem>(ordered.map(p=>[p.instanceId,item(p.itemId)])),orderedIndex=new RectangularSupportIndex(orderedItems,ordered);
+  expect(orderedIndex.candidates(upper)).toEqual([nearPlane,adjacentPlane]);expect(hasGeometrySupport(upper,ordered,orderedItems,.65,undefined,0,orderedIndex)).toBe(hasGeometrySupport(upper,ordered,orderedItems,.65));
+  const shapedSupport=placement('shaped-support',{height:60}),shapedItems=new Map<string,LibraryItem>([[shapedSupport.instanceId,item('shaped-support',shaped.fittedDimensionsMm,shaped)]]),shapedIndex=new RectangularSupportIndex(shapedItems,[shapedSupport]);
+  expect(shapedIndex.candidates(upper)).toContain(shapedSupport);expect(hasGeometrySupport(upper,[shapedSupport],shapedItems,.65,undefined,0,shapedIndex)).toBe(hasGeometrySupport(upper,[shapedSupport],shapedItems,.65));
+  const shapedUpper=placement('shaped-upper',{z:60}),rectangularSupport=placement('rectangular-support',{height:60}),far=placement('far',{z:10,height:5}),upperItems=new Map<string,LibraryItem>([[shapedUpper.instanceId,item('shaped-upper',shaped.fittedDimensionsMm,shaped)],[rectangularSupport.instanceId,item('rectangular-support')],[far.instanceId,item('far')]]),upperPlacements=[far,rectangularSupport],upperIndex=new RectangularSupportIndex(upperItems,upperPlacements);
+  expect(upperIndex.candidates(shapedUpper)).toEqual([rectangularSupport]);
+  expect(hasGeometrySupport(shapedUpper,upperPlacements,upperItems,.65,undefined,0,upperIndex)).toBe(hasGeometrySupport(shapedUpper,upperPlacements,upperItems,.65));
+ });
+ it('computes shaped-on-rectangular support from the shaped bottom patches',()=>{
+  const s=shape(),upper=placement('U',{z:20}),lower=placement('lower',{height:20}),shapedLower=placement('shaped-lower',{height:60}),items=new Map<string,LibraryItem>([[upper.instanceId,item('U',s.fittedDimensionsMm,s)],[lower.instanceId,item('lower',{length:120,width:100,height:20})],[shapedLower.instanceId,item('shaped-lower',s.fittedDimensionsMm,s)]]);
+  expect(geometrySupportArea(upper,lower,items)).toBe(9200);
+  expect(geometrySupportArea(upper,{...lower,length:40},items)).toBe(4000);
+  expect(geometrySupportArea({...upper,z:20.02},lower,items)).toBe(0);
+  expect(geometrySupportArea(placement('shaped-upper',{z:60}),shapedLower,items)).toBe(9200);
+  expect(geometrySupportArea(placement('rect-upper',{z:60,length:40,width:100,height:10}),shapedLower,items)).toBe(4000);
+ });
  it('preserves every cell with disjoint exact cuboids and lower occupied volume',()=>{
   const s=shape(),p=placement('U'),boxes=placementBoxes(p,{packingShape:s});
   expect(boxes.reduce((v,b)=>v+b.length*b.width*b.height,0)).toBe(552000);expect(shapeVolume(s)).toBe(552000);
@@ -59,7 +87,7 @@ describe('adopted occupied-cell planning',()=>{
  });
  it.each(['balanced','maximum_capacity','easy_access','fragile_protection'] as const)('rejects inaccessible entry and finds the feasible reverse insertion order in %s',mode=>{
   const s=shape(true),arch=item('U',s.fittedDimensionsMm,s),small=item('small',{length:40,width:100,height:30}),a=placement('U'),b=placement('small',{x:40,length:40,width:100,height:30}),records=new Map([['U#1',arch],['small#1',small]]);
-  expect(geometryIntersects(a,b,records)).toBe(false);expect(hasVerticalEntry(b,[a],records,bag)).toBe(false);expect(hasVerticalEntry(a,[b],records,bag)).toBe(true);
+   expect(geometryIntersects(a,b,records)).toBe(false);expect(hasVerticalEntry(b,[a],records,bag)).toBe(false);expect(hasVerticalEntry(b,[a],records,bag,[],placementBoxes(a,arch))).toBe(false);expect(hasVerticalEntry(a,[b],records,bag)).toBe(true);expect(hasVerticalEntry(a,[b],records,bag,[],placementBoxes(b,small))).toBe(true);
   const plan=buildPlan(trip([arch,small]),[arch,small],[bag],mode);expect(plan.placements).toHaveLength(2);expect(orderPackingSteps(plan.placements,[bag])[0].itemId).toBe('small');
  });
  it.each((['balanced','maximum_capacity','easy_access','fragile_protection'] as const).flatMap(mode=>[2,3].map(quantity=>({mode,quantity}))))('finds $quantity dependent insertion pairs without mutating the trip in $mode',({mode,quantity})=>{

@@ -5,6 +5,44 @@ import { interiorTravelUp } from './packing-interior.ts';
 const CONTACT_EPSILON = 0.01;
 type LoadItem = Pick<LibraryItem, 'fragile' | 'maxTopLoadGrams' | 'topLoadEvidence'>;
 
+/** Reuses immutable placement-pair geometry during one plan calculation. */
+export class StackLoadContactCache {
+  private readonly contacts = new WeakMap<Placement, WeakMap<Placement, Map<number, number>>>();
+  private readonly committed = new WeakSet<Placement>();
+  private readonly items: Map<string, PlanItem>;
+
+  constructor(items: Map<string, PlanItem>) {
+    this.items = items;
+  }
+
+  register(placement: Placement) {
+    this.committed.add(placement);
+  }
+
+  shouldCache(placements: Placement[], up: GravityUp): boolean {
+    return up.axis !== 2 || up.sign !== 1 || placements.some(placement => this.items.get(placement.instanceId)?.packingShape);
+  }
+
+  contactArea(upper: Placement, lower: Placement, up: GravityUp): number {
+    if (!this.committed.has(upper) || !this.committed.has(lower)) return geometryContactArea(upper, lower, this.items, up);
+    let byLower = this.contacts.get(upper);
+    if (!byLower) {
+      byLower = new WeakMap();
+      this.contacts.set(upper, byLower);
+    }
+    let byFrame = byLower.get(lower);
+    if (!byFrame) {
+      byFrame = new Map();
+      byLower.set(lower, byFrame);
+    }
+    const key = up.axis * 2 + Number(up.sign < 0);
+    if (byFrame.has(key)) return byFrame.get(key)!;
+    const area = geometryContactArea(upper, lower, this.items, up);
+    byFrame.set(key, area);
+    return area;
+  }
+}
+
 export function topLoadError(item: LoadItem): string | undefined {
   if (item.maxTopLoadGrams === undefined) return item.topLoadEvidence === undefined ? undefined : 'Enter the stacking limit that this source describes.';
   if (!Number.isFinite(item.maxTopLoadGrams) || item.maxTopLoadGrams < 0 || item.maxTopLoadGrams > 100000)
@@ -25,23 +63,40 @@ export function supportArea(upper: Placement, lower: Placement): number {
   return length > CONTACT_EPSILON && width > CONTACT_EPSILON ? length * width : 0;
 }
 
+/** An isolated placement cannot change the validated stack graph. */
+export function hasStackContact(placement: Placement, placed: Placement[], items: Map<string, PlanItem>, container?: Container): boolean {
+  if (placed.some(other => geometryContactArea(placement, other, items) > 0 || geometryContactArea(other, placement, items) > 0)) return true;
+  if (!container?.packingInterior) return false;
+  const up = interiorTravelUp(container.packingInterior);
+  if (up.axis === 2 && up.sign === 1) return false;
+  return placed.some(other => other.containerId === container.id
+    && (geometryContactArea(placement, other, items, up) > 0 || geometryContactArea(other, placement, items, up) > 0));
+}
+
 /** Conservative static bound: do not assume that a bridge shares its weight evenly. */
-export function assessStackLoads(placements: Placement[], items: Map<string, PlanItem>,containers:Container[]=[]): StackLoadCheck[] {
-  const packing=assessFrameLoads(placements,items,{axis:2,sign:1});
+export function assessStackLoads(placements: Placement[], items: Map<string, PlanItem>,containers:Container[]=[],contactCache?:StackLoadContactCache): StackLoadCheck[] {
+  const packing=assessFrameLoads(placements,items,{axis:2,sign:1},contactCache);
   const travel=containers.flatMap(bag=>{
     if(!bag.packingInterior)return [];
     const bagPlacements=placements.filter(p=>p.containerId===bag.id);
     if(!bagPlacements.length)return [];
     const up=interiorTravelUp(bag.packingInterior);
     if(up.axis===2&&up.sign===1)return [];
-    return assessFrameLoads(bagPlacements,items,up).map(load=>({...load,orientation:'travel' as const}));
+    return assessFrameLoads(bagPlacements,items,up,contactCache).map(load=>({...load,orientation:'travel' as const}));
   });
   return [...packing,...travel];
 }
-function assessFrameLoads(placements:Placement[],items:Map<string,PlanItem>,up:GravityUp):StackLoadCheck[]{
+function assessFrameLoads(placements:Placement[],items:Map<string,PlanItem>,up:GravityUp,contactCache?:StackLoadContactCache):StackLoadCheck[]{
   const above = new Map(placements.map(p => [p.instanceId, new Set<string>()]));
   const direct=new Map(placements.map(p=>[p.instanceId,new Set<string>()])),cyclic=new Set<string>();
-  for(const upper of placements)for(const lower of placements)if(geometryContactArea(upper,lower,items,up)>0)direct.get(lower.instanceId)!.add(upper.instanceId);
+  const cache=contactCache?.shouldCache(placements,up)?contactCache:undefined;
+  const rectangularPacking=up.axis===2&&up.sign===1&&placements.every(p=>!items.get(p.instanceId)?.packingShape);
+  if(rectangularPacking){
+    const below=new Map<string,Placement[]>(),plane=(p:Placement,bucket:number)=>`${p.containerId}\u0000${p.compartmentId??''}\u0000${bucket}`;
+    for(const lower of placements){const bucket=Math.floor((lower.z+lower.height)/CONTACT_EPSILON),key=plane(lower,bucket),samePlane=below.get(key)??[];samePlane.push(lower);below.set(key,samePlane);}
+    for(const upper of placements){const bucket=Math.floor(upper.z/CONTACT_EPSILON);for(let offset=-2;offset<=2;offset++)for(const lower of below.get(plane(upper,bucket+offset))??[])
+      if(geometryContactArea(upper,lower,items,up)>0)direct.get(lower.instanceId)!.add(upper.instanceId);}
+  }else for(const upper of placements)for(const lower of placements)if((cache?cache.contactArea(upper,lower,up):geometryContactArea(upper,lower,items,up))>0)direct.get(lower.instanceId)!.add(upper.instanceId);
   for(const p of placements){const reached=above.get(p.instanceId)!,pending=[...direct.get(p.instanceId)!];for(let i=0;i<pending.length;i++){
     const id=pending[i];if(id===p.instanceId){cyclic.add(id);continue;}if(reached.has(id))continue;reached.add(id);pending.push(...direct.get(id)!);
   }}

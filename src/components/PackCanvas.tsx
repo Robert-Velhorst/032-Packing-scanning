@@ -35,7 +35,23 @@ export function PackCanvas({ container, plan, items, selectedInstanceId, view, l
 
 function ThreePackFrame({ container, plan, items, selectedInstanceId, placementLabels }: Omit<Props, 'view' | 'layer'>) {
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [shouldLoad, setShouldLoad] = useState(false);
   const [frameLoaded, setFrameLoaded] = useState(false);
+
+  useEffect(() => {
+    const target = viewportRef.current;
+    if (!target) return;
+    if (!('IntersectionObserver' in window)) { setShouldLoad(true); return; }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setShouldLoad(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '160px' });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (!frameLoaded) return;
@@ -50,15 +66,15 @@ function ThreePackFrame({ container, plan, items, selectedInstanceId, placementL
   }, [frameLoaded, container, plan, items, selectedInstanceId, placementLabels]);
 
   return <div className="packing-viewer">
-    <div className="pack-canvas">
-      <iframe
+    <div className="pack-canvas" ref={viewportRef}>
+      {shouldLoad && <iframe
         ref={frameRef}
         className="three-pack-frame"
         title={`Interactive 3D packing model for ${container?.name ?? 'your bag'}`}
         src="/three/three-view.html"
         onLoad={() => setFrameLoaded(true)}
-      />
-      {!frameLoaded && <div className="canvas-empty" role="status">Opening the 3D view…</div>}
+      />}
+      {!frameLoaded && <div className="canvas-empty" role="status">{shouldLoad ? 'Opening the 3D view…' : 'The 3D view will load when you reach it.'}</div>}
     </div>
     {container && <ContainerSpaceNotes bag={container}/>}
   </div>;
