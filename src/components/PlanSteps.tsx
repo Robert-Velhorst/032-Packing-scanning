@@ -1,3 +1,4 @@
+import './PlanSteps.css';
 import { SeparationNotes } from './SeparationRules';
 import { compartmentFor } from '../compartments';
 import { packingFormInstruction } from '../packing-forms';

@@ -1,0 +1,37 @@
+
+.packing-sequence-page { max-width:950px; margin:0 auto; padding:28px; color:#25392d; }
+.packing-sequence-page h1:focus-visible { outline:3px solid #17684e; outline-offset:3px; }
+.sequence-toolbar { display:flex; gap:12px; justify-content:space-between; margin-bottom:24px; }
+.packing-sequence-page .button { min-height:48px; font-size:13px; }
+.packing-sequence-page h1 { font-size:28px; overflow-wrap:anywhere; }
+.packing-sequence-page h2 { font-size:19px; }
+.packing-sequence-page h3 { font-size:16px; }
+.packing-sequence-page p, .packing-sequence-page footer { font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
+.sequence-note { padding:14px; border:1px solid #d8c9aa; border-radius:8px; background:#fff9ed; }
+.sequence-cards { list-style:none; margin:24px 0; padding:0; display:grid; gap:20px; }
+.sequence-card { padding:18px; border:1px solid #d8e2da; border-radius:8px; background:#fff; break-inside:avoid; }
+.sequence-step-heading { display:flex; align-items:center; gap:12px; }
+.sequence-step-heading h2 { margin:0; }
+.sequence-step-heading > div { min-width:0; }
+.sequence-step-heading h2 { overflow-wrap:anywhere; }
+.sequence-step-heading p { margin:4px 0; }
+.sequence-step-heading img { width:50px; height:50px; object-fit:cover; border-radius:6px; }
+.sequence-number { display:grid; place-items:center; min-width:40px; height:40px; border:2px solid #25392d; border-radius:50%; font-size:18px; }
+.sequence-instruction { display:grid; grid-template-columns:minmax(150px,1fr) 1.5fr; gap:18px; margin-top:12px; align-items:start; }
+.sequence-review { border-top:1px solid #d8e2da; padding-top:16px; }
+.paper-check { font-weight:700; }
+@media(max-width:620px) {
+  .packing-sequence-page { padding:20px 12px 35px; }
+  .sequence-toolbar { flex-wrap:wrap; }
+  .sequence-instruction { grid-template-columns:1fr; }
+}
+@media print {
+  .packing-sequence-page { max-width:none; padding:0; }
+  .sequence-card { box-shadow:none; border-color:#888; }
+  .sequence-instruction { grid-template-columns:1fr 1.6fr; }
+  .packing-sequence-page h2, .packing-sequence-page h3 { break-after:avoid; }
+}.sequence-card .packing-form-notes{break-inside:avoid}
+@media print {
+  .packing-sequence-page p, .packing-sequence-page footer { font-size: 12px; line-height: 1.45; }
+}
+.sequence-photo{width:50px;height:50px;border-radius:7px}
