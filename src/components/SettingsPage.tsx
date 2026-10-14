@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState } from 'react';
 import { Download, Lock, Ruler, ShieldCheck, Trash2, Upload } from 'lucide-react';
-import { DeviceWorkspaceSettings, useDeviceWorkspace } from './DeviceWorkspace';
+import { useDeviceWorkspace } from './DeviceWorkspace';
+import { DeviceWorkspaceSettings } from './DeviceWorkspacePanels';
 import { ScanRetentionSettings } from './ScanRetentionSettings';
 import type { AppData, UnitSystem } from '../types';
 import type { SharedPackBaseline } from '../shared-pack-baseline';
