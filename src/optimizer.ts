@@ -734,12 +734,15 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace): FreeSpace[] {
     .sort((left,right)=>left.space.x-right.space.x||left.index-right.index);
   const keep=new Array<boolean>(unique.length).fill(true);
   for(const inner of ordered){
+    // EPSILON containment allows at most 2*EPSILON less extent per axis.
+    const minimumContainingVolume=Math.max(0,inner.space.length-2*EPSILON)*Math.max(0,inner.space.width-2*EPSILON)*Math.max(0,inner.space.height-2*EPSILON);
     for(const candidate of ordered){
       const outer=candidate.space;
       if(outer.x>inner.space.x+EPSILON)break;
       if(candidate.index===inner.index||outer.y>inner.space.y+EPSILON||outer.z>inner.space.z+EPSILON
         ||candidate.back<inner.space.y+inner.space.width-EPSILON||candidate.top<inner.space.z+inner.space.height-EPSILON
         ||candidate.right<inner.right-EPSILON)continue;
+      if(spaceVolume(outer)<minimumContainingVolume*(1-1e-12))continue;
       const containsOuter=inner.space.x<=outer.x+EPSILON&&inner.space.y<=outer.y+EPSILON&&inner.space.z<=outer.z+EPSILON
         &&inner.right>=candidate.right-EPSILON&&inner.space.y+inner.space.width>=candidate.back-EPSILON
         &&inner.space.z+inner.space.height>=candidate.top-EPSILON;
