@@ -254,7 +254,10 @@ export function hasGeometrySupport(p:Placement,placed:Placement[],items:Map<stri
     const required=area*fraction;let supported=0;
     for(const lower of supportIndex?.candidates(p)??placed){
       if(lower.containerId!==p.containerId||lower.compartmentId!==p.compartmentId)continue;
-      if(items.get(lower.instanceId)?.packingShape)supported+=geometrySupportArea(p,lower,items,up);
+      if(items.get(lower.instanceId)?.packingShape){
+        if(up.axis===2&&up.sign===1&&!maySharePackingSupportFace(p,lower))continue;
+        supported+=geometrySupportArea(p,lower,items,up);
+      }
       else{
         if(p.z<=lower.z+EPS||Math.abs(p.z-(lower.z+lower.height))>EPS)continue;
         const length=Math.min(p.x+p.length,lower.x+lower.length)-Math.max(p.x,lower.x);
@@ -269,8 +272,16 @@ export function hasGeometrySupport(p:Placement,placed:Placement[],items:Map<stri
   if(area<=0)return false;if(Math.abs(gravityBox(p,up).z-floor)<=EPS)return true;
   const required=area*fraction;let supported=0;
   const candidates=up.axis===2&&up.sign===1&&supportIndex?supportIndex.candidates(p):placed;
-  for(const lower of candidates){supported+=geometrySupportArea(p,lower,items,up);if(supported+EPS**2>=required)return true;}
+  for(const lower of candidates){
+    if(up.axis===2&&up.sign===1&&!maySharePackingSupportFace(p,lower))continue;
+    supported+=geometrySupportArea(p,lower,items,up);if(supported+EPS**2>=required)return true;
+  }
   return false;
+}
+function maySharePackingSupportFace(upper:Placement,lower:Placement):boolean{
+  return upper.z>lower.z+EPS&&upper.z<=lower.z+lower.height+EPS
+    &&upper.x+upper.length>lower.x+EPS&&lower.x+lower.length>upper.x+EPS
+    &&upper.y+upper.width>lower.y+EPS&&lower.y+lower.width>upper.y+EPS;
 }
 /** Both snapshots must be supported; unavailable-region tops never become supports. */
 export function hasPackingAndTravelSupport(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,fraction:number,bag:Container,supportIndex?:RectangularSupportIndex):boolean{
