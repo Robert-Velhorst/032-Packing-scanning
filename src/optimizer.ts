@@ -31,6 +31,7 @@ interface Candidate extends FreeSpace {
   score: number;
   dimensions: { length: number; width: number; height: number };
 }
+type ShapeOrientationCache = Map<string, Map<string, ReturnType<typeof geometryOrientations>>>;
 
 const volume = (box: { length: number; width: number; height: number }) => box.length * box.width * box.height;
 const spaceVolume = (box: FreeSpace) => box.length * box.width * box.height;
@@ -231,17 +232,18 @@ function searchInsertionOrders(orders: PlanItem[][], containers: Container[], lo
   const results: ReturnType<typeof packOnce>[] = [];
   const frontier: { order: PlanItem[]; result: ReturnType<typeof packOnce> }[] = [];
   const seen = new Set<string>();
+  const shapeOrientationCache: ShapeOrientationCache = new Map();
   const evaluate = (order: PlanItem[], lookaheadDepth = 1) => {
     const key = `${lookaheadDepth}:${JSON.stringify(order.map(item => item.instanceId))}`;
     if (seen.has(key)) return;
     seen.add(key);
-    const result = packOnce(order, containers, locks, mode, rejected, rules, containerErrors, blockedSpaces, lookaheadDepth);
+    const result = packOnce(order, containers, locks, mode, rejected, rules, containerErrors, blockedSpaces, lookaheadDepth, shapeOrientationCache);
     results.push(result);
     frontier.push({ order, result });
   };
   // Preserve existing rectangular-only mode behavior, including its tie order.
   if (!rules.length && !orders[0]?.some(item => item.packingShape)) {
-    return { results: orders.map(order => packOnce(order, containers, locks, mode, rejected, rules, containerErrors, blockedSpaces)), limited: false };
+    return { results: orders.map(order => packOnce(order, containers, locks, mode, rejected, rules, containerErrors, blockedSpaces, 1, shapeOrientationCache)), limited: false };
   }
   for (const order of orders) evaluate(order);
   const complete = () => results.some(result => result.excluded.length === 0);
@@ -324,7 +326,7 @@ function baseArea(item: PlanItem) {
   return item.dimensions.length * item.dimensions.width;
 }
 
-function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<string, Placement>, mode: OptimizationMode, rejected: Placement[], rules: SeparationRule[], containerErrors: Map<string,string|undefined>, blockedSpaces: Map<string,ReturnType<typeof containerBlockedBoxes>>, lookaheadDepth = 1) {
+function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<string, Placement>, mode: OptimizationMode, rejected: Placement[], rules: SeparationRule[], containerErrors: Map<string,string|undefined>, blockedSpaces: Map<string,ReturnType<typeof containerBlockedBoxes>>, lookaheadDepth = 1, shapeOrientationCache: ShapeOrientationCache = new Map()) {
   const containerError=(container:Container)=>containerErrors.get(container.id);
   const usableHeight=(container:Container)=>container.inside.height-(container.lidClearanceMm??0);
   const useShapeSequence=items.some(item=>item.packingShape)||containers.some(bag=>bag.packingInterior||bag.compartments);
@@ -347,6 +349,19 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
   // weight-limited item, a candidate cannot create a stacking conflict.
   const stackSensitiveIds = new Set(items.filter(item => item.fragile || item.maxTopLoadGrams !== undefined).map(item => item.instanceId));
   const shapeItems = items.filter(item => item.packingShape);
+  const shapeOrientations = (item: PlanItem, container: Container) => {
+    let byItem = shapeOrientationCache.get(container.id);
+    if (!byItem) {
+      byItem = new Map();
+      shapeOrientationCache.set(container.id, byItem);
+    }
+    let orientations = byItem.get(item.instanceId);
+    if (!orientations) {
+      orientations = geometryOrientations(item, container);
+      byItem.set(item.instanceId, orientations);
+    }
+    return orientations;
+  };
   const placedIds = new Set<string>();
   const blockedBagIds = new Set<string>();
   const massConflicts: BagMassConflict[] = [];
@@ -449,7 +464,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
       const futureShapes=container.compartments?[]:shapeItems.filter(i=>{
         if(i.instanceId===item.instanceId||placedIds.has(i.instanceId)||!eligibleForBag(i,container)
           ||(container.massLimitGrams!==undefined&&massAfter+(i.upperMassGrams??0)>container.massLimitGrams+EPSILON))return false;
-        const orientations=geometryOrientations(i,container);
+        const orientations=shapeOrientations(i,container);
         if(!orientations.some(o=>fitsOpening(o,container)&&o.length<=container.inside.length+EPSILON&&o.width<=container.inside.width+EPSILON&&o.height<=usableHeight(container)+EPSILON))return false;
         (futureOrientationsById??=new Map()).set(i.instanceId,orientations);
         return true;
