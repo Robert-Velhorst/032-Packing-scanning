@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -14,13 +14,13 @@ async function start(retrieve = vi.fn().mockResolvedValue(parseEasyjet(fixture()
   await writeFile(join(root,'private.txt'),'never serve this');
   const server=createAppServer({dist,carrierService:new CarrierService(join(root,'cache.json'),retrieve),allowedOrigins:['https://localhost']});
   await new Promise<void>((resolve) => server.listen(0,'127.0.0.1',resolve));
-  return { dist, url:`http://127.0.0.1:${(server.address() as AddressInfo).port}`, close:() => new Promise<void>((resolve) => {server.closeAllConnections();server.close(() => resolve());}) };
+  return { dist, url:`http://127.0.0.1:${(server.address() as AddressInfo).port}`, close:async() => {await new Promise<void>((resolve) => {server.closeAllConnections();server.close(() => resolve());});await rm(root,{recursive:true,force:true});} };
 }
 describe('public carrier HTTP endpoint', () => {
   it('caches hashed static assets within a bounded server cache', async () => {
     const app=await start(),directory=join(app.dist,'assets'),path=join(directory,'app-Abcdef12.js');
-    await mkdir(directory);await writeFile(path,'const value = 1;');
     try {
+      await mkdir(directory);await writeFile(path,'const value = 1;');
       const first=await fetch(`${app.url}/assets/app-Abcdef12.js`);
       expect(first.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable');
       expect(await first.text()).toBe('const value = 1;');
