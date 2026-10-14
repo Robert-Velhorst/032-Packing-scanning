@@ -29,7 +29,7 @@
     "lucide-react": "^0.468.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "three": "^0.179.1"
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@capacitor/cli": "8.4.3",
