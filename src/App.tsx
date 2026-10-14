@@ -186,6 +186,7 @@ function PackingApp() {
       if (!active || event.data.requestId !== requestId) return;
       if (event.data.error) setPlanError(event.data.error);
       else if (event.data.plan) setPlan(event.data.plan);
+      worker.terminate();
     };
     worker.onerror = () => {
       worker.terminate();
