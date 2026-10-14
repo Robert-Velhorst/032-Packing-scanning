@@ -30,7 +30,6 @@ import { LocalPhoto } from './components/LocalPhoto';
 import type { TripSuggestion } from './trip-assistant';
 import {  markPackingItemUnavailable, rejectPackingPlacement, setPackingItemComplete } from './packing-progress';
 import { measurementInput } from './measurement-input';
-import { buildPlan } from './optimizer';
 import {workspaceStorage} from './storage';
 import { createInitialData } from './seed';
 import type { AppData, CarrierRule, Container, Evidence, ItemPriority, LibraryItem, OptimizationMode, PackEntry, PackingPlan, Placement, Trip, TripActivity, UnitSystem } from './types';
@@ -161,7 +160,7 @@ function PackingApp() {
     setPlanError('');
     if (!data || !activeTrip) return () => { active = false; };
     const requestId = ++planRequest.current;
-    const buildOnMainThread = () => Promise.resolve().then(() => {
+    const buildOnMainThread = () => import('./optimizer').then(({ buildPlan }) => {
       if (active) setPlan(buildPlan(activeTrip, planItems, planContainers));
     });
     const instanceCount = activeTrip.entries.reduce((count, entry) => count + Math.max(1, entry.quantity), 0);
