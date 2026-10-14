@@ -449,7 +449,8 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
         const o=geometryOrientations(future,container)[0];
         return o.length<=container.inside.length&&o.width<=container.inside.width&&o.height<=usableHeight(container)?cornerPositions(initialSpace(container,usableHeight(container)),o).map(position=>({instanceId:future.instanceId,entryId:future.entryId,itemId:future.itemId,containerId:container.id,...position,...o,layer:1})):[];
       })];
-      const spaces = [...(freeSpaces.get(container.id) ?? []),...(hasShapes?packingRegions(container).map(region=>({...region,shapeSearch:true})):[])];
+      const availableSpaces=freeSpaces.get(container.id)??[];
+      const spaces=hasShapes?[...availableSpaces,...packingRegions(container).map(region=>({...region,shapeSearch:true}))]:availableSpaces;
       const orientations=geometryOrientations(item,container);
       const compartmentContexts=new Map<string|undefined,{compartment:ReturnType<typeof compartmentFor>;eligible:boolean;contentsError?:string;orientations:typeof orientations}>();
       for (const space of spaces) {
