@@ -87,6 +87,39 @@ public class DepthCloudTest {
         assertEquals(0.002f,cloud.previewPoints()[0],0.00001f);
     }
 
+    @Test public void reviewCoverageGateDoesNotRunEnvelopeFit() {
+        DepthCloud flat = new DepthCloud(0.5);
+        float[] plane = new float[20 * 20 * 4];
+        for (int index = 0; index < 400; index++) {
+            int offset = index * 4;
+            plane[offset] = (index % 20) * 0.01f - 0.095f;
+            plane[offset + 1] = (index / 20) * 0.01f - 0.095f;
+            plane[offset + 2] = 0;
+            plane[offset + 3] = 0.9f;
+        }
+        for (int frame = 0; frame < 6; frame++) {
+            flat.addFrame(frame + 1,plane,new float[] {(float) Math.sin(frame * Math.PI / 3),0,(float) Math.cos(frame * Math.PI / 3)});
+        }
+        assertNull(flat.captureReadinessIssue());
+        assertThrows(IllegalStateException.class,flat::snapshot);
+    }
+
+    @Test public void reviewCoverageGateTracksCaptureAreaEdgesIncrementally() {
+        DepthCloud cloud = new DepthCloud(0.5);
+        float[] points = new float[20 * 20 * 4];
+        for (int index = 0; index < 400; index++) {
+            int offset = index * 4;
+            points[offset] = 0.49f;
+            points[offset + 1] = (index % 20) * 0.01f - 0.095f;
+            points[offset + 2] = (index / 20) * 0.01f - 0.095f;
+            points[offset + 3] = 0.9f;
+        }
+        for (int frame = 0; frame < 6; frame++) {
+            cloud.addFrame(frame + 1,points,new float[] {(float) Math.sin(frame * Math.PI / 3),0,(float) Math.cos(frame * Math.PI / 3)});
+        }
+        assertTrue(cloud.captureReadinessIssue().contains("capture-area edge"));
+    }
+
     @Test public void duplicateOrOldDepthCannotIncreaseCoverage() {
         DepthCloud cloud = new DepthCloud(0.5);
         cloud.addFrame(10,cube(false),new float[] {0,0,1});

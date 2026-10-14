@@ -11,6 +11,7 @@ public final class DepthCloud {
     static final int PREVIEW_POINT_LIMIT = 8000;
     private final double halfExtent;
     private int pointCount;
+    private int edgePointCount;
     private long pointRevision;
     private long[] voxelKeys = new long[256];
     private float[] voxelPoints = new float[256 * 4];
@@ -68,14 +69,18 @@ public final class DepthCloud {
                 voxelPoints[pointOffset + 1] = y;
                 voxelPoints[pointOffset + 2] = z;
                 voxelPoints[pointOffset + 3] = confidence;
+                if (nearEdge(x,y,z)) edgePointCount++;
                 pointsChanged = true;
             } else {
                 int pointOffset = pointIndex * 4;
                 if (confidence > voxelPoints[pointOffset + 3]) {
+                    boolean wasNearEdge = nearEdge(voxelPoints[pointOffset],voxelPoints[pointOffset + 1],voxelPoints[pointOffset + 2]);
+                    boolean isNearEdge = nearEdge(x,y,z);
                     voxelPoints[pointOffset] = x;
                     voxelPoints[pointOffset + 1] = y;
                     voxelPoints[pointOffset + 2] = z;
                     voxelPoints[pointOffset + 3] = confidence;
+                    if (wasNearEdge != isNearEdge) edgePointCount += isNearEdge ? 1 : -1;
                     pointsChanged = true;
                 }
             }
@@ -89,6 +94,11 @@ public final class DepthCloud {
     }
 
     private static long cell(float value) { return (long) Math.floor(value / VOXEL_METRES); }
+
+    private boolean nearEdge(float x, float y, float z) {
+        return Math.abs(x) > halfExtent - 0.015 || Math.abs(y) > halfExtent - 0.015
+            || Math.abs(z) > halfExtent - 0.015;
+    }
 
     /** Capture bounds keep cell coordinates within the signed 21-bit range. */
     private static long voxelKey(long x, long y, long z) {
@@ -148,6 +158,25 @@ public final class DepthCloud {
     public synchronized int viewCount() { return directions.size(); }
     synchronized long pointRevision() { return pointRevision; }
 
+    /** Cheap gate for the review button; the full scan envelope is fitted only on user request. */
+    synchronized String captureReadinessIssue() {
+        if (pointCount < 300 || frames < 6 || directions.size() < 3) {
+            return "More coverage is needed. Move slowly around the object from at least three angles.";
+        }
+        double spread = directionSpread();
+        if (spread < Math.toRadians(60)) return "Move farther around the object before finishing.";
+        if (edgePointCount > pointCount * 0.02) return "The scan reaches the capture-area edge. Restart with a larger area or remove surrounding objects.";
+        return null;
+    }
+
+    private double directionSpread() {
+        double spread = 0;
+        for (float[] a : directions) for (float[] b : directions) {
+            spread = Math.max(spread, Math.acos(Math.max(-1, Math.min(1, dot(a, b)))));
+        }
+        return spread;
+    }
+
     /** Copies the preview directly into a reusable render buffer and returns its point count. */
     synchronized int writePreviewPoints(FloatBuffer destination) {
         int count = Math.min(pointCount,PREVIEW_POINT_LIMIT);
@@ -176,27 +205,14 @@ public final class DepthCloud {
     }
 
     public synchronized Snapshot snapshot() {
-        if (pointCount < 300 || frames < 6 || directions.size() < 3) {
-            throw new IllegalStateException("More coverage is needed. Move slowly around the object from at least three angles.");
-        }
-        double spread = 0;
-        for (float[] a : directions) for (float[] b : directions) {
-            spread = Math.max(spread, Math.acos(Math.max(-1, Math.min(1, dot(a, b)))));
-        }
-        if (spread < Math.toRadians(60)) throw new IllegalStateException("Move farther around the object before finishing.");
+        String readinessIssue = captureReadinessIssue();
+        if (readinessIssue != null) throw new IllegalStateException(readinessIssue);
         List<float[]> points = new ArrayList<>(pointCount);
-        int edgePoints = 0;
         for (int index = 0; index < pointCount; index++) {
             int offset = index * 4;
             float[] sample = new float[] {voxelPoints[offset],voxelPoints[offset + 1],voxelPoints[offset + 2],voxelPoints[offset + 3]};
             points.add(sample);
-            boolean nearEdge = false;
-            for (int axis = 0; axis < 3; axis++) {
-                nearEdge |= Math.abs(sample[axis]) > halfExtent - 0.015;
-            }
-            if (nearEdge) edgePoints++;
         }
-        if (edgePoints > points.size() * 0.02) throw new IllegalStateException("The scan reaches the capture-area edge. Restart with a larger area or remove surrounding objects.");
         ScanEnvelope envelope=ScanEnvelope.fit(points,VOXEL_METRES/2);
         return new Snapshot(points, envelope, frames, directions.size(), capped, guidance.summary());
     }

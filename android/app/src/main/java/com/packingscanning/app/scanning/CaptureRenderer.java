@@ -114,7 +114,11 @@ final class CaptureRenderer implements GLSurfaceView.Renderer {
                 String message = frame.getCamera().getTrackingState() != TrackingState.TRACKING ? "Tracking paused. Improve the light and move slowly."
                     : cloud == null ? "Aim the centre of the camera at the object. Move a little to establish depth."
                     : cloud.pointCount() + " points · " + cloud.viewCount() + " angles. Move around the object; green points show captured surfaces.";
-                if (cloud != null) try { cloud.snapshot(); ready = true; } catch (IllegalStateException error) { message += "\n" + error.getMessage(); }
+                if (cloud != null) {
+                    String readinessIssue = cloud.captureReadinessIssue();
+                    ready = readinessIssue == null;
+                    if (readinessIssue != null) message += "\n" + readinessIssue;
+                }
                 if(capturing&&frame.getCamera().getTrackingState()==TrackingState.TRACKING)message += "\n"+sampler.guidanceHint();
                 listener.progress(message,ready && capturing && frame.getCamera().getTrackingState()==TrackingState.TRACKING);
             }
