@@ -1,5 +1,6 @@
 package com.packingscanning.app.scanning;
 
+import java.nio.FloatBuffer;
 import org.junit.Test;
 import static org.junit.Assert.*;
 
@@ -54,6 +55,10 @@ public class DepthCloudTest {
         cloud.addFrame(1,samples,12,new float[] {0,0,1});
         assertEquals(2,cloud.pointCount());
         assertArrayEquals(new float[] {0.001f,0,0,-0.006f,0,0},cloud.previewPoints(),0.00001f);
+        FloatBuffer preview = FloatBuffer.allocate(6);
+        assertEquals(2,cloud.writePreviewPoints(preview));
+        preview.flip();
+        for (float value : new float[] {0.001f,0,0,-0.006f,0,0}) assertEquals(value,preview.get(),0.00001f);
     }
 
     @Test public void voxelStoreGrowsWithoutLosingDistinctCells() {
@@ -69,6 +74,17 @@ public class DepthCloudTest {
         cloud.addFrame(1,samples,new float[] {0,0,1});
         assertEquals(1200,cloud.pointCount());
         assertEquals(1200 * 3,cloud.previewPoints().length);
+    }
+
+    @Test public void previewRevisionChangesOnlyWhenStoredPointsChange() {
+        DepthCloud cloud = new DepthCloud(0.5);
+        cloud.addFrame(1,new float[] {0.001f,0,0,0.9f},new float[] {0,0,1});
+        long initial = cloud.pointRevision();
+        cloud.addFrame(2,new float[] {0.001f,0,0,0.8f},new float[] {0,0,1});
+        assertEquals(initial,cloud.pointRevision());
+        cloud.addFrame(3,new float[] {0.002f,0,0,1},new float[] {0,0,1});
+        assertTrue(cloud.pointRevision() > initial);
+        assertEquals(0.002f,cloud.previewPoints()[0],0.00001f);
     }
 
     @Test public void duplicateOrOldDepthCannotIncreaseCoverage() {

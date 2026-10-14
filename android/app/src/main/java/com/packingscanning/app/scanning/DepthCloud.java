@@ -1,5 +1,6 @@
 package com.packingscanning.app.scanning;
 
+import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -7,8 +8,10 @@ import java.util.List;
 public final class DepthCloud {
     public static final double VOXEL_METRES = 0.005;
     public static final int MAX_POINTS = 60000;
+    static final int PREVIEW_POINT_LIMIT = 8000;
     private final double halfExtent;
     private int pointCount;
+    private long pointRevision;
     private long[] voxelKeys = new long[256];
     private float[] voxelPoints = new float[256 * 4];
     /** Each slot stores a point index plus one; zero means empty. */
@@ -41,6 +44,7 @@ public final class DepthCloud {
             || sampleLength > samples.length || sampleLength % 4 != 0) return;
         lastTimestamp = timestamp;
         int accepted = 0;
+        boolean pointsChanged = false;
         for (int index = 0; index < sampleLength; index += 4) {
             float x = samples[index], y = samples[index + 1], z = samples[index + 2], confidence = samples[index + 3];
             if (!Float.isFinite(x) || !Float.isFinite(y) || !Float.isFinite(z)
@@ -64,6 +68,7 @@ public final class DepthCloud {
                 voxelPoints[pointOffset + 1] = y;
                 voxelPoints[pointOffset + 2] = z;
                 voxelPoints[pointOffset + 3] = confidence;
+                pointsChanged = true;
             } else {
                 int pointOffset = pointIndex * 4;
                 if (confidence > voxelPoints[pointOffset + 3]) {
@@ -71,6 +76,7 @@ public final class DepthCloud {
                     voxelPoints[pointOffset + 1] = y;
                     voxelPoints[pointOffset + 2] = z;
                     voxelPoints[pointOffset + 3] = confidence;
+                    pointsChanged = true;
                 }
             }
             accepted++;
@@ -79,6 +85,7 @@ public final class DepthCloud {
             frames++;
             recordDirection(cameraPosition);
         }
+        if (pointsChanged) pointRevision++;
     }
 
     private static long cell(float value) { return (long) Math.floor(value / VOXEL_METRES); }
@@ -139,9 +146,25 @@ public final class DepthCloud {
 
     public synchronized int pointCount() { return pointCount; }
     public synchronized int viewCount() { return directions.size(); }
+    synchronized long pointRevision() { return pointRevision; }
+
+    /** Copies the preview directly into a reusable render buffer and returns its point count. */
+    synchronized int writePreviewPoints(FloatBuffer destination) {
+        int count = Math.min(pointCount,PREVIEW_POINT_LIMIT);
+        if (destination == null || destination.remaining() < count * 3) {
+            throw new IllegalArgumentException("Preview buffer is too small.");
+        }
+        for (int index = 0; index < count; index++) {
+            int source = index * 4;
+            destination.put(voxelPoints[source]);
+            destination.put(voxelPoints[source + 1]);
+            destination.put(voxelPoints[source + 2]);
+        }
+        return count;
+    }
 
     public synchronized float[] previewPoints() {
-        int count = Math.min(pointCount,8000);
+        int count = Math.min(pointCount,PREVIEW_POINT_LIMIT);
         float[] result = new float[count * 3];
         for (int index = 0; index < count; index++) {
             int source = index * 4, target = index * 3;
