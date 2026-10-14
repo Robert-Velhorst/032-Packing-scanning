@@ -55,10 +55,10 @@ export function PlanSteps({ getPhoto, trip, plan, containers, items, onExit, onC
   const packingForm=item?.packingForms?.find(form=>form.id===placement?.packingFormId);
   const bag = placement ? containers.find((container) => container.id === placement.containerId) : undefined;
   const compartment=bag?compartmentFor(bag,placement?.compartmentId):undefined;
-  const completed = new Set(trip.completedInstanceIds);
-  const doneCount = ordered.filter((step) => completed.has(step.instanceId)).length;
+  const completed = useMemo(() => new Set(trip.completedInstanceIds), [trip.completedInstanceIds]);
+  const doneCount = useMemo(() => ordered.filter((step) => completed.has(step.instanceId)).length, [ordered,completed]);
   const locked = !!placement && trip.lockedPlacements.some((saved) => saved.instanceId === placement.instanceId);
-  const preview = useMemo(() => packingStepPreview(ordered, safeIndex, trip.completedInstanceIds), [ordered, safeIndex, trip.completedInstanceIds]);
+  const preview = useMemo(() => packingStepPreview(ordered, safeIndex, trip.completedInstanceIds,completed), [ordered, safeIndex, trip.completedInstanceIds,completed]);
   const previewPlan = useMemo(() => ({ ...plan, placements: preview }), [plan, preview]);
   const numbers = useMemo(() => Object.fromEntries(ordered.map((step, index) => [step.instanceId, String(index + 1)])), [ordered]);
   const baseKey = JSON.stringify([trip.id, trip.updatedAt, safeIndex, placement]);
