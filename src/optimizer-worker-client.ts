@@ -20,6 +20,15 @@ interface PendingRequest {
   reject: (error: Error) => void;
 }
 
+// The synthetic rectangular-plan benchmark crosses one 16 ms frame budget at
+// about 15 instances, so move medium plans off the UI thread while keeping
+// small plans on the lower-overhead main-thread path.
+export const PLANNER_WORKER_MIN_ITEMS = 15;
+
+export function shouldUsePlannerWorker(instanceCount: number, hasComplexGeometry: boolean) {
+  return instanceCount >= PLANNER_WORKER_MIN_ITEMS || hasComplexGeometry;
+}
+
 export class PlannerWorkerClient {
   private worker?: Worker;
   private pending?: PendingRequest;

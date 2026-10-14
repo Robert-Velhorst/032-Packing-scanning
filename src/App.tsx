@@ -31,7 +31,7 @@ import {  markPackingItemUnavailable, rejectPackingPlacement, setPackingItemComp
 import { measurementInput } from './measurement-input';
 import {workspaceStorage} from './storage';
 import { createInitialData } from './seed';
-import { PlannerWorkerClient } from './optimizer-worker-client';
+import { PlannerWorkerClient, shouldUsePlannerWorker } from './optimizer-worker-client';
 import type { AppData, CarrierRule, Container, Evidence, ItemPriority, LibraryItem, OptimizationMode, PackEntry, PackingPlan, Placement, Trip, TripActivity, UnitSystem } from './types';
 
 type Page = 'workspace' | 'items' | 'bags' | 'carrier-rules' | 'settings' | 'steps' | 'sequence';
@@ -169,8 +169,9 @@ function PackingApp() {
       if (active) setPlan(buildPlan(activeTrip, planItems, planContainers));
     });
     const instanceCount = activeTrip.entries.reduce((count, entry) => count + Math.max(1, entry.quantity), 0);
-    const needsWorker = instanceCount >= 20 || planItems.some(item => item.packingShape)
+    const hasComplexGeometry = planItems.some(item => item.packingShape)
       || planContainers.some(container => container.packingInterior || container.compartments?.length);
+    const needsWorker = shouldUsePlannerWorker(instanceCount, hasComplexGeometry);
     if (!needsWorker) {
       void buildOnMainThread().catch((error: unknown) => {
         if (active) setPlanError(error instanceof Error ? error.message : 'The packing plan could not be prepared.');
