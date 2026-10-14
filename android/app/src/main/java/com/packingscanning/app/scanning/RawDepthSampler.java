@@ -15,6 +15,11 @@ import java.util.List;
 
 /** Only fresh raw-depth frames are integrated; each image is closed on every exit path. */
 final class RawDepthSampler {
+    private static final class SupportPlane {
+        final Plane plane;
+        final Pose worldToLocal;
+        SupportPlane(Plane plane) { this.plane=plane; this.worldToLocal=plane.getCenterPose().inverse(); }
+    }
     private Anchor origin;
     private DepthCloud cloud;
     private long lastDepthTimestamp = -1;
@@ -67,10 +72,10 @@ final class RawDepthSampler {
                 cloud = new DepthCloud(halfExtent,guidance);
             }
             Pose inverse = origin.getPose().inverse();
-            List<Plane> planes = new ArrayList<>();
+            List<SupportPlane> planes = new ArrayList<>();
             if (removeSupportPlane) for (Plane plane : session.getAllTrackables(Plane.class)) {
                 if (plane.getTrackingState() == TrackingState.TRACKING && plane.getSubsumedBy() == null
-                    && plane.getType() == Plane.Type.HORIZONTAL_UPWARD_FACING) planes.add(plane);
+                    && plane.getType() == Plane.Type.HORIZONTAL_UPWARD_FACING) planes.add(new SupportPlane(plane));
             }
             float[] samples = new float[((depth.getWidth() + 2) / 3) * ((depth.getHeight() + 2) / 3) * 4];
             int count = 0;
@@ -81,9 +86,9 @@ final class RawDepthSampler {
                 if (mm < 150 || mm > 4000) continue;
                 float[] world = camera.transformPoint(DepthProjection.point(x,y,mm,fx,fy,cx,cy));
                 boolean support = false;
-                for (Plane plane : planes) {
-                    float[] relative = plane.getCenterPose().inverse().transformPoint(world);
-                    if (Math.abs(relative[1]) < 0.015f && plane.isPoseInPolygon(Pose.makeTranslation(world))) { support = true; break; }
+                for (SupportPlane supportPlane : planes) {
+                    float[] relative = supportPlane.worldToLocal.transformPoint(world);
+                    if (Math.abs(relative[1]) < 0.015f && supportPlane.plane.isPoseInPolygon(Pose.makeTranslation(world))) { support = true; break; }
                 }
                 if (support) continue;
                 float[] local = inverse.transformPoint(world);
