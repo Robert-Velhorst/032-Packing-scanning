@@ -549,7 +549,8 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
               lookahead=penalty;
             } else if(future){const prior=[...bagPlacements,placement],possible=futureProbes.some(next=>
               !placementSeparationError(next,prior,rules,itemById)&&fitsGeometrySpaceInValidatedContainer(next,container,future,blockedSpaces.get(container.id))&&!prior.some(p=>geometryIntersects(next,p,itemById))&&hasPackingAndTravelSupport(next,prior,itemById,mode==='fragile_protection'?1:.65,container)&&hasVerticalEntry(next,prior,itemById,container,blockedSpaces.get(container.id))
-                && !assessStackLoads([...prior,next],itemById,[container],stackLoadContactCache).some(load=>load.status==='conflict'));
+                // An isolated probe cannot change the already-checked stack graph.
+                && (!hasStackContact(next,prior,itemById,container)||!assessStackLoads([...prior,next],itemById,[container],stackLoadContactCache).some(load=>load.status==='conflict')));
               if(!possible)lookahead=future.volumeMm3*20;}
             const score = placementScore(candidateBase, space, container, item, bagPlacements, massAfter, mode)+lookahead;
             const weightCost = bagCosts.get(container.id), priorCost = best && bagCosts.get(best.container.id);
