@@ -445,17 +445,23 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
       if (blockedBagIds.has(container.id)||containerError(container)||interiorSupportError(container.packingInterior)) continue;
       const massAfter = (massByContainer.get(container.id) ?? container.tareGrams ?? 0) + (item.upperMassGrams ?? 0);
       if (container.massLimitGrams !== undefined && massAfter > container.massLimitGrams + EPSILON) continue;
-      const futureShapes=container.compartments?[]:shapeItems.filter(i=>i.instanceId!==item.instanceId&&!placedIds.has(i.instanceId)
-        && eligibleForBag(i,container)
-        && (container.massLimitGrams === undefined || massAfter + (i.upperMassGrams ?? 0) <= container.massLimitGrams + EPSILON)
-        && geometryOrientations(i,container).some(o=>fitsOpening(o,container)&&o.length<=container.inside.length+EPSILON&&o.width<=container.inside.width+EPSILON&&o.height<=usableHeight(container)+EPSILON));
+      let futureOrientationsById: Map<string, ReturnType<typeof geometryOrientations>> | undefined;
+      const futureShapes=container.compartments?[]:shapeItems.filter(i=>{
+        if(i.instanceId===item.instanceId||placedIds.has(i.instanceId)||!eligibleForBag(i,container)
+          ||(container.massLimitGrams!==undefined&&massAfter+(i.upperMassGrams??0)>container.massLimitGrams+EPSILON))return false;
+        const orientations=geometryOrientations(i,container);
+        if(!orientations.some(o=>fitsOpening(o,container)&&o.length<=container.inside.length+EPSILON&&o.width<=container.inside.width+EPSILON&&o.height<=usableHeight(container)+EPSILON))return false;
+        (futureOrientationsById??=new Map()).set(i.instanceId,orientations);
+        return true;
+      });
+      const future=futureShapes.reduce<PlanItem|undefined>((best,i)=>!best||i.volumeMm3>best.volumeMm3?i:best,undefined);
       const hasShapes=useShapeSequence;
       const bagPlacements=placementsByContainer.get(container.id)??[];
       const supportIndex=supportIndexes?.get(container.id);
       const reservation=lookaheadDepth>1&&futureShapes.length>1?reservePendingShapes(futureShapes,bagPlacements,container,itemById,mode,lookaheadDepth,rules,usableHeight(container),blockedSpaces.get(container.id)??[]):undefined;
       const anchors=[...(reservation?.placements??[]),...futureShapes.flatMap(future=>{
-        const o=geometryOrientations(future,container)[0];
-        return o.length<=container.inside.length&&o.width<=container.inside.width&&o.height<=usableHeight(container)?cornerPositions(initialSpace(container,usableHeight(container)),o).map(position=>({instanceId:future.instanceId,entryId:future.entryId,itemId:future.itemId,containerId:container.id,...position,...o,layer:1})):[];
+        const o=futureOrientationsById?.get(future.instanceId)?.[0];
+        return o&&o.length<=container.inside.length&&o.width<=container.inside.width&&o.height<=usableHeight(container)?cornerPositions(initialSpace(container,usableHeight(container)),o).map(position=>({instanceId:future.instanceId,entryId:future.entryId,itemId:future.itemId,containerId:container.id,...position,...o,layer:1})):[];
       })];
       const availableSpaces=freeSpaces.get(container.id)??[];
       const spaces=hasShapes?[...availableSpaces,...packingRegions(container).map(region=>({...region,shapeSearch:true}))]:availableSpaces;
@@ -521,7 +527,6 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             }
             // Look ahead at the largest pending shape to avoid occupying its legs
             // before it can surround a smaller item. This remains a bounded heuristic.
-            const future=futureShapes.reduce<PlanItem|undefined>((best,i)=>!best||i.volumeMm3>best.volumeMm3?i:best,undefined);
             let lookahead=0;
             if (future && reservation) {
               const key=JSON.stringify([container.id,placement.rotation,placement.x,placement.y,placement.z]);
