@@ -36,10 +36,26 @@ export function useRawScanRetention({ data, savedData, capture, deferred, onRemo
       finally { running.current = false; }
     }
     void sweep();
-    const interval = window.setInterval(() => void sweep(), 60000);
-    const visible = () => { if (document.visibilityState === 'visible') void sweep(); };
-    document.addEventListener('visibilitychange', visible);
-    return () => { active = false; window.clearInterval(interval); document.removeEventListener('visibilitychange', visible); };
+    let interval: number | undefined;
+    const startInterval = () => {
+      if (interval === undefined) interval = window.setInterval(() => void sweep(), 60000);
+    };
+    const visibilityChanged = () => {
+      if (document.visibilityState === 'visible') {
+        void sweep();
+        startInterval();
+      } else if (interval !== undefined) {
+        window.clearInterval(interval);
+        interval = undefined;
+      }
+    };
+    if (document.visibilityState === 'visible') startInterval();
+    document.addEventListener('visibilitychange', visibilityChanged);
+    return () => {
+      active = false;
+      if (interval !== undefined) window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', visibilityChanged);
+    };
   }, [supported, days, saved, deferred, capture, onRemoved]);
   return { supported, status };
 }
