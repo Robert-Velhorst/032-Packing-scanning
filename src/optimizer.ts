@@ -327,8 +327,10 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
   const placementByInstanceId = new Map<string, Placement>();
   const containerById = new Map(containers.map(container => [container.id, container]));
   const excluded: ExcludedItem[] = [];
+  const shapeSearchRegions = new Map<string, FreeSpace[]>();
   const freeSpaces = new Map(containers.map((container) => {
     let spaces:FreeSpace[]=containerSpaceError(container)||usableContainerHeight(container)<=EPSILON?[]:packingRegions(container);
+    if(useShapeSequence)shapeSearchRegions.set(container.id,spaces.map(region=>({...region,shapeSearch:true})));
     if(!containerSpaceError(container))for(const blocked of [...(container.unavailableSpaces??[])].sort((a,b)=>a.x-b.x||a.y-b.y||a.z-b.z||a.length-b.length||a.width-b.width||a.height-b.height))spaces=splitFreeSpaces(spaces,blocked);
     return [container.id,spaces] as const;
   }));
@@ -409,6 +411,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
 
   for (const item of items) {
     if (placedIds.has(item.instanceId)) continue;
+    const groupedRules = rules.filter(rule => rule.kind !== 'clearance' && [rule.firstEntryId, rule.secondEntryId].includes(item.entryId));
     const candidateContainers = containers.filter(container => eligibleForBag(item,container));
     let loadFailure: string | undefined;
     let separationFailure: string | undefined;
@@ -424,18 +427,22 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
       if (blockedBagIds.has(container.id)||containerSpaceError(container)||interiorSupportError(container.packingInterior)) continue;
       const massAfter = (massByContainer.get(container.id) ?? container.tareGrams ?? 0) + (item.upperMassGrams ?? 0);
       if (container.massLimitGrams !== undefined && massAfter > container.massLimitGrams + EPSILON) continue;
-      const futureShapes=container.compartments?[]:shapeItems.filter(i=>i.instanceId!==item.instanceId&&!placedIds.has(i.instanceId)
-        && eligibleForBag(i,container)
-        && (container.massLimitGrams === undefined || massAfter + (i.upperMassGrams ?? 0) <= container.massLimitGrams + EPSILON)
-        && geometryOrientations(i,container).some(o=>fitsOpening(o,container)&&o.length<=container.inside.length+EPSILON&&o.width<=container.inside.width+EPSILON&&o.height<=usableContainerHeight(container)+EPSILON));
+      const futureOrientationById = new Map<string, ReturnType<typeof geometryOrientations>>();
+      const futureShapes=container.compartments?[]:shapeItems.filter(i=>{
+        if(i.instanceId===item.instanceId||placedIds.has(i.instanceId)||!eligibleForBag(i,container)
+          || (container.massLimitGrams !== undefined && massAfter + (i.upperMassGrams ?? 0) > container.massLimitGrams + EPSILON))return false;
+        const orientations=geometryOrientations(i,container);
+        futureOrientationById.set(i.instanceId,orientations);
+        return orientations.some(o=>fitsOpening(o,container)&&o.length<=container.inside.length+EPSILON&&o.width<=container.inside.width+EPSILON&&o.height<=usableContainerHeight(container)+EPSILON);
+      });
       const hasShapes=useShapeSequence;
       const bagPlacements=placementsByContainer.get(container.id)??[];
       const reservation=lookaheadDepth>1&&futureShapes.length>1?reservePendingShapes(futureShapes,bagPlacements,container,itemById,mode,lookaheadDepth,rules):undefined;
       const anchors=[...(reservation?.placements??[]),...futureShapes.flatMap(future=>{
-        const o=geometryOrientations(future,container)[0];
-        return o.length<=container.inside.length&&o.width<=container.inside.width&&o.height<=usableContainerHeight(container)?cornerPositions(initialSpace(container),o).map(position=>({instanceId:future.instanceId,entryId:future.entryId,itemId:future.itemId,containerId:container.id,...position,...o,layer:1})):[];
+        const o=futureOrientationById.get(future.instanceId)?.[0];
+        return o&&o.length<=container.inside.length&&o.width<=container.inside.width&&o.height<=usableContainerHeight(container)?cornerPositions(initialSpace(container),o).map(position=>({instanceId:future.instanceId,entryId:future.entryId,itemId:future.itemId,containerId:container.id,...position,...o,layer:1})):[];
       })];
-      const spaces = [...(freeSpaces.get(container.id) ?? []),...(hasShapes?packingRegions(container).map(region=>({...region,shapeSearch:true})):[])];
+      const spaces = [...(freeSpaces.get(container.id) ?? []),...(hasShapes?shapeSearchRegions.get(container.id)??[]:[])];
       for (const space of spaces) {
         const compartment=compartmentFor(container,space.compartmentId);if(!eligibleForCompartment(item,compartment))continue;
         const contentsError=compartmentMassError(compartment,bagPlacements,itemById,item);if(contentsError){loadFailure=contentsError;continue;}
@@ -470,7 +477,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             if(!fitsGeometrySpace(placement,container,item)||!hasPackingAndTravelSupport(placement,bagPlacements,itemById,mode==='fragile_protection'?1:.65,container))continue;
             if(bagPlacements.some(p=>geometryIntersects(placement,p,itemById)))continue;
             if(hasShapes&&!hasVerticalEntry(placement,bagPlacements,itemById,container))continue;
-            const separationError = placementSeparationError(placement,[...placements,...savedMassPositions],rules,itemById);
+            const separationError = rules.length ? placementSeparationError(placement,[...placements,...savedMassPositions],rules,itemById) : undefined;
             if(separationError){separationFailure=separationError;continue;}
             if (rejected.some((failed) => samePlacementGeometry(failed, placement))) continue;
             const needsStackCheck = useShapeSequence || stackSensitiveIds.has(item.instanceId) || bagPlacements.some(placed => stackSensitiveIds.has(placed.instanceId));
@@ -500,7 +507,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
                 lookaheadCache.set(key,penalty);
               }
               lookahead=penalty;
-            } else if(future){const possible=geometryOrientations(future,container).some(o=>fitsOpening(o,container)&&cornerPositions(initialSpace(container),o).some(position=>{
+            } else if(future){const possible=(futureOrientationById.get(future.instanceId)??[]).some(o=>fitsOpening(o,container)&&cornerPositions(initialSpace(container),o).some(position=>{
               const next:Placement={...position,...o,instanceId:future.instanceId,entryId:future.entryId,itemId:future.itemId,containerId:container.id,layer:1};
               const prior=[...bagPlacements,placement];return !placementSeparationError(next,prior,rules,itemById)&&fitsGeometrySpace(next,container,future)&&!prior.some(p=>geometryIntersects(next,p,itemById))&&hasPackingAndTravelSupport(next,prior,itemById,mode==='fragile_protection'?1:.65,container)&&hasVerticalEntry(next,prior,itemById,container)
                 && !assessStackLoads([...prior,next],itemById,[container]).some(load=>load.status==='conflict');
@@ -509,9 +516,8 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             const weightCost = bagCosts.get(container.id), priorCost = best && bagCosts.get(best.container.id);
             // Compare lighter bags only after all placement gates, and never override
             // a known future-shape obstruction. Within a bag retain geometric scoring.
-            const grouped = rules.filter(rule=>rule.kind!=='clearance'&&[rule.firstEntryId,rule.secondEntryId].includes(item.entryId));
-            const affinity = grouped.length>0 && bagPlacements.some(p=>p.entryId===item.entryId
-              && (!grouped.some(rule=>rule.kind==='different_compartments') || p.compartmentId===space.compartmentId));
+            const affinity = groupedRules.length>0 && bagPlacements.some(p=>p.entryId===item.entryId
+              && (!groupedRules.some(rule=>rule.kind==='different_compartments') || p.compartmentId===space.compartmentId));
             const compareAffinity = best && affinity!==best.affinity;
             const compareWeight = best && container.id !== best.container.id && lookahead === 0 && best.lookahead === 0
               && weightCost !== undefined && priorCost !== undefined && Math.abs(weightCost - priorCost) > 1e-12;
