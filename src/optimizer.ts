@@ -464,7 +464,6 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
       // This candidate-independent stack condition must not scan the bag for
       // every free-space position evaluated below.
       const hasStackSensitivePlacement=stackSensitiveIds.size>0&&bagPlacements.some(placed=>stackSensitiveIds.has(placed.instanceId));
-      const layerIndex=createPlacementLayerIndex(bagPlacements);
       const supportIndex=supportIndexes?.get(container.id);
       const reservation=lookaheadDepth>1&&futureShapes.length>1?reservePendingShapes(futureShapes,bagPlacements,container,itemById,mode,lookaheadDepth,rules,usableHeight(container),blockedSpaces.get(container.id)??[]):undefined;
       const anchors=[...(reservation?.placements??[]),...futureShapes.flatMap(future=>{
@@ -570,7 +569,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             const compareWeight = best && container.id !== best.container.id && lookahead === 0 && best.lookahead === 0
               && weightCost !== undefined && priorCost !== undefined && Math.abs(weightCost - priorCost) > 1e-12;
             if (!best || (compareAffinity ? affinity : compareWeight ? weightCost! < priorCost! : score < best.candidate.score)) {
-              placement.layer=1+highestLayerAt(layerIndex,space.compartmentId,position.z);
+              placement.layer=1+bagPlacements.reduce((maxLayer, placed) => placed.compartmentId===space.compartmentId && placed.z + placed.height <= position.z + EPSILON ? Math.max(maxLayer, placed.layer) : maxLayer, 0);
               best = { placement, container, lookahead, affinity, candidate: { ...candidateBase, rotation: orientation.rotation, score, dimensions: orientation } };
             }
           }
@@ -663,22 +662,6 @@ function cornerPositions(space: FreeSpace, dimensions: { length: number; width: 
   if(hasFarX)return [{x:space.x,y:space.y,z:space.z},{x:farX,y:space.y,z:space.z}];
   if(hasFarY)return [{x:space.x,y:space.y,z:space.z},{x:space.x,y:farY,z:space.z}];
   return [{x:space.x,y:space.y,z:space.z}];
-}
-
-type PlacementLayerIndexEntry={top:number;maxLayer:number};
-function createPlacementLayerIndex(placements:Placement[]):Map<string|undefined,PlacementLayerIndexEntry[]> {
-  const grouped=new Map<string|undefined,Array<{top:number;layer:number}>>();
-  for(const placement of placements){const entries=grouped.get(placement.compartmentId)??[];entries.push({top:placement.z+placement.height,layer:placement.layer});grouped.set(placement.compartmentId,entries);}
-  const result=new Map<string|undefined,PlacementLayerIndexEntry[]>();
-  for(const [compartmentId,entries] of grouped){entries.sort((left,right)=>left.top-right.top);let maxLayer=0;result.set(compartmentId,entries.map(entry=>({top:entry.top,maxLayer:maxLayer=Math.max(maxLayer,entry.layer)})));}
-  return result;
-}
-
-function highestLayerAt(index:Map<string|undefined,PlacementLayerIndexEntry[]>,compartmentId:string|undefined,z:number){
-  const entries=index.get(compartmentId);if(!entries)return 0;
-  const maximumTop=z+EPSILON;let low=0,high=entries.length;
-  while(low<high){const middle=(low+high)>>>1;if(entries[middle].top<=maximumTop)low=middle+1;else high=middle;}
-  return low?entries[low-1].maxLayer:0;
 }
 
 function initialSpace(container: Container,height=usableContainerHeight(container)): FreeSpace {
