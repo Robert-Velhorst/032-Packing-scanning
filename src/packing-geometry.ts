@@ -124,6 +124,7 @@ export function boxesIntersect(a:GeometryBox,b:GeometryBox):boolean {
 }
 export function geometryIntersects(a:Placement,b:Placement,items:Map<string,ShapeItem>):boolean {
   if(!boxesIntersect(a,b))return false;
+  if(!items.get(a.instanceId)?.packingShape&&!items.get(b.instanceId)?.packingShape)return true;
   return placementBoxes(a,items.get(a.instanceId)).some(left=>placementBoxes(b,items.get(b.instanceId)).some(right=>boxesIntersect(left,right)));
 }
 export function fitsGeometrySpace(p:Placement,bag:Container,item?:ShapeItem):boolean {
