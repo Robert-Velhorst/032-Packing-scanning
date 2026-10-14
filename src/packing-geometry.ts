@@ -253,8 +253,9 @@ export function hasGeometrySupport(p:Placement,placed:Placement[],items:Map<stri
   if(up.axis===2&&up.sign===1&&!items.get(p.instanceId)?.packingShape){
     const area=p.length*p.width;if(area<=0)return false;if(Math.abs(p.z-floor)<=EPS)return true;
     const required=area*fraction;let supported=0;
-    for(const lower of supportIndex?.candidates(p)??placed){
-      if(lower.containerId!==p.containerId||lower.compartmentId!==p.compartmentId)continue;
+    const indexedCandidates=supportIndex?.candidates(p);
+    for(const lower of indexedCandidates??placed){
+      if(!indexedCandidates&&(lower.containerId!==p.containerId||lower.compartmentId!==p.compartmentId))continue;
       if(items.get(lower.instanceId)?.packingShape){
         if(up.axis===2&&up.sign===1&&!maySharePackingSupportFace(p,lower))continue;
         supported+=geometrySupportArea(p,lower,items,up);
