@@ -178,6 +178,10 @@ export function geometrySupportArea(upper:Placement,lower:Placement,items:Map<st
 }
 export function geometryContactArea(upper:Placement,lower:Placement,items:Map<string,ShapeItem>,up:GravityUp=packingUp):number {
   if(upper.instanceId===lower.instanceId||upper.containerId!==lower.containerId||upper.compartmentId!==lower.compartmentId)return 0;
+  const upperBounds=gravityBox(upper,up),lowerBounds=gravityBox(lower,up);
+  if(upperBounds.x+upperBounds.length<=lowerBounds.x+EPS||lowerBounds.x+lowerBounds.length<=upperBounds.x+EPS
+    ||upperBounds.y+upperBounds.width<=lowerBounds.y+EPS||lowerBounds.y+lowerBounds.width<=upperBounds.y+EPS
+    ||upperBounds.z+upperBounds.height<lowerBounds.z-EPS||lowerBounds.z+lowerBounds.height<upperBounds.z-EPS)return 0;
   return faceContact(upper,lower,items,'down',up);
 }
 function faceContact(upper:Placement,lower:Placement,items:Map<string,ShapeItem>,side:'bottom'|'down',up:GravityUp):number {
