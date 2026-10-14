@@ -733,13 +733,16 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
   // Rectangle-only plans reuse each candidate volume across many containment pairs.
   const ordered=unique.map((space,index)=>({space,index,right:space.x+space.length,back:space.y+space.width,top:space.z+space.height,volume:cacheCandidateVolumes?spaceVolume(space):undefined}))
     .sort((left,right)=>left.space.x-right.space.x||left.index-right.index);
+  // Large candidates first lets rectangle-only searches stop at the volume threshold.
+  const candidatesByVolume=cacheCandidateVolumes?[...ordered].sort((left,right)=>right.volume!-left.volume!||left.index-right.index):ordered;
   const keep=new Array<boolean>(unique.length).fill(true);
   for(const inner of ordered){
     // EPSILON containment allows at most 2*EPSILON less extent per axis.
     const minimumContainingVolume=Math.max(0,inner.space.length-2*EPSILON)*Math.max(0,inner.space.width-2*EPSILON)*Math.max(0,inner.space.height-2*EPSILON);
-    for(const candidate of ordered){
+    for(const candidate of candidatesByVolume){
       const outer=candidate.space;
-      if(outer.x>inner.space.x+EPSILON)break;
+      if(cacheCandidateVolumes&&candidate.volume!<minimumContainingVolume*(1-1e-12))break;
+      if(outer.x>inner.space.x+EPSILON){if(!cacheCandidateVolumes)break;continue;}
       if(candidate.index===inner.index||outer.y>inner.space.y+EPSILON||outer.z>inner.space.z+EPSILON
         ||candidate.back<inner.space.y+inner.space.width-EPSILON||candidate.top<inner.space.z+inner.space.height-EPSILON
         ||candidate.right<inner.right-EPSILON)continue;
