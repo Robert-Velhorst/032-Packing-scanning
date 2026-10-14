@@ -5,8 +5,8 @@ import {createWorkspace,emptyWorkspace,listWorkspaces,unlockWorkspace,type Attac
 import {captureClient,getCaptureStorageState,lockCaptureStorage,openCaptureWorkspace,onCaptureWorkspaceLocked,selectGuestCaptureStorage,type CaptureClient,type CaptureStorageState} from '../scanning/native';
 import {workspaceStorage} from '../storage';
 import type {AppData} from '../types';
-import {nativeBackupFilesAvailable,pickNativeBackup,saveNativeBackup,readNativeBackup,discardNativeBackup,type BackupSelection} from '../native-files';
-import {nativeItemPhotosAvailable,pickNativeItemPhoto,readNativeItemPhoto,discardNativeItemPhoto,type ItemPhotoSelection} from '../native-item-photo';
+import type {BackupSelection} from '../native-files';
+import type {ItemPhotoSelection} from '../native-item-photo';
 import type {ItemEditorDraft} from '../item-photo-draft';
 
 interface DeviceControls {
@@ -45,19 +45,19 @@ export function DeviceWorkspace({children}:{children:ReactNode}){
   const [workspaces,setWorkspaces]=useState<WorkspaceDescriptor[]>([]),[selected,setSelected]=useState(''),[passphrase,setPassphrase]=useState('');
   const [notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
   const [captureLease,setCaptureLease]=useState<string>(),[nativeProtection,setNativeProtection]=useState(false);
+  const native=Capacitor.isNativePlatform();
   const [pendingBackup,setPendingBackup]=useState<BackupSelection>(),[fileBusy,setFileBusy]=useState(false),[fileNotice,setFileNotice]=useState('');
   const pendingRef=useRef<BackupSelection|undefined>(undefined),fileOperation=useRef(false);
-  const filesSupported=nativeProtection&&nativeBackupFilesAvailable();
+  const filesSupported=native&&nativeProtection&&Capacitor.getPlatform()==='android'&&Capacitor.isPluginAvailable('PackingFiles');
   const [pendingPhoto,setPendingPhoto]=useState<ItemPhotoSelection>(),[photoNotice,setPhotoNotice]=useState('');
   const photoRef=useRef<ItemPhotoSelection|undefined>(undefined);
-  const photosSupported=nativeProtection&&nativeItemPhotosAvailable();
+  const photosSupported=native&&nativeProtection&&Capacitor.getPlatform()==='android'&&Capacitor.isPluginAvailable('PackingPhoto');
   const captureState=useRef<CaptureStorageState|undefined>(undefined);
   const nativeHandshake=useRef(false);
   const capture=useMemo(()=>captureClient(captureLease),[captureLease,session,mode]);
   const captureRef=useRef(capture);captureRef.current=capture;
   const active=useRef<ProtectedSession|undefined>(undefined),generation=useRef(0),channel=useRef<BroadcastChannel|undefined>(undefined);
   const renewInteraction=useRef<(()=>Promise<void>)|undefined>(undefined);
-  const native=Capacitor.isNativePlatform();
   const close=useCallback((announce=true)=>{const current=active.current;active.current=undefined;captureRef.current.revoke();current?.close();const epoch=++generation.current;
     const state=captureState.current;if(state)void lockCaptureStorage(state.revision).then(next=>{if(epoch===generation.current)captureState.current=next;}).catch(()=>{if(epoch===generation.current)setNotice('The workspace is hidden, but native capture locking could not be confirmed. Reload before unlocking again.');});
     setSession(undefined);setCaptureLease(undefined);setPassphrase('');setMode('locked');if(announce&&current)channel.current?.postMessage({type:'lock',id:current.descriptor.id});},[]);
@@ -133,10 +133,10 @@ export function DeviceWorkspace({children}:{children:ReactNode}){
   const target=session?.descriptor.id??'guest';
   const backupMatches=pendingBackup?.target===target;
   const fileJob=async(job:()=>Promise<void>)=>{if(fileOperation.current)return;fileOperation.current=true;setFileBusy(true);setFileNotice('');try{await job();}catch(error){setFileNotice(error instanceof Error?error.message:'The backup operation was not confirmed. Packing records have not changed.');}finally{fileOperation.current=false;setFileBusy(false);}};
-  const discardBackup=async(restored=false)=>{const current=pendingRef.current;if(!current)return;await discardNativeBackup(current);if(pendingRef.current?.ticket===current.ticket){pendingRef.current=undefined;setPendingBackup(undefined);setFileNotice(restored?'Selected backup cleared after restore.':'Selected backup discarded. Packing records have not changed.');}};
-  const pickBackup=()=>fileJob(async()=>{if(pendingRef.current)throw new Error('Review or discard the selected backup before choosing another file.');const picked=await pickNativeBackup(captureLease);if(picked){pendingRef.current=picked;setPendingBackup(picked);setFileNotice('Backup selected. Open the workspace that selected it, then use Settings to review and confirm the restore.');}else setFileNotice('File selection cancelled. Packing records have not changed.');});
-  const saveBackup=(text:string)=>fileJob(async()=>{const saved=await saveNativeBackup(text,captureLease);setFileNotice(saved?'Backup saved to the selected provider. The file is unencrypted and may include personal photos; keep it private.':'Backup saving cancelled.');});
-  const reviewBackup=async()=>{const current=pendingRef.current;if(!current||current.target!==target)throw new Error('Open the workspace that selected this backup first.');const epoch=generation.current;const file=await readNativeBackup(current,captureLease);if(epoch!==generation.current||active.current!==session||document.hidden)throw new Error('The workspace locked before backup review. Unlock it again.');return file;};
+  const discardBackup=async(restored=false)=>{const current=pendingRef.current;if(!current)return;const {discardNativeBackup}=await import('../native-files');await discardNativeBackup(current);if(pendingRef.current?.ticket===current.ticket){pendingRef.current=undefined;setPendingBackup(undefined);setFileNotice(restored?'Selected backup cleared after restore.':'Selected backup discarded. Packing records have not changed.');}};
+  const pickBackup=()=>fileJob(async()=>{if(pendingRef.current)throw new Error('Review or discard the selected backup before choosing another file.');const {pickNativeBackup}=await import('../native-files');const picked=await pickNativeBackup(captureLease);if(picked){pendingRef.current=picked;setPendingBackup(picked);setFileNotice('Backup selected. Open the workspace that selected it, then use Settings to review and confirm the restore.');}else setFileNotice('File selection cancelled. Packing records have not changed.');});
+  const saveBackup=(text:string)=>fileJob(async()=>{const {saveNativeBackup}=await import('../native-files');const saved=await saveNativeBackup(text,captureLease);setFileNotice(saved?'Backup saved to the selected provider. The file is unencrypted and may include personal photos; keep it private.':'Backup saving cancelled.');});
+  const reviewBackup=async()=>{const current=pendingRef.current;if(!current||current.target!==target)throw new Error('Open the workspace that selected this backup first.');const epoch=generation.current;const {readNativeBackup}=await import('../native-files');const file=await readNativeBackup(current,captureLease);if(epoch!==generation.current||active.current!==session||document.hidden)throw new Error('The workspace locked before backup review. Unlock it again.');return file;};
   const controlsEpoch=generation.current;
   const checkActive=()=>{if(controlsEpoch!==generation.current||active.current!==session||document.hidden&&!!session)throw new Error('The workspace locked or changed before the backup operation finished. Open it again before retrying.');};
   const confirmInteraction=async()=>{
@@ -147,9 +147,9 @@ export function DeviceWorkspace({children}:{children:ReactNode}){
     checkActive();if(document.hidden)throw new Error('The packing screen became hidden before the command could run.');
   };
   const photoMatches=pendingPhoto?.target===target;
-  const pickItemPhoto=async(draft:ItemEditorDraft,source:'camera'|'library')=>{if(fileOperation.current)return false;if(photoRef.current){setPhotoNotice('Resume or discard the pending item photo draft before selecting another photo.');return false;}fileOperation.current=true;setFileBusy(true);setPhotoNotice('');try{const picked=await pickNativeItemPhoto(draft,source,captureLease);photoRef.current=picked;setPendingPhoto(picked);setPhotoNotice(picked.notice);return true;}catch(error){setPhotoNotice(error instanceof Error?error.message:'The photo selection was not confirmed.');return false;}finally{fileOperation.current=false;setFileBusy(false);}};
-  const resumeItemPhoto=async()=>{const selection=photoRef.current;if(!selection||selection.target!==target)throw new Error('Open the workspace that prepared this item photo draft first.');const epoch=generation.current;const result=await readNativeItemPhoto(selection,captureLease);if(epoch!==generation.current||active.current!==session||document.hidden)throw new Error('The workspace locked before its photo draft could be resumed.');return result;};
-  const discardItemPhoto=async(saved=false)=>{const selection=photoRef.current;if(!selection)return;await discardNativeItemPhoto(selection);if(photoRef.current?.ticket===selection.ticket){photoRef.current=undefined;setPendingPhoto(undefined);setPhotoNotice(saved?'Encrypted photo draft cleared after saving the item.':'Encrypted photo draft discarded. Saved packing records have not changed.');}};
+  const pickItemPhoto=async(draft:ItemEditorDraft,source:'camera'|'library')=>{if(fileOperation.current)return false;if(photoRef.current){setPhotoNotice('Resume or discard the pending item photo draft before selecting another photo.');return false;}fileOperation.current=true;setFileBusy(true);setPhotoNotice('');try{const {pickNativeItemPhoto}=await import('../native-item-photo');const picked=await pickNativeItemPhoto(draft,source,captureLease);photoRef.current=picked;setPendingPhoto(picked);setPhotoNotice(picked.notice);return true;}catch(error){setPhotoNotice(error instanceof Error?error.message:'The photo selection was not confirmed.');return false;}finally{fileOperation.current=false;setFileBusy(false);}};
+  const resumeItemPhoto=async()=>{const selection=photoRef.current;if(!selection||selection.target!==target)throw new Error('Open the workspace that prepared this item photo draft first.');const epoch=generation.current;const {readNativeItemPhoto}=await import('../native-item-photo');const result=await readNativeItemPhoto(selection,captureLease);if(epoch!==generation.current||active.current!==session||document.hidden)throw new Error('The workspace locked before its photo draft could be resumed.');return result;};
+  const discardItemPhoto=async(saved=false)=>{const selection=photoRef.current;if(!selection)return;const {discardNativeItemPhoto}=await import('../native-item-photo');await discardNativeItemPhoto(selection);if(photoRef.current?.ticket===selection.ticket){photoRef.current=undefined;setPendingPhoto(undefined);setPhotoNotice(saved?'Encrypted photo draft cleared after saving the item.':'Encrypted photo draft discarded. Saved packing records have not changed.');}};
   const controls:DeviceControls={session,native,protectionSupported:!native||nativeProtection,capture,filesSupported,fileBusy,fileNotice,pendingBackup,backupMatches,pickBackup,saveBackup,reviewBackup,discardBackup,checkActive,confirmInteraction,photosSupported,photoNotice,pendingPhoto,photoMatches,pickItemPhoto,resumeItemPhoto,discardItemPhoto,lock:()=>close(),choose,accountKnown,accountEnded,create};
   if(mode==='boot')return <div className="boot-screen"><div className="brand-mark">P</div><p>Checking your saved packing spaces…</p></div>;
   if(mode==='locked')return <main className="device-lock" aria-label="Locked device workspace"><div className="brand-mark">P</div><p className="eyebrow">SAVED ON THIS DEVICE</p><h1>Protected packing space</h1><p>Use its device passphrase to open saved packs and photos, including offline. Signing in to the server does not unlock them.</p>
