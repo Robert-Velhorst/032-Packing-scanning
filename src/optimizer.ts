@@ -229,7 +229,8 @@ function eligibleForBag(item: PlanItem, container: Container) {
  * Every attempt runs the complete placement gates; saved physical locks are never reordered.
  * The bound is deterministic and independent of the speed of the device. */
 function searchInsertionOrders(orders: PlanItem[][], containers: Container[], locks: Map<string, Placement>, mode: OptimizationMode, rejected: Placement[], rules: SeparationRule[], containerErrors: Map<string,string|undefined>, blockedSpaces: Map<string,ReturnType<typeof containerBlockedBoxes>>) {
-  const results: ReturnType<typeof packOnce>[] = [];
+  let bestResult: ReturnType<typeof packOnce> | undefined;
+  let foundComplete = false;
   const frontier: { order: PlanItem[]; result: ReturnType<typeof packOnce> }[] = [];
   const seen = new Set<string>();
   const shapeOrientationCache: ShapeOrientationCache = new Map();
@@ -238,15 +239,17 @@ function searchInsertionOrders(orders: PlanItem[][], containers: Container[], lo
     if (seen.has(key)) return;
     seen.add(key);
     const result = packOnce(order, containers, locks, mode, rejected, rules, containerErrors, blockedSpaces, lookaheadDepth, shapeOrientationCache);
-    results.push(result);
+    if (!bestResult || result.score > bestResult.score) bestResult = result;
+    if (result.excluded.length === 0) foundComplete = true;
     frontier.push({ order, result });
   };
   // Preserve existing rectangular-only mode behavior, including its tie order.
   if (!rules.length && !orders[0]?.some(item => item.packingShape)) {
-    return { results: orders.map(order => packOnce(order, containers, locks, mode, rejected, rules, containerErrors, blockedSpaces, 1, shapeOrientationCache)), limited: false };
+    for (const order of orders) evaluate(order);
+    return { results: bestResult ? [bestResult] : [], limited: false };
   }
   for (const order of orders) evaluate(order);
-  const complete = () => results.some(result => result.excluded.length === 0);
+  const complete = () => foundComplete;
   while (frontier.length && seen.size < 24 && !complete()) {
     frontier.sort((a,b) => b.result.score - a.result.score);
     const { order, result } = frontier.shift()!;
@@ -278,7 +281,7 @@ function searchInsertionOrders(orders: PlanItem[][], containers: Container[], lo
       if (seen.size >= 24 || complete()) break;
     }
   }
-  return { results, limited: seen.size >= 24 && !complete() };
+  return { results: bestResult ? [bestResult] : [], limited: seen.size >= 24 && !complete() };
 }
 
 function orderCandidates(items: PlanItem[], mode: OptimizationMode): PlanItem[][] {
