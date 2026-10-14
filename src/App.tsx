@@ -31,6 +31,7 @@ import {  markPackingItemUnavailable, rejectPackingPlacement, setPackingItemComp
 import { measurementInput } from './measurement-input';
 import {workspaceStorage} from './storage';
 import { createInitialData } from './seed';
+import { PlannerWorkerClient } from './optimizer-worker-client';
 import type { AppData, CarrierRule, Container, Evidence, ItemPriority, LibraryItem, OptimizationMode, PackEntry, PackingPlan, Placement, Trip, TripActivity, UnitSystem } from './types';
 
 type Page = 'workspace' | 'items' | 'bags' | 'carrier-rules' | 'settings' | 'steps' | 'sequence';
@@ -95,6 +96,11 @@ function PackingApp() {
   const [planError, setPlanError] = useState('');
   const [notice, setNotice] = useState('');
   const planRequest = useRef(0);
+  const plannerWorker = useRef<PlannerWorkerClient | null>(null);
+  if (!plannerWorker.current) plannerWorker.current = new PlannerWorkerClient(
+    () => new Worker(new URL('./optimizer.worker.ts', import.meta.url), { type: 'module', name: 'packing-plan' }),
+  );
+  useEffect(() => () => plannerWorker.current?.dispose(), []);
 
   useEffect(() => {
     let active = true;
@@ -171,29 +177,18 @@ function PackingApp() {
       });
       return () => { active = false; };
     }
-    let worker: Worker;
-    try {
-      worker = new Worker(new URL('./optimizer.worker.ts', import.meta.url), { type: 'module', name: 'packing-plan' });
-    } catch {
-      void buildOnMainThread().catch((error: unknown) => {
-        if (active) setPlanError(error instanceof Error ? error.message : 'The packing plan could not be prepared.');
+    void plannerWorker.current!.calculate({ requestId, trip: activeTrip, items: planItems, containers: planContainers })
+      .then((result) => {
+        if (!active) return;
+        if (result.error) setPlanError(result.error);
+        else if (result.plan) setPlan(result.plan);
+      })
+      .catch(() => {
+        if (active) void buildOnMainThread().catch((error: unknown) => {
+          if (active) setPlanError(error instanceof Error ? error.message : 'The packing plan could not be prepared.');
+        });
       });
-      return () => { active = false; };
-    }
-    worker.onmessage = (event: MessageEvent<{ requestId: number; plan?: PackingPlan; error?: string }>) => {
-      if (!active || event.data.requestId !== requestId) return;
-      if (event.data.error) setPlanError(event.data.error);
-      else if (event.data.plan) setPlan(event.data.plan);
-      worker.terminate();
-    };
-    worker.onerror = () => {
-      worker.terminate();
-      if (active) void buildOnMainThread().catch((error: unknown) => {
-        if (active) setPlanError(error instanceof Error ? error.message : 'The packing plan could not be prepared.');
-      });
-    };
-    worker.postMessage({ requestId, trip: activeTrip, items: planItems, containers: planContainers });
-    return () => { active = false; worker.terminate(); };
+    return () => { active = false; plannerWorker.current?.cancel(requestId); };
   }, [data !== undefined, planItems, planContainers, activeTrip?.id, activeTrip?.entries, activeTrip?.containerIds, activeTrip?.mode, activeTrip?.lockedPlacements, activeTrip?.unavailableInstanceIds, activeTrip?.rejectedPlacements, activeTrip?.separationRules]);
   useEffect(() => {
     if (data?.settings.automaticPhotoDeletionDays) prunePhotos(data.settings.automaticPhotoDeletionDays).catch(() => undefined);
