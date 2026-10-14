@@ -149,7 +149,7 @@ function contactFaces(boxes:GeometryBox[],floor:number):ContactFaces{
   const down=boxes.flatMap(b=>{let patches:Face[]=[{x:b.x,y:b.y,z:b.z,length:b.length,width:b.width}];for(const below of boxes)if(Math.abs(below.z+below.height-b.z)<=EPS)patches=patches.flatMap(f=>subtractFace(f,below));return patches;});
   return {bottom,down,top};
 }
-function faces(p:Placement,item:ShapeItem|undefined,side:'bottom'|'down'|'top',up:GravityUp=packingUp):Face[] {
+function facePatches(p:Placement,item:ShapeItem|undefined,side:'bottom'|'down'|'top',up:GravityUp=packingUp):{patches:Face[];offsetX:number;offsetY:number;offsetZ:number} {
   if(up.axis!==2||up.sign!==1){
     const frame=interiorFrame(up.axis,up.sign),origin=[p.x,p.y,p.z],offset=frame.axis.map((a,i)=>frame.sign[i]*origin[a]);
     let patches:ContactFaces;
@@ -159,10 +159,14 @@ function faces(p:Placement,item:ShapeItem|undefined,side:'bottom'|'down'|'top',u
       patches=geometry.directional.get(key)??contactFaces(geometry.boxes.map(b=>gravityBox(b,up)),localBounds.z);
       geometry.directional.set(key,patches);
     }else patches=contactFaces([localBounds],localBounds.z);
-    return patches[side].map(f=>({...f,x:f.x+offset[0],y:f.y+offset[1],z:f.z+offset[2]}));
+    return {patches:patches[side],offsetX:offset[0],offsetY:offset[1],offsetZ:offset[2]};
   }
   const local=item?.packingShape?localGeometry(item.packingShape,p.rotation)[side]:[{x:0,y:0,z:side==='top'?p.height:0,length:p.length,width:p.width}];
-  return local.map(f=>({...f,x:f.x+p.x,y:f.y+p.y,z:f.z+p.z}));
+  return {patches:local,offsetX:p.x,offsetY:p.y,offsetZ:p.z};
+}
+function faces(p:Placement,item:ShapeItem|undefined,side:'bottom'|'down'|'top',up:GravityUp=packingUp):Face[] {
+  const {patches,offsetX,offsetY,offsetZ}=facePatches(p,item,side,up);
+  return patches.map(f=>({...f,x:f.x+offsetX,y:f.y+offsetY,z:f.z+offsetZ}));
 }
 export function geometrySupportArea(upper:Placement,lower:Placement,items:Map<string,ShapeItem>,up:GravityUp=packingUp):number {
   if(upper.containerId!==lower.containerId||upper.compartmentId!==lower.compartmentId)return 0;
@@ -183,8 +187,9 @@ function faceContact(upper:Placement,lower:Placement,items:Map<string,ShapeItem>
     return rectangleFaceContact(upper,lower);
   }
   let area=0;
-  for(const base of faces(upper,upperItem,side,up))for(const top of faces(lower,lowerItem,'top',up))if(Math.abs(base.z-top.z)<=EPS){
-    const l=Math.min(base.x+base.length,top.x+top.length)-Math.max(base.x,top.x),w=Math.min(base.y+base.width,top.y+top.width)-Math.max(base.y,top.y);
+  const bases=facePatches(upper,upperItem,side,up),tops=facePatches(lower,lowerItem,'top',up);
+  for(const base of bases.patches)for(const top of tops.patches)if(Math.abs(base.z+bases.offsetZ-top.z-tops.offsetZ)<=EPS){
+    const l=Math.min(base.x+bases.offsetX+base.length,top.x+tops.offsetX+top.length)-Math.max(base.x+bases.offsetX,top.x+tops.offsetX),w=Math.min(base.y+bases.offsetY+base.width,top.y+tops.offsetY+top.width)-Math.max(base.y+bases.offsetY,top.y+tops.offsetY);
     if(l>EPS&&w>EPS)area+=l*w;
   }
   return area;
