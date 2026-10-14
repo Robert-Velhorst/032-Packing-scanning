@@ -699,11 +699,17 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace): FreeSpace[] {
     if (used.z > space.z + EPSILON) next.push({ ...space, height: used.z - space.z });
     if (used.z + used.height < top - EPSILON) next.push({ ...space, z: used.z + used.height, height: top - used.z - used.height });
   }
-  const valid = next.filter((space) => space.length > EPSILON && space.width > EPSILON && space.height > EPSILON);
-  if(valid.length<2)return valid;
-  // The containment pass would discard duplicate geometry; preserve its first record without pairwise comparisons.
-  const unique:FreeSpace[]=[],seen=new Set<string>();
-  for(const space of valid){const key=`${space.x},${space.y},${space.z},${space.length},${space.width},${space.height}`;if(seen.has(key))continue;seen.add(key);unique.push(space);}
+  // Filter and deduplicate in one pass; preserve the first record for each geometry.
+  const unique:FreeSpace[]=[];
+  let seen:Set<string>|undefined;
+  for(const space of next){
+    if(space.length<=EPSILON||space.width<=EPSILON||space.height<=EPSILON)continue;
+    if(unique.length===0){unique.push(space);continue;}
+    if(!seen){const first=unique[0];seen=new Set([`${first.x},${first.y},${first.z},${first.length},${first.width},${first.height}`]);}
+    const key=`${space.x},${space.y},${space.z},${space.length},${space.width},${space.height}`;
+    if(seen.has(key))continue;seen.add(key);unique.push(space);
+  }
+  if(unique.length<2)return unique;
   if(unique.length<32)return unique.filter((space,index)=>!unique.some((other,otherIndex)=>otherIndex!==index&&containsSpace(other,space)&&(!containsSpace(space,other)||otherIndex<index)));
   const ordered=unique.map((space,index)=>({space,index,right:space.x+space.length,back:space.y+space.width,top:space.z+space.height}))
     .sort((left,right)=>left.space.x-right.space.x||left.index-right.index);
