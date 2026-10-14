@@ -11,7 +11,6 @@ import type {ItemEditorDraft} from './item-photo-draft';
 import type { SharedCopyWitness, SharedPackSnapshot } from './shared-packs';
 import type { SharedPackBaseline } from './shared-pack-baseline';
 import {DeviceWorkspace,useDeviceWorkspace} from './components/DeviceWorkspace';
-import { isPackingBackup as isBackup } from './backup';
 import { BagWeightNotes } from './components/BagWeightNotes';
 import { uprightInstruction, uprightTag } from './upright';
 import { StackLoadNotes } from './components/StackLoadNotes';
@@ -427,7 +426,8 @@ function PackingApp() {
     let committed = false;
     try {
       const parsed: unknown = JSON.parse(await file.text());
-      if (!isBackup(parsed)) throw new Error('This file is not a supported Packing Scanning backup.');
+      const { isPackingBackup } = await import('./backup');
+      if (!isPackingBackup(parsed)) throw new Error('This file is not a supported Packing Scanning backup.');
       device.checkActive();
       if (!window.confirm(device.session ? 'Replace the packing records and photos in this protected workspace with this backup? Existing original scan files in this workspace will also be removed because JSON backups do not include them. Guest packs and other workspaces remain.' : 'Import this backup and replace the guest packing data saved on this device? JSON backups do not contain native 3D files, so existing saved guest scans on this device will also be removed. Protected workspaces remain.')) return false;
       const photoIds = new Map<string,string>();

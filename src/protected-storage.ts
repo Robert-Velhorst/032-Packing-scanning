@@ -1,10 +1,11 @@
 import {openDB,type DBSchema,type IDBPDatabase} from 'idb';
 import type {AppData} from './types';
-import {isPackingBackup} from './backup';
 
 export const PROTECTED_DATABASE='packing-scanning-protected';
 const ITERATIONS=600_000;
 const encode=new TextEncoder(),decode=new TextDecoder();
+let backupValidator:Promise<typeof import('./backup')>|undefined;
+function loadBackupValidator(){return backupValidator??=import('./backup');}
 export interface SealedRecord {iv:Uint8Array<ArrayBuffer>; ciphertext:ArrayBuffer;}
 export interface WorkspaceDescriptor {id:string;accountId:string;label:string;createdAt:string;revision:number;salt:Uint8Array<ArrayBuffer>;wrappedKey:SealedRecord;}
 export interface WorkspaceAttachment {captureLease:string;close:()=>void;clearCaptures:()=>Promise<void>;}
@@ -71,10 +72,10 @@ export class ProtectedSession {
     const key=this.live(),record=await (await database()).get('records',`${this.descriptor.id}:state`);this.live();
     if(!record)throw new Error('The protected packing records are missing. Your guest packs are unchanged.');
     let app:unknown;try{app=JSON.parse(decode.decode(await openBytes(key,this.descriptor.id,'state',record)));}catch{throw new Error('These protected records could not be decrypted. They have not been replaced.');}
-    this.live();if(!isPackingBackup({format:'packing-scanning-backup',app,photos:[]}))throw new Error('This protected packing data version is unsupported. It has not been replaced.');
+    this.live();const {isPackingBackup}=await loadBackupValidator();if(!isPackingBackup({format:'packing-scanning-backup',app,photos:[]}))throw new Error('This protected packing data version is unsupported. It has not been replaced.');
     return app as AppData;
   }
-  async save(data:AppData){if(!isPackingBackup({format:'packing-scanning-backup',app:data,photos:[]}))throw new Error('Review invalid packing records before saving this protected workspace.');const bytes=encode.encode(JSON.stringify(data));return this.mutate(async key=>({write:[['state',await sealBytes(key,this.descriptor.id,'state',bytes.buffer)]],result:undefined}));}
+  async save(data:AppData){const {isPackingBackup}=await loadBackupValidator();if(!isPackingBackup({format:'packing-scanning-backup',app:data,photos:[]}))throw new Error('Review invalid packing records before saving this protected workspace.');const bytes=encode.encode(JSON.stringify(data));return this.mutate(async key=>({write:[['state',await sealBytes(key,this.descriptor.id,'state',bytes.buffer)]],result:undefined}));}
   savePhoto(id:string,blob:Blob,createdAt=new Date().toISOString()){return this.mutate(async key=>({write:[[`photo:${id}`,await sealBytes(key,this.descriptor.id,`photo:${id}`,await photoBytes(id,blob,createdAt))]],result:undefined}));}
   async photos():Promise<{id:string;blob:Blob;createdAt:string}[]>{
     const key=this.live(),db=await database(),keys=await db.getAllKeys('records',range(this.descriptor.id));this.live();const result=[];
@@ -111,7 +112,7 @@ export async function unlockWorkspace(id:string,passphrase:string,attach?:Attach
 }
 export async function createWorkspace(accountId:string,label:string,passphrase:string,data:AppData,photos:{id:string;blob:Blob;createdAt:string}[]=[],attach?:AttachWorkspace):Promise<ProtectedSession>{
   checkPassphrase(passphrase);if(!accountId||!label.trim()||label.length>70)throw new Error('A signed-in account and a device label are required.');
-  if(!isPackingBackup({format:'packing-scanning-backup',app:data,photos:[]}))throw new Error('Review invalid local records before creating a protected workspace.');
+  const {isPackingBackup}=await loadBackupValidator();if(!isPackingBackup({format:'packing-scanning-backup',app:data,photos:[]}))throw new Error('Review invalid local records before creating a protected workspace.');
   const db=await database();const existing=await db.getAll('workspaces');if(existing.some(w=>w.accountId===accountId))throw new Error('This account already has a protected workspace here. Unlock it instead.');if(existing.length>=20)throw new Error('This device already has twenty protected workspaces.');
   const id=crypto.randomUUID(),salt=crypto.getRandomValues(new Uint8Array(16)),raw=crypto.getRandomValues(new Uint8Array(32));
   try{
