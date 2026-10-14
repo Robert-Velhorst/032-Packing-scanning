@@ -30,11 +30,45 @@ public class DepthCloudTest {
         assertThrows(IllegalArgumentException.class, () -> DepthProjection.point(0,0,0,100,100,50,50));
     }
 
+    @Test public void projectorWritesIntoReusableBufferAtOffset() {
+        float[] destination = new float[] {7, 7, 7, 7, 7};
+        new DepthProjection.Projector(100,100,50,50).writePoint(60,70,1000,destination,1);
+        assertArrayEquals(new float[] {7, 0.1f, -0.2f, -1, 7},destination,0.00001f);
+        assertThrows(IllegalArgumentException.class,
+            () -> new DepthProjection.Projector(0,100,50,50));
+    }
+
     @Test public void filtersBackgroundConfidenceAndNonFinitePoints() {
         DepthCloud cloud = new DepthCloud(0.5);
         cloud.addFrame(1,new float[] {0,0,0,0.9f, 0.1f,0,0,0.1f, 2,0,0,1, Float.NaN,0,0,1},new float[] {0,0,1});
         assertEquals(1,cloud.pointCount());
         assertThrows(IllegalStateException.class,cloud::snapshot);
+    }
+
+    @Test public void voxelStoreMergesCellsAndHonoursReusableSamplePrefix() {
+        DepthCloud cloud = new DepthCloud(0.5);
+        float[] samples = new float[] {
+            0.001f,0,0,0.9f, 0.002f,0,0,0.8f, -0.006f,0,0,0.9f,
+            0.2f,0,0,1
+        };
+        cloud.addFrame(1,samples,12,new float[] {0,0,1});
+        assertEquals(2,cloud.pointCount());
+        assertArrayEquals(new float[] {0.001f,0,0,-0.006f,0,0},cloud.previewPoints(),0.00001f);
+    }
+
+    @Test public void voxelStoreGrowsWithoutLosingDistinctCells() {
+        DepthCloud cloud = new DepthCloud(0.5);
+        float[] samples = new float[1200 * 4];
+        for (int index = 0; index < 1200; index++) {
+            int offset = index * 4;
+            samples[offset] = (index % 11) * 0.01f - 0.05f;
+            samples[offset + 1] = ((index / 11) % 11) * 0.01f - 0.05f;
+            samples[offset + 2] = (index / 121) * 0.01f - 0.04f;
+            samples[offset + 3] = 0.9f;
+        }
+        cloud.addFrame(1,samples,new float[] {0,0,1});
+        assertEquals(1200,cloud.pointCount());
+        assertEquals(1200 * 3,cloud.previewPoints().length);
     }
 
     @Test public void duplicateOrOldDepthCannotIncreaseCoverage() {

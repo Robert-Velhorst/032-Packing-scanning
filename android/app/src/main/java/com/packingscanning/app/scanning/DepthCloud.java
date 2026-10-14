@@ -1,16 +1,18 @@
 package com.packingscanning.app.scanning;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 /** Pure geometry in metres in one capture-local frame. No camera or storage dependencies. */
 public final class DepthCloud {
     public static final double VOXEL_METRES = 0.005;
     public static final int MAX_POINTS = 60000;
     private final double halfExtent;
-    private final Map<String, float[]> voxels = new LinkedHashMap<>();
+    private int pointCount;
+    private long[] voxelKeys = new long[256];
+    private float[] voxelPoints = new float[256 * 4];
+    /** Each slot stores a point index plus one; zero means empty. */
+    private int[] voxelSlots = new int[512];
     private final List<float[]> directions = new ArrayList<>();
     private long lastTimestamp = -1;
     private int frames;
@@ -30,18 +32,47 @@ public final class DepthCloud {
 
     /** Samples are x,y,z,confidence tuples, already transformed into the capture frame. */
     public synchronized void addFrame(long timestamp, float[] samples, float[] cameraPosition) {
-        if (timestamp <= lastTimestamp || samples == null || samples.length % 4 != 0) return;
+        addFrame(timestamp,samples,samples == null ? 0 : samples.length,cameraPosition);
+    }
+
+    /** Accepts only the populated prefix, allowing callers to reuse a larger sample buffer. */
+    synchronized void addFrame(long timestamp, float[] samples, int sampleLength, float[] cameraPosition) {
+        if (timestamp <= lastTimestamp || samples == null || sampleLength < 0
+            || sampleLength > samples.length || sampleLength % 4 != 0) return;
         lastTimestamp = timestamp;
         int accepted = 0;
-        for (int index = 0; index < samples.length; index += 4) {
+        for (int index = 0; index < sampleLength; index += 4) {
             float x = samples[index], y = samples[index + 1], z = samples[index + 2], confidence = samples[index + 3];
             if (!Float.isFinite(x) || !Float.isFinite(y) || !Float.isFinite(z)
                 || !Float.isFinite(confidence) || confidence < 0.8f || confidence > 1
                 || Math.abs(x) > halfExtent || Math.abs(y) > halfExtent || Math.abs(z) > halfExtent) continue;
-            String key = cell(x) + ":" + cell(y) + ":" + cell(z);
-            float[] previous = voxels.get(key);
-            if (previous == null && voxels.size() >= MAX_POINTS) { capped = true; continue; }
-            if (previous == null || confidence > previous[3]) voxels.put(key, new float[] {x, y, z, confidence});
+            long key = voxelKey(cell(x),cell(y),cell(z));
+            int slot = findSlot(key);
+            int pointIndex = voxelSlots[slot] - 1;
+            if (pointIndex < 0) {
+                if (pointCount >= MAX_POINTS) { capped = true; continue; }
+                ensurePointCapacity(pointCount + 1);
+                if ((pointCount + 1) * 10 >= voxelSlots.length * 7) {
+                    growSlots();
+                    slot = findSlot(key);
+                }
+                pointIndex = pointCount++;
+                voxelKeys[pointIndex] = key;
+                voxelSlots[slot] = pointIndex + 1;
+                int pointOffset = pointIndex * 4;
+                voxelPoints[pointOffset] = x;
+                voxelPoints[pointOffset + 1] = y;
+                voxelPoints[pointOffset + 2] = z;
+                voxelPoints[pointOffset + 3] = confidence;
+            } else {
+                int pointOffset = pointIndex * 4;
+                if (confidence > voxelPoints[pointOffset + 3]) {
+                    voxelPoints[pointOffset] = x;
+                    voxelPoints[pointOffset + 1] = y;
+                    voxelPoints[pointOffset + 2] = z;
+                    voxelPoints[pointOffset + 3] = confidence;
+                }
+            }
             accepted++;
         }
         if (accepted >= 30) {
@@ -51,6 +82,46 @@ public final class DepthCloud {
     }
 
     private static long cell(float value) { return (long) Math.floor(value / VOXEL_METRES); }
+
+    /** Capture bounds keep cell coordinates within the signed 21-bit range. */
+    private static long voxelKey(long x, long y, long z) {
+        return ((x & 0x1fffffL) << 42) | ((y & 0x1fffffL) << 21) | (z & 0x1fffffL);
+    }
+
+    private int findSlot(long key) {
+        int mask = voxelSlots.length - 1;
+        int slot = (int) mix(key) & mask;
+        while (voxelSlots[slot] != 0 && voxelKeys[voxelSlots[slot] - 1] != key) slot = (slot + 1) & mask;
+        return slot;
+    }
+
+    private static long mix(long value) {
+        value ^= value >>> 33;
+        value *= 0xff51afd7ed558ccdL;
+        value ^= value >>> 33;
+        value *= 0xc4ceb9fe1a85ec53L;
+        return value ^ (value >>> 33);
+    }
+
+    private void ensurePointCapacity(int required) {
+        if (required <= voxelKeys.length) return;
+        int capacity = Math.min(MAX_POINTS, voxelKeys.length * 2);
+        if (capacity < required) capacity = required;
+        long[] keys = new long[capacity];
+        float[] points = new float[capacity * 4];
+        System.arraycopy(voxelKeys,0,keys,0,pointCount);
+        System.arraycopy(voxelPoints,0,points,0,pointCount * 4);
+        voxelKeys = keys;
+        voxelPoints = points;
+    }
+
+    private void growSlots() {
+        voxelSlots = new int[voxelSlots.length * 2];
+        for (int index = 0; index < pointCount; index++) {
+            int slot = findSlot(voxelKeys[index]);
+            voxelSlots[slot] = index + 1;
+        }
+    }
 
     private void recordDirection(float[] position) {
         if (position == null || position.length != 3) return;
@@ -66,22 +137,23 @@ public final class DepthCloud {
 
     private static double dot(float[] a, float[] b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 
-    public synchronized int pointCount() { return voxels.size(); }
+    public synchronized int pointCount() { return pointCount; }
     public synchronized int viewCount() { return directions.size(); }
 
     public synchronized float[] previewPoints() {
-        int count = Math.min(voxels.size(),8000);
+        int count = Math.min(pointCount,8000);
         float[] result = new float[count * 3];
-        int index = 0;
-        for (float[] point : voxels.values()) {
-            if (index == result.length) break;
-            result[index++] = point[0]; result[index++] = point[1]; result[index++] = point[2];
+        for (int index = 0; index < count; index++) {
+            int source = index * 4, target = index * 3;
+            result[target] = voxelPoints[source];
+            result[target + 1] = voxelPoints[source + 1];
+            result[target + 2] = voxelPoints[source + 2];
         }
         return result;
     }
 
     public synchronized Snapshot snapshot() {
-        if (voxels.size() < 300 || frames < 6 || directions.size() < 3) {
+        if (pointCount < 300 || frames < 6 || directions.size() < 3) {
             throw new IllegalStateException("More coverage is needed. Move slowly around the object from at least three angles.");
         }
         double spread = 0;
@@ -89,10 +161,12 @@ public final class DepthCloud {
             spread = Math.max(spread, Math.acos(Math.max(-1, Math.min(1, dot(a, b)))));
         }
         if (spread < Math.toRadians(60)) throw new IllegalStateException("Move farther around the object before finishing.");
-        List<float[]> points = new ArrayList<>();
+        List<float[]> points = new ArrayList<>(pointCount);
         int edgePoints = 0;
-        for (float[] sample : voxels.values()) {
-            points.add(sample.clone());
+        for (int index = 0; index < pointCount; index++) {
+            int offset = index * 4;
+            float[] sample = new float[] {voxelPoints[offset],voxelPoints[offset + 1],voxelPoints[offset + 2],voxelPoints[offset + 3]};
+            points.add(sample);
             boolean nearEdge = false;
             for (int axis = 0; axis < 3; axis++) {
                 nearEdge |= Math.abs(sample[axis]) > halfExtent - 0.015;

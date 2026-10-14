@@ -10,7 +10,6 @@ import com.google.ar.core.Session;
 import com.google.ar.core.TrackingState;
 import com.google.ar.core.exceptions.NotYetAvailableException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 /** Only fresh raw-depth frames are integrated; each image is closed on every exit path. */
@@ -24,6 +23,9 @@ final class RawDepthSampler {
     private DepthCloud cloud;
     private long lastDepthTimestamp = -1;
     private long lastSampleTime;
+    private float[] sampleBuffer = new float[0];
+    private final float[] cameraPoint = new float[3], worldPoint = new float[3], relativePoint = new float[3];
+    private final float[] localPoint = new float[3], cameraLocal = new float[3];
     private final boolean removeSupportPlane;
     private CaptureGuidance guidance=new CaptureGuidance();
     String guidanceHint(){return guidance.hint(removeSupportPlane);}
@@ -54,6 +56,7 @@ final class RawDepthSampler {
             int[] diagnostics=image.centralSample();
             guidance.depth(depth.getTimestamp(),diagnostics[0],diagnostics[1]);
             Pose camera = frame.getCamera().getPose();
+            DepthProjection.Projector projector = new DepthProjection.Projector(fx,fy,cx,cy);
             if (origin == null) {
                 int bestX = -1, bestY = -1, bestDistance = Integer.MAX_VALUE, bestDepth = 0;
                 int middleX = depth.getWidth() / 2, middleY = depth.getHeight() / 2;
@@ -66,9 +69,9 @@ final class RawDepthSampler {
                     }
                 }
                 if (bestX < 0) return;
-                float[] point = DepthProjection.point(bestX,bestY,bestDepth,fx,fy,cx,cy);
+                projector.writePoint(bestX,bestY,bestDepth,cameraPoint,0);
                 // Move the selection centre slightly behind the visible front surface.
-                origin = session.createAnchor(camera.compose(Pose.makeTranslation(point[0],point[1],point[2] - 0.08f)));
+                origin = session.createAnchor(camera.compose(Pose.makeTranslation(cameraPoint[0],cameraPoint[1],cameraPoint[2] - 0.08f)));
                 cloud = new DepthCloud(halfExtent,guidance);
             }
             Pose inverse = origin.getPose().inverse();
@@ -77,24 +80,28 @@ final class RawDepthSampler {
                 if (plane.getTrackingState() == TrackingState.TRACKING && plane.getSubsumedBy() == null
                     && plane.getType() == Plane.Type.HORIZONTAL_UPWARD_FACING) planes.add(new SupportPlane(plane));
             }
-            float[] samples = new float[((depth.getWidth() + 2) / 3) * ((depth.getHeight() + 2) / 3) * 4];
+            int sampleCapacity = ((depth.getWidth() + 2) / 3) * ((depth.getHeight() + 2) / 3) * 4;
+            if (sampleBuffer.length != sampleCapacity) sampleBuffer = new float[sampleCapacity];
             int count = 0;
             for (int y = 0; y < depth.getHeight(); y += 3) for (int x = 0; x < depth.getWidth(); x += 3) {
                 int level = image.confidence(x,y);
                 if (level < 204) continue;
                 int mm = image.millimetres(x,y);
                 if (mm < 150 || mm > 4000) continue;
-                float[] world = camera.transformPoint(DepthProjection.point(x,y,mm,fx,fy,cx,cy));
+                projector.writePoint(x,y,mm,cameraPoint,0);
+                camera.transformPoint(cameraPoint,0,worldPoint,0);
                 boolean support = false;
                 for (SupportPlane supportPlane : planes) {
-                    float[] relative = supportPlane.worldToLocal.transformPoint(world);
-                    if (Math.abs(relative[1]) < 0.015f && supportPlane.plane.isPoseInPolygon(Pose.makeTranslation(world))) { support = true; break; }
+                    supportPlane.worldToLocal.transformPoint(worldPoint,0,relativePoint,0);
+                    if (Math.abs(relativePoint[1]) < 0.015f && supportPlane.plane.isPoseInPolygon(Pose.makeTranslation(worldPoint))) { support = true; break; }
                 }
                 if (support) continue;
-                float[] local = inverse.transformPoint(world);
-                samples[count++] = local[0]; samples[count++] = local[1]; samples[count++] = local[2]; samples[count++] = level / 255f;
+                inverse.transformPoint(worldPoint,0,localPoint,0);
+                sampleBuffer[count++] = localPoint[0]; sampleBuffer[count++] = localPoint[1]; sampleBuffer[count++] = localPoint[2]; sampleBuffer[count++] = level / 255f;
             }
-            cloud.addFrame(depth.getTimestamp(),Arrays.copyOf(samples,count),inverse.transformPoint(camera.getTranslation()));
+            camera.getTranslation(cameraLocal,0);
+            inverse.transformPoint(cameraLocal,0,cameraLocal,0);
+            cloud.addFrame(depth.getTimestamp(),sampleBuffer,count,cameraLocal);
         } catch (NotYetAvailableException expected) {
             // Sparse or temporarily unavailable depth: keep the previous cloud, never fabricate points.
         }
