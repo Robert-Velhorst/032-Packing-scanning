@@ -93,12 +93,23 @@ export function DeviceWorkspace({children}:{children:ReactNode}){
       if(!alive||active.current!==session||document.hidden)throw new Error('The packing workspace changed before the command could run.');
     };
     renewInteraction.current=renew;
-    const activity=()=>{void renew().catch(()=>undefined);};const hidden=()=>{if(document.hidden){if(!nativeProtection||!capture.isCapturing())close();}else void verify();};const leaving=()=>close();
-    const interval=setInterval(()=>{if(capture.isCapturing())return;if(Date.now()-last>=5*60*1000)close();},1000);
+    const hidden=()=>{if(document.hidden){if(!nativeProtection||!capture.isCapturing())close();}else void verify();};const leaving=()=>close();
+    let idleTimer:ReturnType<typeof setTimeout>|undefined;
+    const scheduleIdleCheck=()=>{
+      if(idleTimer)clearTimeout(idleTimer);
+      const remaining=5*60*1000-(Date.now()-last);
+      idleTimer=setTimeout(()=>{
+        if(capture.isCapturing()){scheduleIdleCheck();return;}
+        if(Date.now()-last>=5*60*1000)close();
+        else scheduleIdleCheck();
+      },capture.isCapturing()?1000:Math.max(0,remaining));
+    };
+    const activity=()=>{void renew().catch(()=>undefined);scheduleIdleCheck();};
+    scheduleIdleCheck();
     for(const type of ['pointerdown','keydown','touchstart'])window.addEventListener(type,activity,{passive:true});
     document.addEventListener('visibilitychange',hidden);window.addEventListener('pagehide',leaving);
     let listener:Awaited<ReturnType<typeof onCaptureWorkspaceLocked>>|undefined;if(nativeProtection)void onCaptureWorkspaceLocked(event=>{if(alive&&event.lease===session.attachment?.captureLease)close(false);}).then(value=>{if(alive)listener=value;else void value.remove();}).catch(()=>{if(alive)close();});
-    return()=>{alive=false;if(renewInteraction.current===renew)renewInteraction.current=undefined;void listener?.remove();clearInterval(interval);for(const type of ['pointerdown','keydown','touchstart'])window.removeEventListener(type,activity);document.removeEventListener('visibilitychange',hidden);window.removeEventListener('pagehide',leaving);};
+    return()=>{alive=false;if(renewInteraction.current===renew)renewInteraction.current=undefined;void listener?.remove();if(idleTimer)clearTimeout(idleTimer);for(const type of ['pointerdown','keydown','touchstart'])window.removeEventListener(type,activity);document.removeEventListener('visibilitychange',hidden);window.removeEventListener('pagehide',leaving);};
   },[session,close,nativeProtection,capture]);
   const activate=(opened:ProtectedSession)=>{if(document.hidden){opened.close();close();return;}active.current=opened;setSession(opened);setCaptureLease(opened.attachment?.captureLease);setMode('open');setNotice('');};
   const refreshCapture=async()=>{if(native&&!nativeHandshake.current)throw new Error('Native capture storage has not been verified. Reload saved workspaces before continuing.');if(!nativeProtection)return;const state=await getCaptureStorageState();if(!state)throw new Error('Native protection is unavailable. Reload the app.');captureState.current=state;};
