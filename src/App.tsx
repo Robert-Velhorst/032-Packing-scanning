@@ -3,7 +3,6 @@ import type { SavedWeather } from './weather';
 import { SeparationRules, SeparationNotes } from './components/SeparationRules';
 import { entryHasSeparation, separationRuleError, MAX_SEPARATION_RULES } from './item-separation';
 import { checklistInstanceState } from './checklist-state';
-import { PackingEvidenceReview } from './components/PackingEvidenceReview';
 import { OpeningEvidenceNotes } from './components/HandlingPropertyNotes';
 import { useRawScanRetention } from './scanning/useRawScanRetention';
 import { recordRemovedScanSources,type ScanRetentionReply } from './scan-retention';
@@ -47,6 +46,7 @@ const SettingsPage = lazy(() => import('./components/SettingsPage').then((module
 const CarrierRulesPage = lazy(() => import('./components/CarrierRulesPage').then((module) => ({ default: module.CarrierRulesPage })));
 const PlanSteps = lazy(() => import('./components/PlanSteps').then((module) => ({ default: module.PlanSteps })));
 const PackingSequence = lazy(() => import('./components/PackingSequence').then((module) => ({ default: module.PackingSequence })));
+const PackingEvidenceReview = lazy(() => import('./components/PackingEvidenceReview').then((module) => ({ default: module.PackingEvidenceReview })));
 const PlanReview = lazy(() => import('./components/PlanComparison').then((module) => ({ default: module.PlanReview })));
 const WeatherLookup = lazy(() => import('./components/WeatherLookup').then((module) => ({ default: module.WeatherLookup })));
 const TripListAssistant = lazy(() => import('./components/TripListAssistant').then((module) => ({ default: module.TripListAssistant })));
@@ -546,6 +546,8 @@ function Workspace(props: WorkspaceProps) {
   const visualStageRef = useRef<HTMLDivElement>(null);
   const [planReviewRequested, setPlanReviewRequested] = useState(false);
   const [canvasRequested, setCanvasRequested] = useState(false);
+  const [evidenceReviewOpen, setEvidenceReviewOpen] = useState(false);
+  const [evidenceReviewCount, setEvidenceReviewCount] = useState<number>();
   const referencedItemIds = useMemo(() => new Set(trip.entries.map(entry => entry.itemId)), [trip.entries]);
   const itemById = useMemo(() => {
     const byId = new Map<string, LibraryItem>();
@@ -654,11 +656,18 @@ function Workspace(props: WorkspaceProps) {
         </> : <div className="bag-empty"><div className="bag-outline"><Backpack size={42}/></div><h3>Start with your bag</h3><p>Enter the usable inside dimensions and opening width. The plan will use them as a rectangular approximation.</p><button className="button button-primary" onClick={props.onAddBag}><Plus size={16}/> Add your first bag</button></div>}
       </section>
     </div>
-    <PackingEvidenceReview key={trip.id} trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit} onReview={group=>{
+    <details className="packing-evidence-review" onToggle={event=>{
+      const open=event.currentTarget.open;
+      setEvidenceReviewOpen(open);
+      if(!open)setEvidenceReviewCount(undefined);
+    }}>
+      <summary><span>Review packing evidence</span><span>{evidenceReviewCount===undefined?'Open to calculate':`${evidenceReviewCount} ${evidenceReviewCount===1?'property':'properties'} to check`}</span></summary>
+      {evidenceReviewOpen&&<Suspense fallback={<p role="status">Opening evidence review…</p>}><PackingEvidenceReview key={trip.id} contentOnly onCount={setEvidenceReviewCount} trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit} onReview={group=>{
       if(group.kind==='item'){const item=data.libraryItems.find(item=>item.id===group.recordId);if(item)props.onReviewItem(item);}
       else if(group.kind==='container'){const bag=data.containers.find(bag=>bag.id===group.recordId);if(bag)props.onReviewBag(bag);}
       else props.onReviewMissing();
-    }}/>
+      }}/></Suspense>}
+    </details>
     {selectedContainer&&<OpeningEvidenceNotes bag={selectedContainer}/>}
     <StackLoadNotes plan={plan} items={data.libraryItems} unit={unit} containerId={selectedContainer?.id}/>
     <SeparationRules trip={trip} items={data.libraryItems} unit={unit} onChange={props.onSeparationRules}/>
