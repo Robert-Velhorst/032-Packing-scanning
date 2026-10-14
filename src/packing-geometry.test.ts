@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest';
 import {buildPlan} from './optimizer';
 import {assessStackLoads} from './stack-load';
 import {orderPackingSteps} from './packing-sequence';
-import {boxesIntersect,geometryContactArea,geometryIntersects,geometryOrientations,geometrySupportArea,hasVerticalEntry,packingShapeError,placementBoxes,placementSurface,shapeDimensions,shapeKey,shapeVolume} from './packing-geometry';
+import {boxesIntersect,geometryContactArea,geometryIntersects,geometryOrientations,geometrySupportArea,hasGeometrySupport,hasVerticalEntry,packingShapeError,placementBoxes,placementSurface,RectangularSupportIndex,shapeDimensions,shapeKey,shapeVolume} from './packing-geometry';
 import type {Container,LibraryItem,PackingShape,Placement,PlanItem,Trip} from './types';
 const date='2026-10-01T00:00:00Z',evidence={source:'estimated' as const,confidence:.5,collectedAt:date};
 function shape(portal=false):PackingShape {
@@ -21,6 +21,15 @@ const bag:Container={id:'bag',name:'bag',kind:'other',inside:{length:120,width:1
 function trip(items:LibraryItem[]):Trip{return {id:'trip',name:'trip',destination:'',packingOnly:true,sample:false,travellers:[{id:'person',name:'person'}],containerIds:['bag'],entries:items.map(i=>({id:i.id,itemId:i.id,travellerId:'person',quantity:1,priority:'required',required:true,accessPriority:1})),mode:'balanced',completedInstanceIds:[],unavailableInstanceIds:[],lockedPlacements:[],carrierRules:[],createdAt:date,updatedAt:date};}
 function placement(id:string,patch:Partial<Placement>={}):Placement{return {instanceId:id+'#1',entryId:id,itemId:id,containerId:'bag',x:0,y:0,z:0,length:120,width:100,height:60,rotation:0,layer:1,...patch};}
 describe('adopted occupied-cell planning',()=>{
+ it('indexes rectangular support planes without losing epsilon or shaped support candidates',()=>{
+  const shaped=shape(),support=placement('U',{height:60}),upper=placement('upper',{z:60.005,height:10}),decoys=Array.from({length:64},(_,index)=>placement(`decoy-${index}`,{z:10+index*.4,height:5,width:20}));
+  const placed=[...decoys,support],items=new Map<string,LibraryItem>(placed.map(p=>[p.instanceId,item(p.itemId)]));items.set(support.instanceId,item('U',shaped.fittedDimensionsMm,shaped));
+  const index=new RectangularSupportIndex(items,placed);
+  expect(index.candidates(upper)).toContain(support);expect(index.candidates(upper)).not.toContain(decoys[0]);
+  expect(hasGeometrySupport(upper,placed,items,.65)).toBe(true);expect(hasGeometrySupport(upper,placed,items,.65,undefined,0,index)).toBe(true);
+  const shapedSupport=placement('shaped-support',{height:60}),shapedItems=new Map<string,LibraryItem>([[shapedSupport.instanceId,item('shaped-support',shaped.fittedDimensionsMm,shaped)]]),shapedIndex=new RectangularSupportIndex(shapedItems,[shapedSupport]);
+  expect(shapedIndex.candidates(upper)).toContain(shapedSupport);expect(hasGeometrySupport(upper,[shapedSupport],shapedItems,.65,undefined,0,shapedIndex)).toBe(hasGeometrySupport(upper,[shapedSupport],shapedItems,.65));
+ });
  it('preserves every cell with disjoint exact cuboids and lower occupied volume',()=>{
   const s=shape(),p=placement('U'),boxes=placementBoxes(p,{packingShape:s});
   expect(boxes.reduce((v,b)=>v+b.length*b.width*b.height,0)).toBe(552000);expect(shapeVolume(s)).toBe(552000);

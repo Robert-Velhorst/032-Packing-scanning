@@ -195,11 +195,35 @@ function rectangleFaceContact(upper:GeometryBox,lower:GeometryBox):number {
   const width=Math.min(upper.y+upper.width,lower.y+lower.width)-Math.max(upper.y,lower.y);
   return length>EPS&&width>EPS?length*width:0;
 }
-export function hasGeometrySupport(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,fraction:number,up:GravityUp=packingUp,floor=0):boolean {
+type SupportPlaneGroup={shapes:Placement[];rectangles:Map<number,Placement[]>};
+/** Incremental candidate index for rectangular supports; shaped tops may be stepped. */
+export class RectangularSupportIndex {
+  private readonly groups=new Map<string,SupportPlaneGroup>();
+  private readonly order=new Map<string,number>();
+  private nextOrder=0;
+  private readonly items:Map<string,ShapeItem>;
+  constructor(items:Map<string,ShapeItem>,placements:Placement[]=[]){this.items=items;for(const placement of placements)this.add(placement);}
+  add(placement:Placement){
+    const key=JSON.stringify([placement.containerId,placement.compartmentId??null]);let group=this.groups.get(key);
+    if(!group){group={shapes:[],rectangles:new Map()};this.groups.set(key,group);}
+    this.order.set(placement.instanceId,this.nextOrder++);
+    if(this.items.get(placement.instanceId)?.packingShape){group.shapes.push(placement);return;}
+    const plane=Math.floor((placement.z+placement.height)/(2*EPS)),bucket=group.rectangles.get(plane)??[];
+    bucket.push(placement);group.rectangles.set(plane,bucket);
+  }
+  candidates(placement:Placement){
+    const group=this.groups.get(JSON.stringify([placement.containerId,placement.compartmentId??null]));if(!group)return [];
+    const candidates=[...group.shapes],plane=Math.floor(placement.z/(2*EPS));let rectanglePlanes=0;
+    for(let offset=-1;offset<=1;offset++){const bucket=group.rectangles.get(plane+offset);if(bucket){rectanglePlanes++;candidates.push(...bucket);}}
+    if(group.shapes.length||rectanglePlanes>1)candidates.sort((left,right)=>(this.order.get(left.instanceId)??0)-(this.order.get(right.instanceId)??0));
+    return candidates;
+  }
+}
+export function hasGeometrySupport(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,fraction:number,up:GravityUp=packingUp,floor=0,supportIndex?:RectangularSupportIndex):boolean {
   if(up.axis===2&&up.sign===1&&!items.get(p.instanceId)?.packingShape){
     const area=p.length*p.width;if(area<=0)return false;if(Math.abs(p.z-floor)<=EPS)return true;
     const required=area*fraction;let supported=0;
-    for(const lower of placed){
+    for(const lower of supportIndex?.candidates(p)??placed){
       if(lower.containerId!==p.containerId||lower.compartmentId!==p.compartmentId)continue;
       if(items.get(lower.instanceId)?.packingShape)supported+=geometrySupportArea(p,lower,items,up);
       else{
@@ -219,9 +243,10 @@ export function hasGeometrySupport(p:Placement,placed:Placement[],items:Map<stri
   return false;
 }
 /** Both snapshots must be supported; unavailable-region tops never become supports. */
-export function hasPackingAndTravelSupport(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,fraction:number,bag:Container):boolean{
+export function hasPackingAndTravelSupport(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,fraction:number,bag:Container,supportIndex?:RectangularSupportIndex):boolean{
   const compartment=compartmentFor(bag,p.compartmentId);
-  if(!hasGeometrySupport(p,placed,items,fraction,packingUp,compartment?.z??0))return false;
+  const supported=supportIndex?hasGeometrySupport(p,placed,items,fraction,packingUp,compartment?.z??0,supportIndex):hasGeometrySupport(p,placed,items,fraction,packingUp,compartment?.z??0);
+  if(!supported)return false;
   if(!bag.packingInterior)return true;
   if(interiorSupportError(bag.packingInterior))return false;
   const up=interiorTravelUp(bag.packingInterior);
