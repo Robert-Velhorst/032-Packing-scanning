@@ -301,7 +301,11 @@ export function hasPackingAndTravelSupport(p:Placement,placed:Placement[],items:
 export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,bag:Container,blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[]):boolean {
   const top=bag.inside.height;
   const obstacles=cachedObstacles??[...blockedSpaces,...placed.filter(other=>other.containerId===p.containerId).flatMap(other=>placementBoxes(other,items.get(other.instanceId)))];
-  return !placementBoxes(p,items.get(p.instanceId)).some(b=>obstacles.some(o=>boxesIntersect({...b,height:Math.max(b.height,top-b.z+p.height)},o)));
+  for(const b of placementBoxes(p,items.get(p.instanceId))){
+    const sweepTop=b.z+Math.max(b.height,top-b.z+p.height),right=b.x+b.length,back=b.y+b.width;
+    for(const o of obstacles)if(b.x<o.x+o.length-EPS&&right>o.x+EPS&&b.y<o.y+o.width-EPS&&back>o.y+EPS&&b.z<o.z+o.height-EPS&&sweepTop>o.z+EPS)return false;
+  }
+  return true;
 }
 
 export function contactPositions(bag:Container,orientation:DimensionsMm&{rotation:number},item:ShapeItem,placed:Placement[],items:Map<string,ShapeItem>,region:GeometryBox={x:0,y:0,z:0,...bag.inside,height:usableContainerHeight(bag)},blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[]) {
