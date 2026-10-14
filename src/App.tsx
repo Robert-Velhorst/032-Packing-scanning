@@ -257,7 +257,7 @@ function PackingApp() {
       const suggestion=!existing?capture.suggestion:undefined;
       const suggestedEntry:PackEntry|undefined=suggestion&&activeTrip?{id:newId(),itemId:id,travellerId:activeTrip.travellers[0]?.id??'',quantity:suggestion.quantity,priority:suggestion.priority,accessPriority:suggestion.accessPriority,required:suggestion.priority==='required'}:undefined;
       const next:AppData={...data,libraryItems:existing?data.libraryItems.map(record=>record.id===id?item:record):[item,...data.libraryItems],trips:suggestedEntry?data.trips.map(trip=>trip.id===data.activeTripId?{...trip,entries:[...trip.entries,suggestedEntry],updatedAt:new Date().toISOString()}:trip):data.trips};
-      await saveAppData(next);stagedPhoto=undefined;setData(next);
+      await saveAppData(next);stagedPhoto=undefined;setData(next);setSavedData(next);setSyncStatus('saved');setSyncError('');
       let cleanupFailed=false;
       if(previousPhoto&&previousPhoto!==photoId)try{await deletePhoto(previousPhoto);}catch{cleanupFailed=true;}
       if(existing?.scan&&existing.scan.id!==item.scan?.id)try{await deleteScanCapture(existing.scan.id);}catch{cleanupFailed=true;}
@@ -451,6 +451,7 @@ function PackingApp() {
       await saveAppData(restored);
       committed = true;
       setData(restored);
+      setSavedData(restored);setSyncStatus('saved');setSyncError('');
       const referencedPhotoIds = new Set(restored.libraryItems.flatMap((item) => item.photoId ? [item.photoId] : []));
       await removeUnreferencedPhotos(referencedPhotoIds);
       let scanCleanupFailed = false;
@@ -470,7 +471,7 @@ function PackingApp() {
     await clearLocalData();
     const empty = createInitialData(); empty.trips = []; empty.containers = []; empty.libraryItems = []; empty.activeTripId = '';
     await saveAppData(empty);
-    setData(empty); setEditingPhotoUrl(undefined); setNotice(scanCleanupFailed ? 'Packing data was deleted, but some native scan files could not be removed from this device.' : 'All local packing data and saved scans have been deleted.'); setPage('workspace');
+    setData(empty);setSavedData(empty);setSyncStatus('saved');setSyncError('');setEditingPhotoUrl(undefined);setNotice(scanCleanupFailed ? 'Packing data was deleted, but some native scan files could not be removed from this device.' : 'All local packing data and saved scans have been deleted.'); setPage('workspace');
   };
   const openSharedPackFromSettings = (snapshot: SharedPackSnapshot, baseline?: SharedPackBaseline, witness?: SharedCopyWitness) => {
     void import('./shared-packs').then(({ openSharedPack }) => updateData(current => openSharedPack(current, snapshot, newId(), baseline, witness))).catch(() => setNotice('The shared pack could not be opened. Reopen Settings and try again.'));
