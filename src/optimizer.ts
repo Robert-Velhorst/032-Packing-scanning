@@ -631,9 +631,12 @@ function reservePendingShapes(pending: PlanItem[], prior: Placement[], bag: Cont
 }
 
 function cornerPositions(space: FreeSpace, dimensions: { length: number; width: number }) {
-  const xs = [...new Set([space.x, space.x + space.length - dimensions.length])];
-  const ys = [...new Set([space.y, space.y + space.width - dimensions.width])];
-  return xs.flatMap((x) => ys.map((y) => ({ x, y, z: space.z })));
+  const farX=space.x+space.length-dimensions.length,farY=space.y+space.width-dimensions.width;
+  const hasFarX=farX!==space.x,hasFarY=farY!==space.y;
+  if(hasFarX&&hasFarY)return [{x:space.x,y:space.y,z:space.z},{x:space.x,y:farY,z:space.z},{x:farX,y:space.y,z:space.z},{x:farX,y:farY,z:space.z}];
+  if(hasFarX)return [{x:space.x,y:space.y,z:space.z},{x:farX,y:space.y,z:space.z}];
+  if(hasFarY)return [{x:space.x,y:space.y,z:space.z},{x:space.x,y:farY,z:space.z}];
+  return [{x:space.x,y:space.y,z:space.z}];
 }
 
 function initialSpace(container: Container,height=usableContainerHeight(container)): FreeSpace {
