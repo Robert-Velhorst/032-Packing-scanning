@@ -29,6 +29,24 @@ describe('public carrier HTTP endpoint', () => {
       expect(await second.text()).toBe('const value = 1;');
     } finally {await app.close();}
   });
+  it('compresses hashed assets with the best accepted encoding and honors opt-out', async () => {
+    const app=await start(),directory=join(app.dist,'assets'),path=join(directory,'app-Abcdef12.js'),source='const phrase = "packing";\n'.repeat(5000);
+    try {
+      await mkdir(directory);await writeFile(path,source);
+      const brotli=await fetch(`${app.url}/assets/app-Abcdef12.js`,{headers:{'Accept-Encoding':'br, gzip'}});
+      expect(brotli.headers.get('Content-Encoding')).toBe('br');
+      expect(brotli.headers.get('Vary')).toBe('Accept-Encoding');
+      expect(Number(brotli.headers.get('Content-Length'))).toBeLessThan(Buffer.byteLength(source));
+      expect(await brotli.text()).toBe(source);
+      const gzipResponse=await fetch(`${app.url}/assets/app-Abcdef12.js`,{headers:{'Accept-Encoding':'gzip'}});
+      expect(gzipResponse.headers.get('Content-Encoding')).toBe('gzip');
+      expect(await gzipResponse.text()).toBe(source);
+      const identity=await fetch(`${app.url}/assets/app-Abcdef12.js`,{headers:{'Accept-Encoding':'br;q=0, gzip;q=0'}});
+      expect(identity.headers.get('Content-Encoding')).toBeNull();
+      expect(Number(identity.headers.get('Content-Length'))).toBe(Buffer.byteLength(source));
+      expect(await identity.text()).toBe(source);
+    } finally {await app.close();}
+  });
   it('serves the real protocol, explicit native origins and no-store freshness', async () => {
     const app=await start();
     try {
