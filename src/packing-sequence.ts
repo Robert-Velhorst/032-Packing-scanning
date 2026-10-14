@@ -35,12 +35,23 @@ export function packingStepPreview(ordered: Placement[], index: number, complete
     && (stepIndex <= index || confirmed.has(step.instanceId)));
 }
 
-export function packingStepRelation(current: Placement, ordered: Placement[], items: LibraryItem[], bag?:Container): string {
+export interface PackingStepRelationIndex {
+  names: Map<string,string>;
+  byInstance: Map<string,LibraryItem>;
+}
+
+/** Prepares item/form geometry lookups once for all instructions in a plan. */
+export function createPackingStepRelationIndex(ordered: Placement[], items: LibraryItem[]): PackingStepRelationIndex {
+  const records=new Map(items.map(item=>[item.id,item])),byInstance=new Map<string,LibraryItem>();
+  for(const placement of ordered){const item=packingItemForPlacement(records.get(placement.itemId),placement);if(item)byInstance.set(placement.instanceId,item);}
+  return {names:new Map(items.map(item=>[item.id,item.name])),byInstance};
+}
+
+export function packingStepRelation(current: Placement, ordered: Placement[], items: LibraryItem[], bag?:Container,index?:PackingStepRelationIndex): string {
   const compartment=bag?compartmentFor(bag,current.compartmentId):undefined;
   if(compartment&&Math.abs(current.z-compartment.z)<.01)return `Place on the floor of “${compartment.name}”. Positions use the bag’s inside corner, not the compartment corner. Check its top opening and actual support.`;
   if (current.z === 0) return 'Place on the bag floor, using the inside corner shown as the reference.';
-  const names = new Map(items.map((item) => [item.id, item.name]));
-  const records=new Map(items.map(item=>[item.id,item])),byInstance=new Map(ordered.flatMap(p=>{const item=packingItemForPlacement(records.get(p.itemId),p);return item?[[p.instanceId,item] as const]:[];}));
+  const {names,byInstance}=index??createPackingStepRelationIndex(ordered,items);
   const underneath = ordered.filter((step) => step.instanceId !== current.instanceId && step.containerId === current.containerId
     && geometrySupportArea(current,step,byInstance)>0);
   const supportNames = [...new Set(underneath.map((step) => names.get(step.itemId) ?? 'earlier item'))];

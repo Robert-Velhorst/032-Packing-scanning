@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialData } from './seed';
 import { buildPlan } from './optimizer';
-import { nextUnpackedStep, orderPackingSteps, packingStepPreview, packingStepRelation, resumePackingStep } from './packing-sequence';
+import { createPackingStepRelationIndex, nextUnpackedStep, orderPackingSteps, packingStepPreview, packingStepRelation, resumePackingStep } from './packing-sequence';
 
 describe('packing sequence', () => {
   const data = structuredClone(createInitialData());
@@ -42,6 +42,8 @@ describe('packing sequence', () => {
     const support = { ...ordered[0], x: 0, y: 0, z: 0, height: 25, length: 100, width: 100 };
     const current = { ...ordered[1], x: 0, y: 0, z: 25, length: 50, width: 50 };
     const relation = packingStepRelation(current, [support, current], data.libraryItems);
+    const index = createPackingStepRelationIndex([support,current],data.libraryItems);
+    expect(packingStepRelation(current,[support,current],data.libraryItems,undefined,index)).toBe(relation);
     expect(relation).toContain(data.libraryItems.find((item) => item.id === support.itemId)!.name);
     expect(relation).toContain('planned position');
     expect(packingStepRelation(current, [{ ...support, x: 500 }], data.libraryItems)).toContain('25 mm above');
