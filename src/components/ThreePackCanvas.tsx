@@ -152,6 +152,7 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
     }
 
     const itemLookup = new Map(items.map((item) => [item.id, item]));
+    const coverCandidates = [...plan.placements].filter(placement => placement.containerId === container.id).sort((left, right) => right.z - left.z);
     if(!containerSpaceError(container)){
       const reserved=new THREE.MeshStandardMaterial({color:'#d7a24d',roughness:.9,transparent:true,opacity:.25,depthWrite:false});
       const blockedBoxes=containerBlockedBoxes(container);
@@ -191,10 +192,14 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
       );
       const number = placementLabels?.[placement.instanceId];
       const labelBox=placementBoxes(placement,item).reduce((best,b)=>b.length*b.width>best.length*best.width?b:best);
-      const covered = plan.placements.some((other) => other.instanceId !== placement.instanceId && other.containerId === placement.containerId
-        && other.z >= placement.z + placement.height - 0.01 && other.x <= placement.x + placement.length / 2
-        && other.x + other.length >= placement.x + placement.length / 2 && other.y <= placement.y + placement.width / 2
-        && other.y + other.width >= placement.y + placement.width / 2);
+      let covered = false;
+      const coverHeight = placement.z + placement.height - 0.01;
+      for (const other of coverCandidates) {
+        if (other.z < coverHeight) break;
+        if (other.instanceId !== placement.instanceId && other.x <= placement.x + placement.length / 2
+          && other.x + other.length >= placement.x + placement.length / 2 && other.y <= placement.y + placement.width / 2
+          && other.y + other.width >= placement.y + placement.width / 2) { covered = true; break; }
+      }
       if (number && (isSelected || !covered)) {
         const labelCanvas = document.createElement('canvas'); labelCanvas.width = labelCanvas.height = 128;
         const drawing = labelCanvas.getContext('2d');
