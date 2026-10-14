@@ -7,6 +7,25 @@ afterEach(() => {
 });
 
 describe('shared weather clock', () => {
+  it('does not install a timer or visibility listener when weather does not need freshness', () => {
+    vi.useFakeTimers();
+    const handlers = new Map<string, EventListenerOrEventListenerObject>();
+    const documentStub = {
+      visibilityState: 'visible',
+      addEventListener: (type: string, listener: EventListenerOrEventListenerObject) => handlers.set(type, listener),
+      removeEventListener: (type: string) => handlers.delete(type),
+    } as unknown as Document;
+    vi.stubGlobal('document', documentStub);
+    vi.stubGlobal('window', { setInterval, clearInterval } as unknown as Window);
+
+    const listener = vi.fn();
+    const unsubscribe = subscribeWeatherClock(listener, false);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(handlers.has('visibilitychange')).toBe(false);
+    unsubscribe();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
   it('uses one foreground timer and refreshes immediately when the app returns', async () => {
     vi.useFakeTimers();
     let visibility: DocumentVisibilityState = 'visible';

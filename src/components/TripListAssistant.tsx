@@ -10,7 +10,7 @@ export function TripListAssistant({ trip, library, onAdd }: {
   library: LibraryItem[];
   onAdd: (suggestion: TripSuggestion, item?: LibraryItem) => void;
 }) {
-  const now = useWeatherClock();
+  const now = useWeatherClock(Boolean(trip.weather));
   const suggestions = useMemo(() => [...weatherSuggestions(trip, now), ...buildTripSuggestions(trip)], [trip, now]);
   const optionsBySuggestion = useMemo(() => new Map(suggestions.map((suggestion) => [suggestion.id, matchTripSuggestionItems(suggestion, library)])), [suggestions, library]);
   const [selectedItems, setSelectedItems] = useState<Record<string, string>>({});

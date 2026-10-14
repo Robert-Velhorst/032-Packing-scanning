@@ -19,8 +19,8 @@ export function WeatherNotes({trip,unit,now=Date.now()}:{trip:Trip;unit:UnitSyst
   </section>;
 }
 export function WeatherLookup({trip,unit,onSave}:{trip:Trip;unit:UnitSystem;onSave:(weather:SavedWeather|undefined)=>void}){
-  const endpoint=weatherEndpoint(),now=useWeatherClock();
   const [query,setQuery]=useState(trip.destination),[places,setPlaces]=useState<WeatherPlace[]>([]),[selected,setSelected]=useState(''),[preview,setPreview]=useState<WeatherForecast>(),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[failed,setFailed]=useState(false);
+  const endpoint=weatherEndpoint(),now=useWeatherClock(Boolean(trip.weather||preview));
   const request=useRef<AbortController|undefined>(undefined);
   useEffect(()=>()=>{request.current?.abort();request.current=undefined;},[]);
   async function lookup(action:'places'|'forecast'){
