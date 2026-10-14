@@ -8,10 +8,15 @@ type LoadItem = Pick<LibraryItem, 'fragile' | 'maxTopLoadGrams' | 'topLoadEviden
 /** Reuses immutable placement-pair geometry during one plan calculation. */
 export class StackLoadContactCache {
   private readonly contacts = new WeakMap<Placement, WeakMap<Placement, Map<number, number>>>();
+  private readonly committed = new WeakSet<Placement>();
   private readonly items: Map<string, PlanItem>;
 
   constructor(items: Map<string, PlanItem>) {
     this.items = items;
+  }
+
+  register(placement: Placement) {
+    this.committed.add(placement);
   }
 
   shouldCache(placements: Placement[], up: GravityUp): boolean {
@@ -19,6 +24,7 @@ export class StackLoadContactCache {
   }
 
   contactArea(upper: Placement, lower: Placement, up: GravityUp): number {
+    if (!this.committed.has(upper) || !this.committed.has(lower)) return geometryContactArea(upper, lower, this.items, up);
     let byLower = this.contacts.get(upper);
     if (!byLower) {
       byLower = new WeakMap();

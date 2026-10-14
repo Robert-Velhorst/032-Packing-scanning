@@ -371,6 +371,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     }
     const locked={ ...saved, locked: true,...(useShapeSequence?{insertionOrder:placements.length+1}:{}) };
     placements.push(locked);
+    stackLoadContactCache.register(locked);
     bagPlacements.push(locked);
     massByContainer.set(saved.containerId, (massByContainer.get(saved.containerId) ?? 0) + (item.upperMassGrams ?? 0));
     if (item.upperMassGrams === undefined) unweighedByContainer.set(saved.containerId, (unweighedByContainer.get(saved.containerId) ?? 0) + 1);
@@ -583,6 +584,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     }
 
     placements.push(best.placement);
+    stackLoadContactCache.register(best.placement);
     placementsByContainer.get(best.container.id)?.push(best.placement);
     const bagPlacements=placementsByContainer.get(best.container.id)!;
     if(supportIndexes?.has(best.container.id))supportIndexes.get(best.container.id)!.add(best.placement);
