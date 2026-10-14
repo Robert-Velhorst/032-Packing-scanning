@@ -460,7 +460,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
       const future=futureShapes.reduce<PlanItem|undefined>((best,i)=>!best||i.volumeMm3>best.volumeMm3?i:best,undefined);
       const hasShapes=useShapeSequence;
       const bagPlacements=placementsByContainer.get(container.id)??[];
-      const highestFragilePlacementZ=item.fragile?bagPlacements.reduce((highest,placement)=>itemById.get(placement.instanceId)?.fragile?Math.max(highest,placement.z):highest,Number.NEGATIVE_INFINITY):Number.NEGATIVE_INFINITY;
+      const highestFragilePlacementZ=item.fragile&&mode==='balanced'?bagPlacements.reduce((highest,placement)=>itemById.get(placement.instanceId)?.fragile?Math.max(highest,placement.z):highest,Number.NEGATIVE_INFINITY):Number.NEGATIVE_INFINITY;
       const supportIndex=supportIndexes?.get(container.id);
       const reservation=lookaheadDepth>1&&futureShapes.length>1?reservePendingShapes(futureShapes,bagPlacements,container,itemById,mode,lookaheadDepth,rules,usableHeight(container),blockedSpaces.get(container.id)??[]):undefined;
       const anchors=[...(reservation?.placements??[]),...futureShapes.flatMap(future=>{
