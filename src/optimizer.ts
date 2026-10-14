@@ -640,7 +640,7 @@ function reservePendingShapes(pending: PlanItem[], prior: Placement[], bag: Cont
         if(!fitsOpening(orientation,bag))continue;
         // Corners preserve alternatives at both ends. A bounded contact sample
         // adds positions between previously reserved shapes.
-        const positions=[...cornerPositions(initialSpace(bag,usableHeight),orientation),...contactPositions(bag,orientation,item,state.placements,items,initialSpace(bag,usableHeight),blockedSpaces).positions.slice(0,8)];
+        const positions=[...cornerPositions(initialSpace(bag,usableHeight),orientation),...contactPositions(bag,orientation,item,state.placements,items,initialSpace(bag,usableHeight),blockedSpaces,undefined,8).positions];
         const seen=new Set<string>();
         for (const position of positions) {
           const key=JSON.stringify([position.x,position.y,position.z]);if(seen.has(key))continue;seen.add(key);

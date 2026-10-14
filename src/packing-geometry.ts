@@ -336,7 +336,7 @@ export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string
   return true;
 }
 
-export function contactPositions(bag:Container,orientation:DimensionsMm&{rotation:number},item:ShapeItem,placed:Placement[],items:Map<string,ShapeItem>,region:GeometryBox={x:0,y:0,z:0,...bag.inside,height:usableContainerHeight(bag)},blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[]) {
+export function contactPositions(bag:Container,orientation:DimensionsMm&{rotation:number},item:ShapeItem,placed:Placement[],items:Map<string,ShapeItem>,region:GeometryBox={x:0,y:0,z:0,...bag.inside,height:usableContainerHeight(bag)},blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[],maxPositions=20000) {
   const local=placementBoxes({x:0,y:0,z:0,...orientation},item),obstacles=cachedObstacles??[...placed.flatMap(p=>placementBoxes(p,items.get(p.instanceId))),...blockedSpaces];
   const values=[new Set([region.x,region.x+region.length-orientation.length]),new Set([region.y,region.y+region.width-orientation.width]),new Set([region.z])],mins=['x','y','z'] as const;
   for(const b of obstacles)for(const c of local)for(let axis=0;axis<3;axis++){
@@ -346,6 +346,6 @@ export function contactPositions(bag:Container,orientation:DimensionsMm&{rotatio
   const minimum=[region.x,region.y,region.z],maximum=[region.x+region.length-orientation.length,region.y+region.width-orientation.width,region.z+region.height-orientation.height];
   const coords=values.map((set,i)=>[...set].filter(v=>v>=minimum[i]-EPS&&v<=maximum[i]+EPS).map(v=>Math.max(minimum[i],v)).sort((a,b)=>a-b));
   const positions:Array<{x:number;y:number;z:number}>=[];let limited=false;
-  outer:for(const z of coords[2])for(const y of coords[1])for(const x of coords[0]){if(positions.length>=20000){limited=true;break outer;}positions.push({x,y,z});}
+  outer:for(const z of coords[2])for(const y of coords[1])for(const x of coords[0]){if(positions.length>=maxPositions){limited=true;break outer;}positions.push({x,y,z});}
   return {positions,limited};
 }

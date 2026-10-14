@@ -25,6 +25,8 @@ describe('adopted occupied-cell planning',()=>{
   const shaped=shape(),obstacle=placement('U'),shapeItem=item('U',shaped.fittedDimensionsMm,shaped),candidate=item('candidate',{length:40,width:30,height:20}),items=new Map<string,LibraryItem>([[obstacle.instanceId,shapeItem],[candidate.id+'#1',candidate]]),orientation=geometryOrientations(candidate,bag)[0];
   const full=contactPositions(bag,orientation,candidate,[obstacle],items),cached=contactPositions(bag,orientation,candidate,[],items,undefined,[],placementBoxes(obstacle,shapeItem));
   expect(cached).toEqual(full);
+  const capped=contactPositions(bag,orientation,candidate,[obstacle],items,undefined,undefined,undefined,8);
+  expect(full.positions.length).toBeGreaterThan(8);expect(capped.positions).toEqual(full.positions.slice(0,8));expect(capped.limited).toBe(true);
  });
  it('indexes rectangular support planes without losing epsilon or shaped support candidates',()=>{
   const shaped=shape(),support=placement('U',{height:60}),upper=placement('upper',{z:60.005,height:10}),decoys=Array.from({length:64},(_,index)=>placement(`decoy-${index}`,{z:10+index*.4,height:5,width:20}));
