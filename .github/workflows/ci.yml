@@ -32,3 +32,24 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: docker build --file deploy/Dockerfile --tag packing-scanning:ci .
+      - name: Start final image and wait for health
+        run: |
+          docker run --detach --name packing-scanning-ci \
+            --health-interval 5s --health-retries 12 \
+            --publish 127.0.0.1:3001:3001 packing-scanning:ci
+          for attempt in {1..45}; do
+            status="$(docker inspect --format='{{.State.Health.Status}}' packing-scanning-ci)"
+            if [ "$status" = "healthy" ]; then
+              exit 0
+            fi
+            if [ "$status" = "unhealthy" ]; then
+              docker logs packing-scanning-ci
+              exit 1
+            fi
+            sleep 2
+          done
+          docker logs packing-scanning-ci
+          exit 1
+      - name: Remove test container
+        if: always()
+        run: docker rm --force packing-scanning-ci || true
