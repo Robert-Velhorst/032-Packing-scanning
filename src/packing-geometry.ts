@@ -304,8 +304,8 @@ export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string
   return !placementBoxes(p,items.get(p.instanceId)).some(b=>obstacles.some(o=>boxesIntersect({...b,height:Math.max(b.height,top-b.z+p.height)},o)));
 }
 
-export function contactPositions(bag:Container,orientation:DimensionsMm&{rotation:number},item:ShapeItem,placed:Placement[],items:Map<string,ShapeItem>,region:GeometryBox={x:0,y:0,z:0,...bag.inside,height:usableContainerHeight(bag)},blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag)) {
-  const local=placementBoxes({x:0,y:0,z:0,...orientation},item),obstacles=[...placed.flatMap(p=>placementBoxes(p,items.get(p.instanceId))),...blockedSpaces];
+export function contactPositions(bag:Container,orientation:DimensionsMm&{rotation:number},item:ShapeItem,placed:Placement[],items:Map<string,ShapeItem>,region:GeometryBox={x:0,y:0,z:0,...bag.inside,height:usableContainerHeight(bag)},blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[]) {
+  const local=placementBoxes({x:0,y:0,z:0,...orientation},item),obstacles=cachedObstacles??[...placed.flatMap(p=>placementBoxes(p,items.get(p.instanceId))),...blockedSpaces];
   const values=[new Set([region.x,region.x+region.length-orientation.length]),new Set([region.y,region.y+region.width-orientation.width]),new Set([region.z])],mins=['x','y','z'] as const;
   for(const b of obstacles)for(const c of local)for(let axis=0;axis<3;axis++){
     values[axis].add(b[mins[axis]]+b[axes[axis]]-c[mins[axis]]);

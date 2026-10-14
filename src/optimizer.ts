@@ -463,6 +463,9 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
         const o=futureOrientationsById?.get(future.instanceId)?.[0];
         return o&&o.length<=container.inside.length&&o.width<=container.inside.width&&o.height<=usableHeight(container)?cornerPositions(initialSpace(container,usableHeight(container)),o).map(position=>({instanceId:future.instanceId,entryId:future.entryId,itemId:future.itemId,containerId:container.id,...position,...o,layer:1})):[];
       })];
+      const shapeContactObstacles=verticalEntryObstacles
+        ?[...(verticalEntryObstacles.get(container.id)??[]),...anchors.flatMap(anchor=>placementBoxes(anchor,itemById.get(anchor.instanceId)))]
+        :undefined;
       const availableSpaces=freeSpaces.get(container.id)??[];
       const spaces=hasShapes?[...availableSpaces,...packingRegions(container).map(region=>({...region,shapeSearch:true}))]:availableSpaces;
       const orientations=geometryOrientations(item,container);
@@ -480,7 +483,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
         const {compartment}=context;
         for (const orientation of context.orientations) {
           if (orientation.length > space.length + EPSILON || orientation.width > space.width + EPSILON || orientation.height > space.height + EPSILON) continue;
-          const contacts=space.shapeSearch?contactPositions(container,orientation,item,[...bagPlacements,...anchors],itemById,space,blockedSpaces.get(container.id)):undefined;
+          const contacts=space.shapeSearch?contactPositions(container,orientation,item,shapeContactObstacles?[]:[...bagPlacements,...anchors],itemById,space,blockedSpaces.get(container.id),shapeContactObstacles):undefined;
           if(contacts?.limited)searchLimited=true;
           const positions = separationPositions(contacts?.positions??cornerPositions(space, orientation),space,item,orientation,item.entryId,bagPlacements,rules,itemById);
           if(positions.length>=20000)searchLimited=true;
