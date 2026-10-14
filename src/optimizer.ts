@@ -493,7 +493,10 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
           if (orientation.length > space.length + EPSILON || orientation.width > space.width + EPSILON || orientation.height > space.height + EPSILON) continue;
           const contacts=space.shapeSearch?contactPositions(container,orientation,item,shapeContactObstacles?[]:[...bagPlacements,...anchors],itemById,space,blockedSpaces.get(container.id),shapeContactObstacles):undefined;
           if(contacts?.limited)searchLimited=true;
-          const positions = separationPositions(contacts?.positions??cornerPositions(space, orientation),space,item,orientation,item.entryId,bagPlacements,rules,itemById);
+          const basePositions=contacts?.positions??cornerPositions(space, orientation);
+          const positions = rules.length
+            ? separationPositions(basePositions,space,item,orientation,item.entryId,bagPlacements,rules,itemById)
+            : basePositions;
           if(positions.length>=20000)searchLimited=true;
           for (const position of positions) {
             const candidateBase = { ...position, length: orientation.length, width: orientation.width, height: orientation.height };
