@@ -14,11 +14,11 @@ export function PackingEvidenceReview({ trip, items, bags, plan, unit, print = f
 }) {
   const [filter, setFilter] = useState('needs_review');
   const [expanded, setExpanded] = useState(print);
-  const review = useMemo(() => buildPackingEvidenceReview(trip, items, bags, plan, unit), [trip, items, bags, plan, unit]);
-  const groups = (print || expanded ? review.groups : []).map(group => ({ ...group,
+  const review = useMemo(() => print || expanded ? buildPackingEvidenceReview(trip, items, bags, plan, unit) : null, [trip, items, bags, plan, unit, print, expanded]);
+  const groups = (review?.groups ?? []).map(group => ({ ...group,
     properties: print || filter === 'needs_review' ? group.properties.filter(row => row.needsReview) : group.properties,
   })).filter(group => group.properties.length);
-  const contents = (print || expanded) ? <>
+  const contents = review ? <>
     <p>{review.needsReviewCount} {review.needsReviewCount === 1 ? 'property needs' : 'properties need'} review across {review.reviewGroupCount} selected item/form or bag records.</p>
     <p>Check uncertainty before following the plan. Opening this review does not confirm values, change packed positions or rescan belongings.</p>
     {trip.sample && <p className="evidence-review-example">Example pack: saved source labels are example records, not your measurements.</p>}
@@ -40,7 +40,7 @@ export function PackingEvidenceReview({ trip, items, bags, plan, unit, print = f
   </> : null;
   if (print) return <section className="packing-evidence-review evidence-review-print" aria-label="Packing evidence review"><h2>Evidence to check before packing</h2>{contents}</section>;
   return <details className="packing-evidence-review" aria-label="Packing evidence review" onToggle={event => setExpanded(event.currentTarget.open)}>
-    <summary><span>Review packing evidence</span><span>{review.needsReviewCount} {review.needsReviewCount === 1 ? 'property' : 'properties'} to check</span></summary>
+    <summary><span>Review packing evidence</span><span>{review ? `${review.needsReviewCount} ${review.needsReviewCount === 1 ? 'property' : 'properties'} to check` : 'Open to calculate'}</span></summary>
     {contents}
   </details>;
 }
