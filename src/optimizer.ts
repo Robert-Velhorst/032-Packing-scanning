@@ -766,14 +766,29 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
   for(const inner of ordered){
     // EPSILON containment allows at most 2*EPSILON less extent per axis.
     const minimumContainingVolume=Math.max(0,inner.space.length-2*EPSILON)*Math.max(0,inner.space.width-2*EPSILON)*Math.max(0,inner.space.height-2*EPSILON);
-    for(const candidate of candidatesByVolume){
+    let scan=candidatesByVolume;
+    let scanCount=candidatesByVolume.length;
+    const volumeThreshold=minimumContainingVolume*(1-1e-12);
+    let scanByX=false;
+    if(cacheCandidateVolumes){
+      let low=0,high=candidatesByVolume.length;
+      while(low<high){const middle=(low+high)>>>1;if(candidatesByVolume[middle].volume!>=volumeThreshold)low=middle+1;else high=middle;}
+      const byVolumeCount=low;
+      low=0;high=ordered.length;
+      const maximumOuterX=inner.space.x+EPSILON;
+      while(low<high){const middle=(low+high)>>>1;if(ordered[middle].space.x<=maximumOuterX)low=middle+1;else high=middle;}
+      if(low<byVolumeCount){scan=ordered;scanCount=low;scanByX=true;}else scanCount=byVolumeCount;
+    }
+    for(let candidateIndex=0;candidateIndex<scanCount;candidateIndex++){
+      const candidate=scan[candidateIndex];
       const outer=candidate.space;
-      if(cacheCandidateVolumes&&candidate.volume!<minimumContainingVolume*(1-1e-12))break;
+      if(cacheCandidateVolumes&&scanByX&&candidate.volume!<volumeThreshold)continue;
+      if(cacheCandidateVolumes&&!scanByX&&candidate.volume!<volumeThreshold)break;
       if(outer.x>inner.space.x+EPSILON){if(!cacheCandidateVolumes)break;continue;}
       if(candidate.index===inner.index||outer.y>inner.space.y+EPSILON||outer.z>inner.space.z+EPSILON
         ||candidate.back<inner.space.y+inner.space.width-EPSILON||candidate.top<inner.space.z+inner.space.height-EPSILON
         ||candidate.right<inner.right-EPSILON)continue;
-      if((cacheCandidateVolumes?candidate.volume!:spaceVolume(outer))<minimumContainingVolume*(1-1e-12))continue;
+      if((cacheCandidateVolumes?candidate.volume!:spaceVolume(outer))<volumeThreshold)continue;
       const containsOuter=inner.space.x<=outer.x+EPSILON&&inner.space.y<=outer.y+EPSILON&&inner.space.z<=outer.z+EPSILON
         &&inner.right>=candidate.right-EPSILON&&inner.space.y+inner.space.width>=candidate.back-EPSILON
         &&inner.space.z+inner.space.height>=candidate.top-EPSILON;
