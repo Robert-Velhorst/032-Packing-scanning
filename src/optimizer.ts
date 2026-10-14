@@ -338,7 +338,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
   const freeSpaces = new Map(containers.map((container) => {
     const error=containerError(container);
     let spaces:FreeSpace[]=error||usableHeight(container)<=EPSILON?[]:packingRegions(container);
-    if(!error)for(const blocked of [...(container.unavailableSpaces??[])].sort((a,b)=>a.x-b.x||a.y-b.y||a.z-b.z||a.length-b.length||a.width-b.width||a.height-b.height))spaces=splitFreeSpaces(spaces,blocked);
+    if(!error)for(const blocked of [...(container.unavailableSpaces??[])].sort((a,b)=>a.x-b.x||a.y-b.y||a.z-b.z||a.length-b.length||a.width-b.width||a.height-b.height))spaces=splitFreeSpaces(spaces,blocked,!useShapeSequence);
     return [container.id,spaces] as const;
   }));
   const itemById = new Map(items.map((item) => [item.instanceId, item]));
@@ -377,7 +377,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     massByContainer.set(saved.containerId, (massByContainer.get(saved.containerId) ?? 0) + (item.upperMassGrams ?? 0));
     if (item.upperMassGrams === undefined) unweighedByContainer.set(saved.containerId, (unweighedByContainer.get(saved.containerId) ?? 0) + 1);
     placementByInstanceId.set(locked.instanceId,locked);
-    let spaces=freeSpaces.get(container.id)??[];for(const box of placementBoxes(saved,item))spaces=splitFreeSpaces(spaces,box);freeSpaces.set(container.id,spaces);
+    let spaces=freeSpaces.get(container.id)??[];for(const box of placementBoxes(saved,item))spaces=splitFreeSpaces(spaces,box,!useShapeSequence);freeSpaces.set(container.id,spaces);
   }
 
   const savedMassPositions = [...lockedById.values()].filter(isValidRejectedPlacement);
@@ -601,7 +601,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     massByContainer.set(best.container.id, (massByContainer.get(best.container.id) ?? best.container.tareGrams ?? 0) + (item.upperMassGrams ?? 0));
     if (item.upperMassGrams === undefined) unweighedByContainer.set(best.container.id, (unweighedByContainer.get(best.container.id) ?? 0) + 1);
     placedIds.add(item.instanceId);
-    let remaining=freeSpaces.get(best.container.id)??[];for(const box of placementBoxes(best.placement,item))remaining=splitFreeSpaces(remaining,box);freeSpaces.set(best.container.id,remaining);
+    let remaining=freeSpaces.get(best.container.id)??[];for(const box of placementBoxes(best.placement,item))remaining=splitFreeSpaces(remaining,box,!useShapeSequence);freeSpaces.set(best.container.id,remaining);
   }
 
   return { placements, excluded, massConflicts, score: solutionScore(placements, excluded, items, mode, containers) };
@@ -701,7 +701,7 @@ function massInContainer(containerId: string, placements: Placement[], items: Ma
     .reduce((sum, placement) => sum + (items.get(placement.instanceId)?.upperMassGrams ?? 0), tareGrams);
 }
 
-function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace): FreeSpace[] {
+function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVolumes = false): FreeSpace[] {
   const next: FreeSpace[] = [];
   for (const space of spaces) {
     if (!intersects(space, used)) {
@@ -730,7 +730,8 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace): FreeSpace[] {
   }
   if(unique.length<2)return unique;
   if(unique.length<32)return unique.filter((space,index)=>!unique.some((other,otherIndex)=>otherIndex!==index&&containsSpace(other,space)&&(!containsSpace(space,other)||otherIndex<index)));
-  const ordered=unique.map((space,index)=>({space,index,right:space.x+space.length,back:space.y+space.width,top:space.z+space.height}))
+  // Rectangle-only plans reuse each candidate volume across many containment pairs.
+  const ordered=unique.map((space,index)=>({space,index,right:space.x+space.length,back:space.y+space.width,top:space.z+space.height,volume:cacheCandidateVolumes?spaceVolume(space):undefined}))
     .sort((left,right)=>left.space.x-right.space.x||left.index-right.index);
   const keep=new Array<boolean>(unique.length).fill(true);
   for(const inner of ordered){
@@ -742,7 +743,7 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace): FreeSpace[] {
       if(candidate.index===inner.index||outer.y>inner.space.y+EPSILON||outer.z>inner.space.z+EPSILON
         ||candidate.back<inner.space.y+inner.space.width-EPSILON||candidate.top<inner.space.z+inner.space.height-EPSILON
         ||candidate.right<inner.right-EPSILON)continue;
-      if(spaceVolume(outer)<minimumContainingVolume*(1-1e-12))continue;
+      if((cacheCandidateVolumes?candidate.volume!:spaceVolume(outer))<minimumContainingVolume*(1-1e-12))continue;
       const containsOuter=inner.space.x<=outer.x+EPSILON&&inner.space.y<=outer.y+EPSILON&&inner.space.z<=outer.z+EPSILON
         &&inner.right>=candidate.right-EPSILON&&inner.space.y+inner.space.width>=candidate.back-EPSILON
         &&inner.space.z+inner.space.height>=candidate.top-EPSILON;
