@@ -164,10 +164,6 @@ function facePatches(p:Placement,item:ShapeItem|undefined,side:'bottom'|'down'|'
   const local=item?.packingShape?localGeometry(item.packingShape,p.rotation)[side]:[{x:0,y:0,z:side==='top'?p.height:0,length:p.length,width:p.width}];
   return {patches:local,offsetX:p.x,offsetY:p.y,offsetZ:p.z};
 }
-function faces(p:Placement,item:ShapeItem|undefined,side:'bottom'|'down'|'top',up:GravityUp=packingUp):Face[] {
-  const {patches,offsetX,offsetY,offsetZ}=facePatches(p,item,side,up);
-  return patches.map(f=>({...f,x:f.x+offsetX,y:f.y+offsetY,z:f.z+offsetZ}));
-}
 export function geometrySupportArea(upper:Placement,lower:Placement,items:Map<string,ShapeItem>,up:GravityUp=packingUp):number {
   if(upper.containerId!==lower.containerId||upper.compartmentId!==lower.compartmentId)return 0;
   if(up.axis===2&&up.sign===1&&!items.get(upper.instanceId)?.packingShape&&!items.get(lower.instanceId)?.packingShape){
@@ -245,7 +241,7 @@ export function hasGeometrySupport(p:Placement,placed:Placement[],items:Map<stri
     }
     return false;
   }
-  const area=faces(p,items.get(p.instanceId),'bottom',up).reduce((sum,f)=>sum+f.length*f.width,0);
+  const area=facePatches(p,items.get(p.instanceId),'bottom',up).patches.reduce((sum,f)=>sum+f.length*f.width,0);
   if(area<=0)return false;if(Math.abs(gravityBox(p,up).z-floor)<=EPS)return true;
   const required=area*fraction;let supported=0;
   for(const lower of placed){supported+=geometrySupportArea(p,lower,items,up);if(supported+EPS**2>=required)return true;}
