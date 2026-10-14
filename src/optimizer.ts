@@ -704,10 +704,27 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace): FreeSpace[] {
   // The containment pass would discard duplicate geometry; preserve its first record without pairwise comparisons.
   const unique:FreeSpace[]=[],seen=new Set<string>();
   for(const space of valid){const key=`${space.x},${space.y},${space.z},${space.length},${space.width},${space.height}`;if(seen.has(key))continue;seen.add(key);unique.push(space);}
-  return unique.filter((space,index)=>!unique.some((other,otherIndex)=>otherIndex!==index&&contains(other,space)&&(!contains(space,other)||otherIndex<index)));
+  if(unique.length<32)return unique.filter((space,index)=>!unique.some((other,otherIndex)=>otherIndex!==index&&containsSpace(other,space)&&(!containsSpace(space,other)||otherIndex<index)));
+  const ordered=unique.map((space,index)=>({space,index,right:space.x+space.length,back:space.y+space.width,top:space.z+space.height}))
+    .sort((left,right)=>left.space.x-right.space.x||left.index-right.index);
+  const keep=new Array<boolean>(unique.length).fill(true);
+  for(const inner of ordered){
+    for(const candidate of ordered){
+      const outer=candidate.space;
+      if(outer.x>inner.space.x+EPSILON)break;
+      if(candidate.index===inner.index||outer.y>inner.space.y+EPSILON||outer.z>inner.space.z+EPSILON
+        ||candidate.back<inner.space.y+inner.space.width-EPSILON||candidate.top<inner.space.z+inner.space.height-EPSILON
+        ||candidate.right<inner.right-EPSILON)continue;
+      const containsOuter=inner.space.x<=outer.x+EPSILON&&inner.space.y<=outer.y+EPSILON&&inner.space.z<=outer.z+EPSILON
+        &&inner.right>=candidate.right-EPSILON&&inner.space.y+inner.space.width>=candidate.back-EPSILON
+        &&inner.space.z+inner.space.height>=candidate.top-EPSILON;
+      if(!containsOuter||candidate.index<inner.index){keep[inner.index]=false;break;}
+    }
+  }
+  return unique.filter((_,index)=>keep[index]);
 }
 
-function contains(outer: FreeSpace, inner: FreeSpace) {
+function containsSpace(outer: FreeSpace, inner: FreeSpace) {
   return outer.x <= inner.x + EPSILON && outer.y <= inner.y + EPSILON && outer.z <= inner.z + EPSILON
     && outer.x + outer.length >= inner.x + inner.length - EPSILON
     && outer.y + outer.width >= inner.y + inner.width - EPSILON
