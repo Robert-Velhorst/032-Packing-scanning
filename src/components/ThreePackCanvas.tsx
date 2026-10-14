@@ -91,6 +91,45 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
       }
       return mesh;
     };
+    let itemBoxGeometry: ThreeApi.BoxGeometry | undefined;
+    let itemBoxEdges: ThreeApi.EdgesGeometry | undefined;
+    const itemMaterials = new Map<string, ThreeApi.MeshStandardMaterial>();
+    const itemEdgeMaterials = new Map<string, ThreeApi.LineBasicMaterial>();
+    const itemMaterial = (category: string, flexibility: string | undefined, selected: boolean) => {
+      const key = `${category}:${flexibility ?? ''}:${selected}`;
+      let material = itemMaterials.get(key);
+      if (!material) {
+        material = new THREE.MeshStandardMaterial({
+          color: selected ? '#348665' : colors[category] ?? colors.other,
+          roughness: flexibility === 'rigid' ? 0.72 : 0.93,
+          metalness: 0.01,
+          emissive: selected ? '#12452f' : '#000000',
+          emissiveIntensity: selected ? 0.2 : 0,
+        });
+        itemMaterials.set(key, material);
+      }
+      return material;
+    };
+    const makeItemBox = (size: [number, number, number], position: [number, number, number], material: ThreeApi.Material, edgeColor: string) => {
+      itemBoxGeometry ??= new THREE.BoxGeometry(1, 1, 1);
+      itemBoxEdges ??= new THREE.EdgesGeometry(itemBoxGeometry);
+      const mesh = new THREE.Mesh(itemBoxGeometry, material);
+      mesh.position.set(...position);
+      mesh.scale.set(...size);
+      mesh.castShadow = true;
+      scene.add(mesh);
+      let edgeMaterial = itemEdgeMaterials.get(edgeColor);
+      if (!edgeMaterial) {
+        edgeMaterial = new THREE.LineBasicMaterial({ color: edgeColor, transparent: true, opacity: 0.75 });
+        itemEdgeMaterials.set(edgeColor, edgeMaterial);
+      }
+      const edge = new THREE.LineSegments(itemBoxEdges, edgeMaterial);
+      edge.position.copy(mesh.position);
+      edge.scale.copy(mesh.scale);
+      edge.renderOrder = 2;
+      scene.add(edge);
+      return mesh;
+    };
 
     const caseMaterial = new THREE.MeshStandardMaterial({ color: '#27332d', roughness: 0.78, metalness: 0.04, transparent: true, opacity: 0.3, side: THREE.DoubleSide,depthWrite:false });
     const darkMaterial = new THREE.MeshStandardMaterial({ color: '#35433c', roughness: 0.9, metalness: 0.03 });
@@ -135,13 +174,7 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
       const item = packingItemForPlacement(itemLookup.get(placement.itemId),placement);
       if (!item) continue;
       const isSelected = selectedInstanceId === placement.instanceId;
-      const material = new THREE.MeshStandardMaterial({
-        color: isSelected ? '#348665' : colors[item.category] ?? colors.other,
-        roughness: item.flexibility === 'rigid' ? 0.72 : 0.93,
-        metalness: 0.01,
-        emissive: isSelected ? '#12452f' : '#000000',
-        emissiveIntensity: isSelected ? 0.2 : 0,
-      });
+      const material = itemMaterial(item.category, item.flexibility, isSelected);
       const surface=placementSurface(placement,item);
       if(surface){
         const geometry=new THREE.BufferGeometry(),positions=new Float32Array(surface.verticesMm.length),indices=new Uint32Array(surface.triangles.length);
@@ -150,7 +183,7 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
         geometry.setAttribute('position',new THREE.BufferAttribute(positions,3));geometry.setIndex(new THREE.BufferAttribute(indices,1));geometry.computeVertexNormals();
         const mesh=new THREE.Mesh(geometry,material);scene.add(mesh);
         const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geometry),new THREE.LineBasicMaterial({color:isSelected?'#006b3f':'#64756d',transparent:true,opacity:.75}));edges.renderOrder=2;scene.add(edges);
-      }else makeBox(
+      }else makeItemBox(
         [placement.length * scale, placement.height * scale, placement.width * scale],
         [(placement.x + placement.length / 2) * scale, (placement.z + placement.height / 2) * scale, (placement.y + placement.width / 2) * scale],
         material,
@@ -205,13 +238,18 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
     cleanup = () => {
       observer.disconnect();
       controls.dispose();
+      const geometries = new Set<ThreeApi.BufferGeometry>(), materials = new Set<ThreeApi.Material>(), textures = new Set<ThreeApi.Texture>();
       scene.traverse((object) => {
         if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) {
-          object.geometry.dispose();
+          if (!geometries.has(object.geometry)) { geometries.add(object.geometry); object.geometry.dispose(); }
           const mats = Array.isArray(object.material) ? object.material : [object.material];
-          mats.forEach((material) => material.dispose());
+          mats.forEach((material) => { if (!materials.has(material)) { materials.add(material); material.dispose(); } });
         }
-        if (object instanceof THREE.Sprite) { object.material.map?.dispose(); object.material.dispose(); }
+        if (object instanceof THREE.Sprite) {
+          const texture = object.material.map;
+          if (texture && !textures.has(texture)) { textures.add(texture); texture.dispose(); }
+          if (!materials.has(object.material)) { materials.add(object.material); object.material.dispose(); }
+        }
       });
       renderer.domElement.removeEventListener('webglcontextlost', contextLost);
       renderer.domElement.removeEventListener('webglcontextrestored', resizeAfterRestore);
