@@ -1,4 +1,5 @@
 import { performance } from 'node:perf_hooks';
+import { createHash } from 'node:crypto';
 import { createServer } from 'vite';
 
 const value = (name, fallback) => {
@@ -71,7 +72,7 @@ function benchmarkShape() {
   };
 }
 
-const vite = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
+const vite = await createServer({ optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
 try {
   const { createInitialData } = await vite.ssrLoadModule('/src/seed.ts');
   const { buildPlan } = await vite.ssrLoadModule('/src/optimizer.ts');
@@ -129,19 +130,23 @@ try {
   const results = [];
   for (const count of counts) {
     const input = fixture(count);
+    const fingerprint = (plan) => createHash('sha256').update(JSON.stringify(plan.placements.map(({ instanceId, containerId, compartmentId, x, y, z, length, width, height, rotation, layer, insertionOrder, shapeKey }) =>
+      ({ instanceId, containerId, compartmentId, x, y, z, length, width, height, rotation, layer, insertionOrder, shapeKey })))).digest('hex');
     const warmup = buildPlan(input.trip, input.items, input.bags);
     if (warmup.placements.length !== count) throw new Error(`Warm-up placed ${warmup.placements.length} of ${count} items.`);
     assertRectangularPlacementsDoNotOverlap(warmup);
+    const expectedFingerprint = fingerprint(warmup);
     const samples = [];
     for (let run = 0; run < runs; run += 1) {
       const start = performance.now();
       const plan = buildPlan(input.trip, input.items, input.bags);
       samples.push((performance.now() - start) / 1000);
       if (plan.placements.length !== count) throw new Error(`Run ${run + 1} placed ${plan.placements.length} of ${count} items.`);
+      if (fingerprint(plan) !== expectedFingerprint) throw new Error(`Run ${run + 1} changed the warm-up placements.`);
       assertRectangularPlacementsDoNotOverlap(plan);
     }
     const sorted = [...samples].sort((left, right) => left - right);
-    results.push({ itemCount: count, medianSeconds: sorted[Math.floor(sorted.length / 2)], samplesSeconds: samples, placed: count });
+    results.push({ itemCount: count, medianSeconds: sorted[Math.floor(sorted.length / 2)], samplesSeconds: samples, placed: count, placementFingerprint: expectedFingerprint });
   }
   console.log(JSON.stringify({
     fixture: shapeCount ? `varied rectangles with ${shapeCount} synthetic voxel U-shapes in a 1000x800x500 mm bag`
