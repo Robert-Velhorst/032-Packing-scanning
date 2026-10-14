@@ -27,10 +27,10 @@ export function nextUnpackedStep(ordered: Placement[], currentId: string, comple
 }
 
 /** Earlier planned positions are context, not a claim that they are already packed. */
-export function packingStepPreview(ordered: Placement[], index: number, completed: string[]): Placement[] {
+export function packingStepPreview(ordered: Placement[], index: number, completed: string[],completedSet?:ReadonlySet<string>): Placement[] {
   const current = ordered[index];
   if (!current) return [];
-  const confirmed = new Set(completed);
+  const confirmed = completedSet??new Set(completed);
   return ordered.filter((step, stepIndex) => step.containerId === current.containerId
     && (stepIndex <= index || confirmed.has(step.instanceId)));
 }

@@ -36,6 +36,7 @@ describe('packing sequence', () => {
     const source = [...ordered, other];
     expect(packingStepPreview(source, 0, [])).toEqual([ordered[0]]);
     expect(packingStepPreview(source, 0, [ordered[2].instanceId, other.instanceId])).toEqual([ordered[0], ordered[2]]);
+    const completed=[ordered[2].instanceId,other.instanceId];expect(packingStepPreview(source,0,completed,new Set(completed))).toEqual([ordered[0],ordered[2]]);
     expect(packingStepPreview(source, 99, [])).toEqual([]);
   });
   it('describes only geometrically overlapping support in the same bag', () => {
