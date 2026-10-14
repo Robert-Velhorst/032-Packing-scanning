@@ -8,6 +8,33 @@ import type { WeatherService } from './weather-service.ts';
 const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.map': 'application/json' };
 export function createAppServer(options: { dist: string; carrierService: CarrierService; weatherService?: WeatherService; allowedOrigins?: string[]; accountApi?: AccountApi }) {
   const root = resolve(options.dist), allowedOrigins = new Set(options.allowedOrigins ?? []);
+  const immutableAssetLimit = 8 * 1024 * 1024;
+  const immutableAssets = new Map<string, Buffer>();
+  const pendingImmutableAssetReads = new Map<string, Promise<Buffer>>();
+  let immutableAssetBytes = 0;
+  const readImmutableAsset = (path: string): Promise<Buffer> => {
+    const cached = immutableAssets.get(path);
+    if (cached) {
+      immutableAssets.delete(path);
+      immutableAssets.set(path, cached);
+      return Promise.resolve(cached);
+    }
+    const pending = pendingImmutableAssetReads.get(path);
+    if (pending) return pending;
+    const read = readFile(path).then((content) => {
+      if (content.byteLength > immutableAssetLimit) return content;
+      while (immutableAssetBytes + content.byteLength > immutableAssetLimit && immutableAssets.size) {
+        const oldestPath = immutableAssets.keys().next().value!;
+        immutableAssetBytes -= immutableAssets.get(oldestPath)!.byteLength;
+        immutableAssets.delete(oldestPath);
+      }
+      immutableAssets.set(path, content);
+      immutableAssetBytes += content.byteLength;
+      return content;
+    }).finally(() => pendingImmutableAssetReads.delete(path));
+    pendingImmutableAssetReads.set(path, read);
+    return read;
+  };
   let windowStart = Date.now(), requests = 0;
   return createServer(async (request, response) => {
     response.setHeader('X-Content-Type-Options', 'nosniff');
@@ -69,8 +96,9 @@ export function createAppServer(options: { dist: string; carrierService: Carrier
       const file = resolve(root, `.${pathname === '/' ? '/index.html' : pathname}`);
       const actual = await realpath(file);
       if (!actual.startsWith(`${root}${sep}`)) throw new Error('Outside static root');
-      const content = await readFile(actual);
-      response.writeHead(200, { 'Content-Type': TYPES[extname(actual)] ?? 'application/octet-stream', 'Cache-Control': /[.-][a-zA-Z0-9_-]{8,}\.(js|css)$/.test(actual) ? 'public, max-age=31536000, immutable' : 'no-cache' });
+      const immutable = /[.-][a-zA-Z0-9_-]{8,}\.(js|css)$/.test(actual);
+      const content = immutable ? await readImmutableAsset(actual) : await readFile(actual);
+      response.writeHead(200, { 'Content-Type': TYPES[extname(actual)] ?? 'application/octet-stream', 'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache' });
       response.end(request.method === 'HEAD' ? undefined : content);
     } catch { response.writeHead(404); response.end('Not found'); }
   });
