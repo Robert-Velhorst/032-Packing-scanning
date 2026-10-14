@@ -669,12 +669,6 @@ function fitsOpening(dimensions: { length: number; width: number; height: number
   return dimensions.length<=container.opening.length+EPSILON&&dimensions.width<=container.opening.width+EPSILON&&(!opening||dimensions.length<=opening.length+EPSILON&&dimensions.width<=opening.width+EPSILON);
 }
 
-function intersects(left: FreeSpace, right: FreeSpace) {
-  return left.x < right.x + right.length - EPSILON && left.x + left.length > right.x + EPSILON
-    && left.y < right.y + right.width - EPSILON && left.y + left.width > right.y + EPSILON
-    && left.z < right.z + right.height - EPSILON && left.z + left.height > right.z + EPSILON;
-}
-
 function placementScore(
   candidate: FreeSpace,
   space: FreeSpace,
@@ -715,20 +709,29 @@ function massInContainer(containerId: string, placements: Placement[], items: Ma
 
 function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVolumes = false): FreeSpace[] {
   const next: FreeSpace[] = [];
+  const usedRight=used.x+used.length,usedBack=used.y+used.width,usedTop=used.z+used.height;
   for (const space of spaces) {
-    if (!intersects(space, used)) {
+    const right=space.x+space.length;
+    if(space.x>=usedRight-EPSILON||right<=used.x+EPSILON){
       next.push(space);
       continue;
     }
-    const right = space.x + space.length;
     const back = space.y + space.width;
+    if(space.y>=usedBack-EPSILON||back<=used.y+EPSILON){
+      next.push(space);
+      continue;
+    }
     const top = space.z + space.height;
+    if(space.z>=usedTop-EPSILON||top<=used.z+EPSILON){
+      next.push(space);
+      continue;
+    }
     if (used.x > space.x + EPSILON) next.push({ ...space, length: used.x - space.x });
-    if (used.x + used.length < right - EPSILON) next.push({ ...space, x: used.x + used.length, length: right - used.x - used.length });
+    if (usedRight < right - EPSILON) next.push({ ...space, x: usedRight, length: right - usedRight });
     if (used.y > space.y + EPSILON) next.push({ ...space, width: used.y - space.y });
-    if (used.y + used.width < back - EPSILON) next.push({ ...space, y: used.y + used.width, width: back - used.y - used.width });
+    if (usedBack < back - EPSILON) next.push({ ...space, y: usedBack, width: back - usedBack });
     if (used.z > space.z + EPSILON) next.push({ ...space, height: used.z - space.z });
-    if (used.z + used.height < top - EPSILON) next.push({ ...space, z: used.z + used.height, height: top - used.z - used.height });
+    if (usedTop < top - EPSILON) next.push({ ...space, z: usedTop, height: top - usedTop });
   }
   // Filter and deduplicate in one pass; preserve the first record for each geometry.
   let unique:FreeSpace[];
