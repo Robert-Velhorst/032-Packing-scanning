@@ -13,7 +13,7 @@ import { packingItem, packingFormKey } from './packing-forms';
 import { isValidRejectedPlacement, samePlacementGeometry } from './packing-progress';
 import { containerBlockedBoxes, containerSpaceError, usableContainerHeight, usableContainerVolume } from './container-space';
 import { interiorKey, interiorSupportError } from './packing-interior';
-import { contactPositions, fitsGeometrySpaceInValidatedContainer, geometryIntersects, geometryOrientations, hasGeometrySupport, hasPackingAndTravelSupport, hasVerticalEntry, orientationForRotation, packingShapeError, placementBoxes, RectangularSupportIndex, shapeDimensions, shapeKey, shapeVolume } from './packing-geometry';
+import { contactPositions, fitsGeometrySpaceInValidatedContainer, geometryIntersects, geometryOrientations, hasGeometrySupport, hasPackingAndTravelSupport, hasVerticalEntry, orientationForRotation, packingShapeError, placementBoxes, RectangularSupportIndex, shapeDimensions, shapeKey, shapeVolume, type GeometryBox } from './packing-geometry';
 
 interface FreeSpace {
   compartmentId?: string;
@@ -36,6 +36,7 @@ const volume = (box: { length: number; width: number; height: number }) => box.l
 const spaceVolume = (box: FreeSpace) => box.length * box.width * box.height;
 const EPSILON = 0.01;
 const SUPPORT_INDEX_THRESHOLD=64;
+const SHAPED_SUPPORT_INDEX_THRESHOLD=8;
 
 export function buildPlan(trip: Trip, library: LibraryItem[], allContainers: Container[], mode: OptimizationMode = trip.mode): PackingPlan {
   const referencedItemIds = new Set(trip.entries.map(entry => entry.itemId));
@@ -417,8 +418,14 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     freeSpaces.set(bagId, []);
   }
 
-  const supportIndexes=items.length>=SUPPORT_INDEX_THRESHOLD?new Map<string,RectangularSupportIndex>():undefined;
-  if(supportIndexes)for(const bag of containers){const current=placementsByContainer.get(bag.id)??[];if(current.length>=SUPPORT_INDEX_THRESHOLD)supportIndexes.set(bag.id,new RectangularSupportIndex(itemById,current));}
+  const supportIndexThreshold=shapeItems.length?SHAPED_SUPPORT_INDEX_THRESHOLD:SUPPORT_INDEX_THRESHOLD;
+  const supportIndexes=items.length>=supportIndexThreshold?new Map<string,RectangularSupportIndex>():undefined;
+  if(supportIndexes)for(const bag of containers){const current=placementsByContainer.get(bag.id)??[];if(current.length>=supportIndexThreshold)supportIndexes.set(bag.id,new RectangularSupportIndex(itemById,current));}
+  const verticalEntryObstacles=useShapeSequence?new Map(containers.map(bag=>{
+    const obstacles:GeometryBox[]=[...(blockedSpaces.get(bag.id)??[])];
+    for(const placed of placementsByContainer.get(bag.id)??[])obstacles.push(...placementBoxes(placed,itemById.get(placed.instanceId)));
+    return [bag.id,obstacles] as const;
+  })):undefined;
 
   for (const item of items) {
     if (placedIds.has(item.instanceId)) continue;
@@ -499,7 +506,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             // searches, where candidate positions can intentionally bypass
             // those rectangular free-space boundaries.
             if((useShapeSequence||rules.length>0)&&bagPlacements.some(p=>geometryIntersects(placement,p,itemById)))continue;
-            if(hasShapes&&!hasVerticalEntry(placement,bagPlacements,itemById,container,blockedSpaces.get(container.id)))continue;
+            if(hasShapes&&!hasVerticalEntry(placement,bagPlacements,itemById,container,blockedSpaces.get(container.id),verticalEntryObstacles?.get(container.id)))continue;
             const separationError = rules.length?placementSeparationError(placement,[...placements,...savedMassPositions],rules,itemById):undefined;
             if(separationError){separationFailure=separationError;continue;}
             if (rejected.some((failed) => samePlacementGeometry(failed, placement))) continue;
@@ -587,9 +594,10 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     placements.push(best.placement);
     stackLoadContactCache.register(best.placement);
     placementsByContainer.get(best.container.id)?.push(best.placement);
+    verticalEntryObstacles?.get(best.container.id)?.push(...placementBoxes(best.placement,item));
     const bagPlacements=placementsByContainer.get(best.container.id)!;
     if(supportIndexes?.has(best.container.id))supportIndexes.get(best.container.id)!.add(best.placement);
-    else if(supportIndexes&&bagPlacements.length>=SUPPORT_INDEX_THRESHOLD)supportIndexes.set(best.container.id,new RectangularSupportIndex(itemById,bagPlacements));
+    else if(supportIndexes&&bagPlacements.length>=supportIndexThreshold)supportIndexes.set(best.container.id,new RectangularSupportIndex(itemById,bagPlacements));
     massByContainer.set(best.container.id, (massByContainer.get(best.container.id) ?? best.container.tareGrams ?? 0) + (item.upperMassGrams ?? 0));
     if (item.upperMassGrams === undefined) unweighedByContainer.set(best.container.id, (unweighedByContainer.get(best.container.id) ?? 0) + 1);
     placedIds.add(item.instanceId);

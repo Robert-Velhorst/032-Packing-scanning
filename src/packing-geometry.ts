@@ -169,6 +169,8 @@ export function geometrySupportArea(upper:Placement,lower:Placement,items:Map<st
   const upperItem=items.get(upper.instanceId),lowerItem=items.get(lower.instanceId);
   if(up.axis===2&&up.sign===1&&upperItem?.packingShape&&!lowerItem?.packingShape){
     if(upper.z<=lower.z+EPS||Math.abs(upper.z-(lower.z+lower.height))>EPS)return 0;
+    if(Math.min(upper.x+upper.length,lower.x+lower.length)-Math.max(upper.x,lower.x)<=EPS
+      ||Math.min(upper.y+upper.width,lower.y+lower.width)-Math.max(upper.y,lower.y)<=EPS)return 0;
     let area=0;
     for(const base of localGeometry(upperItem.packingShape,upper.rotation??0).bottom){
       const length=Math.min(upper.x+base.x+base.length,lower.x+lower.length)-Math.max(upper.x+base.x,lower.x);
@@ -219,12 +221,14 @@ type SupportPlaneGroup={shapes:Placement[];rectangles:Map<number,Placement[]>};
 export class RectangularSupportIndex {
   private readonly groups=new Map<string,Map<string|undefined,SupportPlaneGroup>>();
   private readonly order=new Map<string,number>();
+  private readonly candidateCache=new Map<SupportPlaneGroup,Map<number,Placement[]>>();
   private nextOrder=0;
   private readonly items:Map<string,ShapeItem>;
   constructor(items:Map<string,ShapeItem>,placements:Placement[]=[]){this.items=items;for(const placement of placements)this.add(placement);}
   add(placement:Placement){
     let compartments=this.groups.get(placement.containerId);if(!compartments){compartments=new Map();this.groups.set(placement.containerId,compartments);}
     let group=compartments.get(placement.compartmentId);if(!group){group={shapes:[],rectangles:new Map()};compartments.set(placement.compartmentId,group);}
+    this.candidateCache.delete(group);
     this.order.set(placement.instanceId,this.nextOrder++);
     if(this.items.get(placement.instanceId)?.packingShape){group.shapes.push(placement);return;}
     const plane=Math.floor((placement.z+placement.height)/(2*EPS)),bucket=group.rectangles.get(plane)??[];
@@ -236,9 +240,11 @@ export class RectangularSupportIndex {
     const rectanglePlanes=Number(!!lower)+Number(!!center)+Number(!!upper);
     if(!group.shapes.length&&rectanglePlanes===1)return lower??center??upper!;
     if(!group.shapes.length&&rectanglePlanes===0)return [];
+    const cached=this.candidateCache.get(group)?.get(plane);if(cached)return cached;
     const candidates=group.shapes.length?[...group.shapes]:[];
     if(lower)candidates.push(...lower);if(center)candidates.push(...center);if(upper)candidates.push(...upper);
     if(rectanglePlanes>1||(group.shapes.length>0&&rectanglePlanes>0))candidates.sort((left,right)=>(this.order.get(left.instanceId)??0)-(this.order.get(right.instanceId)??0));
+    let byPlane=this.candidateCache.get(group);if(!byPlane){byPlane=new Map();this.candidateCache.set(group,byPlane);}if(byPlane.size>=64)byPlane.clear();byPlane.set(plane,candidates);
     return candidates;
   }
 }
@@ -262,7 +268,8 @@ export function hasGeometrySupport(p:Placement,placed:Placement[],items:Map<stri
   const area=facePatches(p,items.get(p.instanceId),'bottom',up).patches.reduce((sum,f)=>sum+f.length*f.width,0);
   if(area<=0)return false;if(Math.abs(gravityBox(p,up).z-floor)<=EPS)return true;
   const required=area*fraction;let supported=0;
-  for(const lower of placed){supported+=geometrySupportArea(p,lower,items,up);if(supported+EPS**2>=required)return true;}
+  const candidates=up.axis===2&&up.sign===1&&supportIndex?supportIndex.candidates(p):placed;
+  for(const lower of candidates){supported+=geometrySupportArea(p,lower,items,up);if(supported+EPS**2>=required)return true;}
   return false;
 }
 /** Both snapshots must be supported; unavailable-region tops never become supports. */
@@ -279,9 +286,9 @@ export function hasPackingAndTravelSupport(p:Placement,placed:Placement[],items:
   return hasGeometrySupport(p,placed,items,fraction,up,floor);
 }
 /** Fixed orientation, straight downward entry: recesses must remain reachable from above. */
-export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,bag:Container,blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag)):boolean {
+export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,bag:Container,blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[]):boolean {
   const top=bag.inside.height;
-  const obstacles=[...blockedSpaces,...placed.filter(other=>other.containerId===p.containerId).flatMap(other=>placementBoxes(other,items.get(other.instanceId)))];
+  const obstacles=cachedObstacles??[...blockedSpaces,...placed.filter(other=>other.containerId===p.containerId).flatMap(other=>placementBoxes(other,items.get(other.instanceId)))];
   return !placementBoxes(p,items.get(p.instanceId)).some(b=>obstacles.some(o=>boxesIntersect({...b,height:Math.max(b.height,top-b.z+p.height)},o)));
 }
 

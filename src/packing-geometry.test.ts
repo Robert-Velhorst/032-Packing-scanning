@@ -27,10 +27,14 @@ describe('adopted occupied-cell planning',()=>{
   const index=new RectangularSupportIndex(items,placed);
   expect(index.candidates(upper)).toContain(support);expect(index.candidates(upper)).not.toContain(decoys[0]);
   expect(hasGeometrySupport(upper,placed,items,.65)).toBe(true);expect(hasGeometrySupport(upper,placed,items,.65,undefined,0,index)).toBe(true);
+   const addedShape=placement('added-shape',{height:60});items.set(addedShape.instanceId,item('added-shape',shaped.fittedDimensionsMm,shaped));index.add(addedShape);expect(index.candidates(upper)).toContain(addedShape);
   const nearPlane=placement('near-plane',{height:60.004}),adjacentPlane=placement('adjacent-plane',{height:59.997}),otherCompartment=placement('other-compartment',{height:60,compartmentId:'separate'}),otherBag=placement('other-bag',{height:60,containerId:'other'}),ordered=[nearPlane,otherCompartment,adjacentPlane,otherBag],orderedItems=new Map<string,LibraryItem>(ordered.map(p=>[p.instanceId,item(p.itemId)])),orderedIndex=new RectangularSupportIndex(orderedItems,ordered);
   expect(orderedIndex.candidates(upper)).toEqual([nearPlane,adjacentPlane]);expect(hasGeometrySupport(upper,ordered,orderedItems,.65,undefined,0,orderedIndex)).toBe(hasGeometrySupport(upper,ordered,orderedItems,.65));
   const shapedSupport=placement('shaped-support',{height:60}),shapedItems=new Map<string,LibraryItem>([[shapedSupport.instanceId,item('shaped-support',shaped.fittedDimensionsMm,shaped)]]),shapedIndex=new RectangularSupportIndex(shapedItems,[shapedSupport]);
   expect(shapedIndex.candidates(upper)).toContain(shapedSupport);expect(hasGeometrySupport(upper,[shapedSupport],shapedItems,.65,undefined,0,shapedIndex)).toBe(hasGeometrySupport(upper,[shapedSupport],shapedItems,.65));
+  const shapedUpper=placement('shaped-upper',{z:60}),rectangularSupport=placement('rectangular-support',{height:60}),far=placement('far',{z:10,height:5}),upperItems=new Map<string,LibraryItem>([[shapedUpper.instanceId,item('shaped-upper',shaped.fittedDimensionsMm,shaped)],[rectangularSupport.instanceId,item('rectangular-support')],[far.instanceId,item('far')]]),upperPlacements=[far,rectangularSupport],upperIndex=new RectangularSupportIndex(upperItems,upperPlacements);
+  expect(upperIndex.candidates(shapedUpper)).toEqual([rectangularSupport]);
+  expect(hasGeometrySupport(shapedUpper,upperPlacements,upperItems,.65,undefined,0,upperIndex)).toBe(hasGeometrySupport(shapedUpper,upperPlacements,upperItems,.65));
  });
  it('computes shaped-on-rectangular support from the shaped bottom patches',()=>{
   const s=shape(),upper=placement('U',{z:20}),lower=placement('lower',{height:20}),shapedLower=placement('shaped-lower',{height:60}),items=new Map<string,LibraryItem>([[upper.instanceId,item('U',s.fittedDimensionsMm,s)],[lower.instanceId,item('lower',{length:120,width:100,height:20})],[shapedLower.instanceId,item('shaped-lower',s.fittedDimensionsMm,s)]]);
@@ -78,7 +82,7 @@ describe('adopted occupied-cell planning',()=>{
  });
  it.each(['balanced','maximum_capacity','easy_access','fragile_protection'] as const)('rejects inaccessible entry and finds the feasible reverse insertion order in %s',mode=>{
   const s=shape(true),arch=item('U',s.fittedDimensionsMm,s),small=item('small',{length:40,width:100,height:30}),a=placement('U'),b=placement('small',{x:40,length:40,width:100,height:30}),records=new Map([['U#1',arch],['small#1',small]]);
-  expect(geometryIntersects(a,b,records)).toBe(false);expect(hasVerticalEntry(b,[a],records,bag)).toBe(false);expect(hasVerticalEntry(a,[b],records,bag)).toBe(true);
+   expect(geometryIntersects(a,b,records)).toBe(false);expect(hasVerticalEntry(b,[a],records,bag)).toBe(false);expect(hasVerticalEntry(b,[a],records,bag,[],placementBoxes(a,arch))).toBe(false);expect(hasVerticalEntry(a,[b],records,bag)).toBe(true);expect(hasVerticalEntry(a,[b],records,bag,[],placementBoxes(b,small))).toBe(true);
   const plan=buildPlan(trip([arch,small]),[arch,small],[bag],mode);expect(plan.placements).toHaveLength(2);expect(orderPackingSteps(plan.placements,[bag])[0].itemId).toBe('small');
  });
  it.each((['balanced','maximum_capacity','easy_access','fragile_protection'] as const).flatMap(mode=>[2,3].map(quantity=>({mode,quantity}))))('finds $quantity dependent insertion pairs without mutating the trip in $mode',({mode,quantity})=>{
