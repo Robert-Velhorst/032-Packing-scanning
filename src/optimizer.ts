@@ -460,6 +460,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
       const future=futureShapes.reduce<PlanItem|undefined>((best,i)=>!best||i.volumeMm3>best.volumeMm3?i:best,undefined);
       const hasShapes=useShapeSequence;
       const bagPlacements=placementsByContainer.get(container.id)??[];
+      const highestFragilePlacementZ=item.fragile?bagPlacements.reduce((highest,placement)=>itemById.get(placement.instanceId)?.fragile?Math.max(highest,placement.z):highest,Number.NEGATIVE_INFINITY):Number.NEGATIVE_INFINITY;
       const supportIndex=supportIndexes?.get(container.id);
       const reservation=lookaheadDepth>1&&futureShapes.length>1?reservePendingShapes(futureShapes,bagPlacements,container,itemById,mode,lookaheadDepth,rules,usableHeight(container),blockedSpaces.get(container.id)??[]):undefined;
       const anchors=[...(reservation?.placements??[]),...futureShapes.flatMap(future=>{
@@ -555,7 +556,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
                 // An isolated probe cannot change the already-checked stack graph.
                 && (!hasStackContact(next,prior,itemById,container)||!assessStackLoads([...prior,next],itemById,[container],stackLoadContactCache).some(load=>load.status==='conflict')));
               if(!possible)lookahead=future.volumeMm3*20;}
-            const score = placementScore(candidateBase, space, container, item, bagPlacements, massAfter, mode)+lookahead;
+            const score = placementScore(candidateBase, space, container, item, highestFragilePlacementZ, massAfter, mode)+lookahead;
             const weightCost = bagCosts.get(container.id), priorCost = best && bagCosts.get(best.container.id);
             // Compare lighter bags only after all placement gates, and never override
             // a known future-shape obstruction. Within a bag retain geometric scoring.
@@ -674,7 +675,7 @@ function placementScore(
   space: FreeSpace,
   container: Container,
   item: PlanItem,
-  placed: Placement[],
+  highestFragilePlacementZ: number,
   massAfter: number,
   mode: OptimizationMode,
 ) {
@@ -698,7 +699,7 @@ function placementScore(
     return base + splits * item.volumeMm3 * 0.08;
   }
   const weightedRisk = massRatio * massRatio * item.volumeMm3 * 0.22;
-  const fragileAbove = item.fragile && placed.some((placement) => placement.containerId === container.id && placement.z > candidate.z + candidate.height);
+  const fragileAbove = item.fragile && highestFragilePlacementZ > candidate.z + candidate.height;
   return base + Math.max(0, candidate.z) * item.volumeMm3 * 0.02 + weightedRisk + (fragileAbove ? item.volumeMm3 * 0.4 : 0);
 }
 
