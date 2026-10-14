@@ -713,6 +713,7 @@ function massInContainer(containerId: string, placements: Placement[], items: Ma
 
 function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVolumes = false): FreeSpace[] {
   const next: FreeSpace[] = [];
+  const previousSpaces = new Set(spaces);
   const usedRight=used.x+used.length,usedBack=used.y+used.width,usedTop=used.z+used.height;
   for (const space of spaces) {
     const right=space.x+space.length;
@@ -771,6 +772,10 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
   const candidatesByVolume=cacheCandidateVolumes?[...ordered].sort((left,right)=>right.volume!-left.volume!||left.index-right.index):ordered;
   const keep=new Array<boolean>(unique.length).fill(true);
   for(const inner of ordered){
+    // The input list is already maximal: packingRegions produces disjoint
+    // regions, and every prior split removes contained spaces. Splitting can
+    // only create smaller regions, so only those new regions can be redundant.
+    if(previousSpaces.has(inner.space))continue;
     // EPSILON containment allows at most 2*EPSILON less extent per axis.
     const minimumContainingVolume=Math.max(0,inner.space.length-2*EPSILON)*Math.max(0,inner.space.width-2*EPSILON)*Math.max(0,inner.space.height-2*EPSILON);
     let scan=candidatesByVolume;
