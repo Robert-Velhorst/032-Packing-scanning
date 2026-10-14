@@ -33,10 +33,12 @@ describe('adopted occupied-cell planning',()=>{
   expect(shapedIndex.candidates(upper)).toContain(shapedSupport);expect(hasGeometrySupport(upper,[shapedSupport],shapedItems,.65,undefined,0,shapedIndex)).toBe(hasGeometrySupport(upper,[shapedSupport],shapedItems,.65));
  });
  it('computes shaped-on-rectangular support from the shaped bottom patches',()=>{
-  const s=shape(),upper=placement('U',{z:20}),lower=placement('lower',{height:20}),items=new Map<string,LibraryItem>([[upper.instanceId,item('U',s.fittedDimensionsMm,s)],[lower.instanceId,item('lower',{length:120,width:100,height:20})]]);
+  const s=shape(),upper=placement('U',{z:20}),lower=placement('lower',{height:20}),shapedLower=placement('shaped-lower',{height:60}),items=new Map<string,LibraryItem>([[upper.instanceId,item('U',s.fittedDimensionsMm,s)],[lower.instanceId,item('lower',{length:120,width:100,height:20})],[shapedLower.instanceId,item('shaped-lower',s.fittedDimensionsMm,s)]]);
   expect(geometrySupportArea(upper,lower,items)).toBe(9200);
   expect(geometrySupportArea(upper,{...lower,length:40},items)).toBe(4000);
   expect(geometrySupportArea({...upper,z:20.02},lower,items)).toBe(0);
+  expect(geometrySupportArea(placement('shaped-upper',{z:60}),shapedLower,items)).toBe(9200);
+  expect(geometrySupportArea(placement('rect-upper',{z:60,length:40,width:100,height:10}),shapedLower,items)).toBe(4000);
  });
  it('preserves every cell with disjoint exact cuboids and lower occupied volume',()=>{
   const s=shape(),p=placement('U'),boxes=placementBoxes(p,{packingShape:s});
