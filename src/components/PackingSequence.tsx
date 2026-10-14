@@ -1,3 +1,4 @@
+import './PackingSequence.css';
 import { SeparationNotes } from './SeparationRules';
 import { compartmentFor } from '../compartments';
 import { RetrievalNotes } from './RetrievalNotes';

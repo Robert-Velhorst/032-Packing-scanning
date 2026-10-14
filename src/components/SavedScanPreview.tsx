@@ -1,3 +1,4 @@
+import './SavedScanPreview.css';
 import type { ReconstructedGeometry } from '../scanning/reconstructed-solid';
 import { memo, useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';

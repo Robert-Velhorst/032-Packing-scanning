@@ -1,3 +1,4 @@
+import './WeatherLookup.css';
 import {useEffect,useRef,useState} from 'react';
 import type {Trip,UnitSystem} from '../types';
 import {isSavedWeather,placeLabel,reviewWeather,WEATHER_SOURCE,WEATHER_GEOCODING_SOURCE,type SavedWeather,type WeatherForecast,type WeatherPlace} from '../weather';
