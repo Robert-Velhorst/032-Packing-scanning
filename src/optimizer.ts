@@ -463,6 +463,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
         const o=futureOrientationsById?.get(future.instanceId)?.[0];
         return o&&o.length<=container.inside.length&&o.width<=container.inside.width&&o.height<=usableHeight(container)?cornerPositions(initialSpace(container,usableHeight(container)),o).map(position=>({instanceId:future.instanceId,entryId:future.entryId,itemId:future.itemId,containerId:container.id,...position,...o,layer:1})):[];
       })];
+      const futureProbes=future&&!reservation?(futureOrientationsById?.get(future.instanceId)??[]).filter(o=>fitsOpening(o,container)).flatMap(o=>cornerPositions(initialSpace(container,usableHeight(container)),o).map(position=>({instanceId:future.instanceId,entryId:future.entryId,itemId:future.itemId,containerId:container.id,...position,...o,layer:1} as Placement))):[];
       const shapeContactObstacles=verticalEntryObstacles
         ?[...(verticalEntryObstacles.get(container.id)??[]),...anchors.flatMap(anchor=>placementBoxes(anchor,itemById.get(anchor.instanceId)))]
         :undefined;
@@ -546,11 +547,10 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
                 lookaheadCache.set(key,penalty);
               }
               lookahead=penalty;
-            } else if(future){const possible=(futureOrientationsById?.get(future.instanceId)??[]).some(o=>fitsOpening(o,container)&&cornerPositions(initialSpace(container,usableHeight(container)),o).some(position=>{
-              const next:Placement={...position,...o,instanceId:future.instanceId,entryId:future.entryId,itemId:future.itemId,containerId:container.id,layer:1};
-              const prior=[...bagPlacements,placement];return !placementSeparationError(next,prior,rules,itemById)&&fitsGeometrySpaceInValidatedContainer(next,container,future,blockedSpaces.get(container.id))&&!prior.some(p=>geometryIntersects(next,p,itemById))&&hasPackingAndTravelSupport(next,prior,itemById,mode==='fragile_protection'?1:.65,container)&&hasVerticalEntry(next,prior,itemById,container,blockedSpaces.get(container.id))
-                && !assessStackLoads([...prior,next],itemById,[container],stackLoadContactCache).some(load=>load.status==='conflict');
-            }));if(!possible)lookahead=future.volumeMm3*20;}
+            } else if(future){const prior=[...bagPlacements,placement],possible=futureProbes.some(next=>
+              !placementSeparationError(next,prior,rules,itemById)&&fitsGeometrySpaceInValidatedContainer(next,container,future,blockedSpaces.get(container.id))&&!prior.some(p=>geometryIntersects(next,p,itemById))&&hasPackingAndTravelSupport(next,prior,itemById,mode==='fragile_protection'?1:.65,container)&&hasVerticalEntry(next,prior,itemById,container,blockedSpaces.get(container.id))
+                && !assessStackLoads([...prior,next],itemById,[container],stackLoadContactCache).some(load=>load.status==='conflict'));
+              if(!possible)lookahead=future.volumeMm3*20;}
             const score = placementScore(candidateBase, space, container, item, bagPlacements, massAfter, mode)+lookahead;
             const weightCost = bagCosts.get(container.id), priorCost = best && bagCosts.get(best.container.id);
             // Compare lighter bags only after all placement gates, and never override
