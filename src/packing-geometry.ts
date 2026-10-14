@@ -166,6 +166,17 @@ function facePatches(p:Placement,item:ShapeItem|undefined,side:'bottom'|'down'|'
 }
 export function geometrySupportArea(upper:Placement,lower:Placement,items:Map<string,ShapeItem>,up:GravityUp=packingUp):number {
   if(upper.containerId!==lower.containerId||upper.compartmentId!==lower.compartmentId)return 0;
+  const upperItem=items.get(upper.instanceId),lowerItem=items.get(lower.instanceId);
+  if(up.axis===2&&up.sign===1&&upperItem?.packingShape&&!lowerItem?.packingShape){
+    if(upper.z<=lower.z+EPS||Math.abs(upper.z-(lower.z+lower.height))>EPS)return 0;
+    let area=0;
+    for(const base of localGeometry(upperItem.packingShape,upper.rotation??0).bottom){
+      const length=Math.min(upper.x+base.x+base.length,lower.x+lower.length)-Math.max(upper.x+base.x,lower.x);
+      const width=Math.min(upper.y+base.y+base.width,lower.y+lower.width)-Math.max(upper.y+base.y,lower.y);
+      if(length>EPS&&width>EPS)area+=length*width;
+    }
+    return area;
+  }
   if(up.axis===2&&up.sign===1&&!items.get(upper.instanceId)?.packingShape&&!items.get(lower.instanceId)?.packingShape){
     if(upper.z<=lower.z+EPS)return 0;
     return rectangleFaceContact(upper,lower);
