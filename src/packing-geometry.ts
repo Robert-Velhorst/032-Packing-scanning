@@ -170,7 +170,10 @@ export function geometrySupportArea(upper:Placement,lower:Placement,items:Map<st
     if(upper.z<=lower.z+EPS)return 0;
     return rectangleFaceContact(upper,lower);
   }
-  if(gravityBox(upper,up).z<=gravityBox(lower,up).z+EPS)return 0;
+  const upperBounds=gravityBox(upper,up),lowerBounds=gravityBox(lower,up);
+  if(upperBounds.z<=lowerBounds.z+EPS||upperBounds.z>lowerBounds.z+lowerBounds.height+EPS
+    ||upperBounds.x+upperBounds.length<=lowerBounds.x+EPS||lowerBounds.x+lowerBounds.length<=upperBounds.x+EPS
+    ||upperBounds.y+upperBounds.width<=lowerBounds.y+EPS||lowerBounds.y+lowerBounds.width<=upperBounds.y+EPS)return 0;
   return faceContact(upper,lower,items,'bottom',up);
 }
 export function geometryContactArea(upper:Placement,lower:Placement,items:Map<string,ShapeItem>,up:GravityUp=packingUp):number {
