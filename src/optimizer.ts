@@ -543,7 +543,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
                 lookaheadCache.set(key,penalty);
               }
               lookahead=penalty;
-            } else if(future){const possible=geometryOrientations(future,container).some(o=>fitsOpening(o,container)&&cornerPositions(initialSpace(container,usableHeight(container)),o).some(position=>{
+            } else if(future){const possible=(futureOrientationsById?.get(future.instanceId)??[]).some(o=>fitsOpening(o,container)&&cornerPositions(initialSpace(container,usableHeight(container)),o).some(position=>{
               const next:Placement={...position,...o,instanceId:future.instanceId,entryId:future.entryId,itemId:future.itemId,containerId:container.id,layer:1};
               const prior=[...bagPlacements,placement];return !placementSeparationError(next,prior,rules,itemById)&&fitsGeometrySpaceInValidatedContainer(next,container,future,blockedSpaces.get(container.id))&&!prior.some(p=>geometryIntersects(next,p,itemById))&&hasPackingAndTravelSupport(next,prior,itemById,mode==='fragile_protection'?1:.65,container)&&hasVerticalEntry(next,prior,itemById,container,blockedSpaces.get(container.id))
                 && !assessStackLoads([...prior,next],itemById,[container],stackLoadContactCache).some(load=>load.status==='conflict');
