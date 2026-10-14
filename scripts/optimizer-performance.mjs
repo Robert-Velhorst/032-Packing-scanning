@@ -11,6 +11,10 @@ const counts = value('counts', '50,100,250').split(',').map(Number);
 const runs = Number(value('runs', '3'));
 const shapeCount = Number(value('shapes', '0'));
 const optimizerRef = value('optimizer-ref', '');
+const mode = value('mode', '');
+if (mode && !['balanced', 'maximum_capacity', 'easy_access', 'fragile_protection'].includes(mode)) {
+  throw new Error('Use --mode=balanced,maximum_capacity,easy_access, or fragile_protection.');
+}
 const assertRectangularPlacementsDoNotOverlap = (plan) => {
   if (shapeCount > 0) return;
   const placements = plan.placements;
@@ -114,6 +118,7 @@ try {
     const trip = {
       ...structuredClone(seed.trips[0]),
       sample: false,
+      ...(mode ? { mode } : {}),
       containerIds: ['benchmark-bag'],
       entries: items.map((item, index) => ({
         id: `benchmark-entry-${index}`,
@@ -172,6 +177,7 @@ try {
       : 'varied rectangular items in a 1000x800x500 mm bag',
     dimensions: shapeCount ? '120x100x60 mm voxel U-shapes mixed with 48-200 x 36-162 x 18-120 mm rectangles'
       : '48-200 x 36-162 x 18-120 mm, deterministic per item index',
+    mode: mode || seed.trips[0].mode,
     optimizerRef: optimizerRef || 'working tree',
     node: process.version,
     shapeCount,

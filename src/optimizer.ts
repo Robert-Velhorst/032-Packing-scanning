@@ -26,12 +26,6 @@ interface FreeSpace {
   height: number;
 }
 
-interface Candidate extends FreeSpace {
-  rotation: number;
-  score: number;
-  dimensions: { length: number; width: number; height: number };
-}
-
 const volume = (box: { length: number; width: number; height: number }) => box.length * box.width * box.height;
 const spaceVolume = (box: FreeSpace) => box.length * box.width * box.height;
 const EPSILON = 0.01;
@@ -243,7 +237,14 @@ function searchInsertionOrders(orders: PlanItem[][], containers: Container[], lo
   };
   // Preserve existing rectangular-only mode behavior, including its tie order.
   if (!rules.length && !orders[0]?.some(item => item.packingShape)) {
-    for (const order of orders) evaluate(order);
+    const completePlanHasMaximumScore = mode === 'maximum_capacity' || mode === 'fragile_protection'
+      || mode === 'balanced' && containers.length === 1;
+    for (const order of orders) {
+      evaluate(order);
+      // A complete result is unbeatable in these modes. In balanced mode this
+      // is true only with one bag, where the balance penalty is always zero.
+      if (completePlanHasMaximumScore && bestResult?.excluded.length === 0) break;
+    }
     return { results: bestResult ? [bestResult] : [], limited: false };
   }
   for (const order of orders) evaluate(order);
@@ -437,7 +438,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     let loadFailure: string | undefined;
     let separationFailure: string | undefined;
     let searchLimited=false;
-    let best: { placement: Placement; container: Container; candidate: Candidate; lookahead: number; affinity: boolean } | undefined;
+    let best: { placement: Placement; container: Container; score: number; lookahead: number; affinity: boolean } | undefined;
     const lookaheadCache = new Map<string,number>();
     const balancingBags = mode === 'balanced' ? candidateContainers.filter(bag => !blockedBagIds.has(bag.id) && !containerError(bag) && !interiorSupportError(bag.packingInterior)) : [];
     const completeBalancedTotals = balancingBags.every(bag => typeof bag.tareGrams === 'number' && Number.isFinite(bag.tareGrams) && bag.tareGrams >= 0
@@ -499,7 +500,6 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             : basePositions;
           if(positions.length>=20000)searchLimited=true;
           for (const position of positions) {
-            const candidateBase = { ...position, length: orientation.length, width: orientation.width, height: orientation.height };
             const placement: Placement = {
               instanceId: item.instanceId,
               entryId: item.entryId,
@@ -562,7 +562,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
                 // An isolated probe cannot change the already-checked stack graph.
                 && (!hasStackContact(next,prior,itemById,container)||!assessStackLoads([...prior,next],itemById,[container],stackLoadContactCache).some(load=>load.status==='conflict')));
               if(!possible)lookahead=future.volumeMm3*20;}
-            const score = placementScore(candidateBase, space, container, item, highestFragilePlacementZ, massAfter, mode)+lookahead;
+            const score = placementScore(placement, space, container, item, highestFragilePlacementZ, massAfter, mode)+lookahead;
             const weightCost = bagCosts.get(container.id), priorCost = best && bagCosts.get(best.container.id);
             // Compare lighter bags only after all placement gates, and never override
             // a known future-shape obstruction. Within a bag retain geometric scoring.
@@ -571,9 +571,9 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             const compareAffinity = best && affinity!==best.affinity;
             const compareWeight = best && container.id !== best.container.id && lookahead === 0 && best.lookahead === 0
               && weightCost !== undefined && priorCost !== undefined && Math.abs(weightCost - priorCost) > 1e-12;
-            if (!best || (compareAffinity ? affinity : compareWeight ? weightCost! < priorCost! : score < best.candidate.score)) {
+            if (!best || (compareAffinity ? affinity : compareWeight ? weightCost! < priorCost! : score < best.score)) {
               placement.layer=1+bagPlacements.reduce((maxLayer, placed) => placed.compartmentId===space.compartmentId && placed.z + placed.height <= position.z + EPSILON ? Math.max(maxLayer, placed.layer) : maxLayer, 0);
-              best = { placement, container, lookahead, affinity, candidate: { ...candidateBase, rotation: orientation.rotation, score, dimensions: orientation } };
+              best = { placement, container, score, lookahead, affinity };
             }
           }
         }
