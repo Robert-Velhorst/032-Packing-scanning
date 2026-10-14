@@ -461,6 +461,9 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
       const hasShapes=useShapeSequence;
       const bagPlacements=placementsByContainer.get(container.id)??[];
       const highestFragilePlacementZ=item.fragile&&mode==='balanced'?bagPlacements.reduce((highest,placement)=>itemById.get(placement.instanceId)?.fragile?Math.max(highest,placement.z):highest,Number.NEGATIVE_INFINITY):Number.NEGATIVE_INFINITY;
+      // This candidate-independent stack condition must not scan the bag for
+      // every free-space position evaluated below.
+      const hasStackSensitivePlacement=stackSensitiveIds.size>0&&bagPlacements.some(placed=>stackSensitiveIds.has(placed.instanceId));
       const supportIndex=supportIndexes?.get(container.id);
       const reservation=lookaheadDepth>1&&futureShapes.length>1?reservePendingShapes(futureShapes,bagPlacements,container,itemById,mode,lookaheadDepth,rules,usableHeight(container),blockedSpaces.get(container.id)??[]):undefined;
       const anchors=[...(reservation?.placements??[]),...futureShapes.flatMap(future=>{
@@ -525,7 +528,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             const separationError = rules.length?placementSeparationError(placement,[...placements,...savedMassPositions],rules,itemById):undefined;
             if(separationError){separationFailure=separationError;continue;}
             if (rejected.some((failed) => samePlacementGeometry(failed, placement))) continue;
-            const needsStackCheck = useShapeSequence || stackSensitiveIds.has(item.instanceId) || bagPlacements.some(placed => stackSensitiveIds.has(placed.instanceId));
+            const needsStackCheck = useShapeSequence || stackSensitiveIds.has(item.instanceId) || hasStackSensitivePlacement;
             const conflicts = needsStackCheck && hasStackContact(placement, bagPlacements, itemById, container)
               ? assessStackLoads([...bagPlacements, placement], itemById, [container],stackLoadContactCache).filter(load => load.status === 'conflict')
               : [];
