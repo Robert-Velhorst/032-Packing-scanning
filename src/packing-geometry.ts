@@ -150,7 +150,12 @@ export function fitsGeometrySpace(p:Placement,bag:Container,item?:ShapeItem):boo
 export function fitsGeometrySpaceInValidatedContainer(p:Placement,bag:Container,item?:ShapeItem,blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag)):boolean {
   const usableHeight=bag.inside.height-(bag.lidClearanceMm??0);
   if(!fitsCompartment(p,bag)||p.x<0||p.y<0||p.z<0||p.x+p.length>bag.inside.length+EPS||p.y+p.width>bag.inside.width+EPS||p.z+p.height>usableHeight+EPS)return false;
-  return !placementBoxes(p,item).some(box=>blockedSpaces.some(blocked=>boxesIntersect(box,blocked)));
+  // This gate runs for every candidate; compare local shape boxes by offset instead of allocating translated boxes.
+  if(!blockedSpaces.length)return true;
+  if(!item?.packingShape){for(const blocked of blockedSpaces)if(boxesIntersect(p,blocked))return false;return true;}
+  for(const box of localGeometry(item.packingShape,p.rotation??0).boxes)
+    for(const blocked of blockedSpaces)if(translatedBoxesIntersect(box,p.x,p.y,p.z,blocked,0,0,0))return false;
+  return true;
 }
 /** Proper axis rotation; negative coordinates are deliberate and retain exact contact. */
 export function gravityBox(box:GeometryBox,up:GravityUp):GeometryBox{
@@ -317,9 +322,16 @@ export function hasPackingAndTravelSupport(p:Placement,placed:Placement[],items:
 export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,bag:Container,blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[]):boolean {
   const top=bag.inside.height;
   const obstacles=cachedObstacles??[...blockedSpaces,...placed.filter(other=>other.containerId===p.containerId).flatMap(other=>placementBoxes(other,items.get(other.instanceId)))];
-  for(const b of placementBoxes(p,items.get(p.instanceId))){
-    const sweepTop=b.z+Math.max(b.height,top-b.z+p.height),right=b.x+b.length,back=b.y+b.width;
-    for(const o of obstacles)if(b.x<o.x+o.length-EPS&&right>o.x+EPS&&b.y<o.y+o.width-EPS&&back>o.y+EPS&&b.z<o.z+o.height-EPS&&sweepTop>o.z+EPS)return false;
+  // Keep both rectangular and shaped candidate sweeps allocation-free.
+  const shape=items.get(p.instanceId)?.packingShape;
+  if(!shape){
+    const sweepTop=p.z+Math.max(p.height,top-p.z+p.height),right=p.x+p.length,back=p.y+p.width;
+    for(const o of obstacles)if(p.x<o.x+o.length-EPS&&right>o.x+EPS&&p.y<o.y+o.width-EPS&&back>o.y+EPS&&p.z<o.z+o.height-EPS&&sweepTop>o.z+EPS)return false;
+    return true;
+  }
+  for(const b of localGeometry(shape,p.rotation??0).boxes){
+    const x=p.x+b.x,y=p.y+b.y,z=p.z+b.z,right=x+b.length,back=y+b.width,sweepTop=z+Math.max(b.height,top-z+p.height);
+    for(const o of obstacles)if(x<o.x+o.length-EPS&&right>o.x+EPS&&y<o.y+o.width-EPS&&back>o.y+EPS&&z<o.z+o.height-EPS&&sweepTop>o.z+EPS)return false;
   }
   return true;
 }
