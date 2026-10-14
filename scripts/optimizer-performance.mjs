@@ -8,6 +8,23 @@ const value = (name, fallback) => {
 const counts = value('counts', '50,100,250').split(',').map(Number);
 const runs = Number(value('runs', '3'));
 const shapeCount = Number(value('shapes', '0'));
+const assertRectangularPlacementsDoNotOverlap = (plan) => {
+  if (shapeCount > 0) return;
+  const placements = plan.placements;
+  const epsilon = 0.01;
+  for (let index = 0; index < placements.length; index += 1) {
+    const left = placements[index];
+    for (let otherIndex = index + 1; otherIndex < placements.length; otherIndex += 1) {
+      const right = placements[otherIndex];
+      if (left.containerId === right.containerId
+        && left.x < right.x + right.length - epsilon && left.x + left.length > right.x + epsilon
+        && left.y < right.y + right.width - epsilon && left.y + left.width > right.y + epsilon
+        && left.z < right.z + right.height - epsilon && left.z + left.height > right.z + epsilon) {
+        throw new Error(`Rectangular placements ${left.instanceId} and ${right.instanceId} overlap.`);
+      }
+    }
+  }
+};
 if (!counts.length || counts.some((count) => !Number.isInteger(count) || count < 1 || count > 500)) {
   throw new Error('Use --counts= with comma-separated item counts from 1 to 500.');
 }
@@ -114,12 +131,14 @@ try {
     const input = fixture(count);
     const warmup = buildPlan(input.trip, input.items, input.bags);
     if (warmup.placements.length !== count) throw new Error(`Warm-up placed ${warmup.placements.length} of ${count} items.`);
+    assertRectangularPlacementsDoNotOverlap(warmup);
     const samples = [];
     for (let run = 0; run < runs; run += 1) {
       const start = performance.now();
       const plan = buildPlan(input.trip, input.items, input.bags);
       samples.push((performance.now() - start) / 1000);
       if (plan.placements.length !== count) throw new Error(`Run ${run + 1} placed ${plan.placements.length} of ${count} items.`);
+      assertRectangularPlacementsDoNotOverlap(plan);
     }
     const sorted = [...samples].sort((left, right) => left - right);
     results.push({ itemCount: count, medianSeconds: sorted[Math.floor(sorted.length / 2)], samplesSeconds: samples, placed: count });
