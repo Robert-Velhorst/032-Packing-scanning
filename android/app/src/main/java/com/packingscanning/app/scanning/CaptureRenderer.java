@@ -52,7 +52,10 @@ final class CaptureRenderer implements GLSurfaceView.Renderer {
             return YuvRgbInput.sample(new ByteBuffer[]{p[0].getBuffer(),p[1].getBuffer(),p[2].getBuffer()},new int[]{p[0].getRowStride(),p[1].getRowStride(),p[2].getRowStride()},new int[]{p[0].getPixelStride(),p[1].getPixelStride(),p[2].getPixelStride()},image.getWidth(),image.getHeight(),corners,LocalItemDetector.SIZE);
         }finally{java.util.Arrays.fill(corners,0);}
     }
-    void close() { capturing = false; sampler.close(); session = null; latestFrame=null; previewRevision=-1; previewCount=0; }
+    void close() {
+        capturing = false; sampler.close(); session = null; latestFrame=null; previewRevision=-1; previewCount=0;
+        for (int index = 0; index < preview.capacity(); index++) preview.put(index,0f);
+    }
 
     @Override public void onSurfaceCreated(GL10 unused, EGLConfig config) {
         int[] textures = new int[1]; GLES20.glGenTextures(1,textures,0); texture = textures[0];

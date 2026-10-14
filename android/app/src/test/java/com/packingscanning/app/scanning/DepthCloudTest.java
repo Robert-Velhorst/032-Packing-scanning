@@ -120,6 +120,16 @@ public class DepthCloudTest {
         assertTrue(cloud.captureReadinessIssue().contains("capture-area edge"));
     }
 
+    @Test public void clearingScanReleasesInMemoryPointCloud() {
+        DepthCloud cloud = new DepthCloud(0.5);
+        cloud.addFrame(1,cube(false),new float[] {0,0,1});
+        assertTrue(cloud.pointCount() > 0);
+        cloud.clear();
+        assertEquals(0,cloud.pointCount());
+        assertEquals(0,cloud.viewCount());
+        assertEquals(0,cloud.previewPoints().length);
+    }
+
     @Test public void duplicateOrOldDepthCannotIncreaseCoverage() {
         DepthCloud cloud = new DepthCloud(0.5);
         cloud.addFrame(10,cube(false),new float[] {0,0,1});

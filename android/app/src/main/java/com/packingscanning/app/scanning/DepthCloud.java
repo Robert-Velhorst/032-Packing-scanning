@@ -2,6 +2,7 @@ package com.packingscanning.app.scanning;
 
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /** Pure geometry in metres in one capture-local frame. No camera or storage dependencies. */
@@ -156,6 +157,15 @@ public final class DepthCloud {
 
     public synchronized int pointCount() { return pointCount; }
     public synchronized int viewCount() { return directions.size(); }
+
+    synchronized void clear() {
+        Arrays.fill(voxelKeys,0L);
+        Arrays.fill(voxelPoints,0f);
+        Arrays.fill(voxelSlots,0);
+        pointCount=0; edgePointCount=0; pointRevision++; lastTimestamp=-1; frames=0; capped=false;
+        directions.clear();
+    }
+
     synchronized long pointRevision() { return pointRevision; }
 
     /** Cheap gate for the review button; the full scan envelope is fitted only on user request. */
