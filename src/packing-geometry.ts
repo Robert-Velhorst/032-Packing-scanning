@@ -198,24 +198,28 @@ function rectangleFaceContact(upper:GeometryBox,lower:GeometryBox):number {
 type SupportPlaneGroup={shapes:Placement[];rectangles:Map<number,Placement[]>};
 /** Incremental candidate index for rectangular supports; shaped tops may be stepped. */
 export class RectangularSupportIndex {
-  private readonly groups=new Map<string,SupportPlaneGroup>();
+  private readonly groups=new Map<string,Map<string|undefined,SupportPlaneGroup>>();
   private readonly order=new Map<string,number>();
   private nextOrder=0;
   private readonly items:Map<string,ShapeItem>;
   constructor(items:Map<string,ShapeItem>,placements:Placement[]=[]){this.items=items;for(const placement of placements)this.add(placement);}
   add(placement:Placement){
-    const key=JSON.stringify([placement.containerId,placement.compartmentId??null]);let group=this.groups.get(key);
-    if(!group){group={shapes:[],rectangles:new Map()};this.groups.set(key,group);}
+    let compartments=this.groups.get(placement.containerId);if(!compartments){compartments=new Map();this.groups.set(placement.containerId,compartments);}
+    let group=compartments.get(placement.compartmentId);if(!group){group={shapes:[],rectangles:new Map()};compartments.set(placement.compartmentId,group);}
     this.order.set(placement.instanceId,this.nextOrder++);
     if(this.items.get(placement.instanceId)?.packingShape){group.shapes.push(placement);return;}
     const plane=Math.floor((placement.z+placement.height)/(2*EPS)),bucket=group.rectangles.get(plane)??[];
     bucket.push(placement);group.rectangles.set(plane,bucket);
   }
   candidates(placement:Placement){
-    const group=this.groups.get(JSON.stringify([placement.containerId,placement.compartmentId??null]));if(!group)return [];
-    const candidates=[...group.shapes],plane=Math.floor(placement.z/(2*EPS));let rectanglePlanes=0;
-    for(let offset=-1;offset<=1;offset++){const bucket=group.rectangles.get(plane+offset);if(bucket){rectanglePlanes++;candidates.push(...bucket);}}
-    if(group.shapes.length||rectanglePlanes>1)candidates.sort((left,right)=>(this.order.get(left.instanceId)??0)-(this.order.get(right.instanceId)??0));
+    const group=this.groups.get(placement.containerId)?.get(placement.compartmentId);if(!group)return [];
+    const plane=Math.floor(placement.z/(2*EPS)),lower=group.rectangles.get(plane-1),center=group.rectangles.get(plane),upper=group.rectangles.get(plane+1);
+    const rectanglePlanes=Number(!!lower)+Number(!!center)+Number(!!upper);
+    if(!group.shapes.length&&rectanglePlanes===1)return lower??center??upper!;
+    if(!group.shapes.length&&rectanglePlanes===0)return [];
+    const candidates=group.shapes.length?[...group.shapes]:[];
+    if(lower)candidates.push(...lower);if(center)candidates.push(...center);if(upper)candidates.push(...upper);
+    if(rectanglePlanes>1||(group.shapes.length>0&&rectanglePlanes>0))candidates.sort((left,right)=>(this.order.get(left.instanceId)??0)-(this.order.get(right.instanceId)??0));
     return candidates;
   }
 }

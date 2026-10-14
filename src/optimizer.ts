@@ -700,7 +700,11 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace): FreeSpace[] {
     if (used.z + used.height < top - EPSILON) next.push({ ...space, z: used.z + used.height, height: top - used.z - used.height });
   }
   const valid = next.filter((space) => space.length > EPSILON && space.width > EPSILON && space.height > EPSILON);
-  return valid.filter((space, index) => !valid.some((other, otherIndex) => otherIndex !== index && contains(other, space)&&(!contains(space,other)||otherIndex<index)));
+  if(valid.length<2)return valid;
+  // The containment pass would discard duplicate geometry; preserve its first record without pairwise comparisons.
+  const unique:FreeSpace[]=[],seen=new Set<string>();
+  for(const space of valid){const key=`${space.x},${space.y},${space.z},${space.length},${space.width},${space.height}`;if(seen.has(key))continue;seen.add(key);unique.push(space);}
+  return unique.filter((space,index)=>!unique.some((other,otherIndex)=>otherIndex!==index&&contains(other,space)&&(!contains(space,other)||otherIndex<index)));
 }
 
 function contains(outer: FreeSpace, inner: FreeSpace) {

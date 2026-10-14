@@ -27,6 +27,8 @@ describe('adopted occupied-cell planning',()=>{
   const index=new RectangularSupportIndex(items,placed);
   expect(index.candidates(upper)).toContain(support);expect(index.candidates(upper)).not.toContain(decoys[0]);
   expect(hasGeometrySupport(upper,placed,items,.65)).toBe(true);expect(hasGeometrySupport(upper,placed,items,.65,undefined,0,index)).toBe(true);
+  const nearPlane=placement('near-plane',{height:60.004}),adjacentPlane=placement('adjacent-plane',{height:59.997}),otherCompartment=placement('other-compartment',{height:60,compartmentId:'separate'}),otherBag=placement('other-bag',{height:60,containerId:'other'}),ordered=[nearPlane,otherCompartment,adjacentPlane,otherBag],orderedItems=new Map<string,LibraryItem>(ordered.map(p=>[p.instanceId,item(p.itemId)])),orderedIndex=new RectangularSupportIndex(orderedItems,ordered);
+  expect(orderedIndex.candidates(upper)).toEqual([nearPlane,adjacentPlane]);expect(hasGeometrySupport(upper,ordered,orderedItems,.65,undefined,0,orderedIndex)).toBe(hasGeometrySupport(upper,ordered,orderedItems,.65));
   const shapedSupport=placement('shaped-support',{height:60}),shapedItems=new Map<string,LibraryItem>([[shapedSupport.instanceId,item('shaped-support',shaped.fittedDimensionsMm,shaped)]]),shapedIndex=new RectangularSupportIndex(shapedItems,[shapedSupport]);
   expect(shapedIndex.candidates(upper)).toContain(shapedSupport);expect(hasGeometrySupport(upper,[shapedSupport],shapedItems,.65,undefined,0,shapedIndex)).toBe(hasGeometrySupport(upper,[shapedSupport],shapedItems,.65));
  });
