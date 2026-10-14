@@ -7,7 +7,7 @@ type LoadItem = Pick<LibraryItem, 'fragile' | 'maxTopLoadGrams' | 'topLoadEviden
 
 /** Reuses immutable placement-pair geometry during one plan calculation. */
 export class StackLoadContactCache {
-  private readonly contacts = new WeakMap<Placement, WeakMap<Placement, Map<string, number>>>();
+  private readonly contacts = new WeakMap<Placement, WeakMap<Placement, Map<number, number>>>();
   private readonly items: Map<string, PlanItem>;
 
   constructor(items: Map<string, PlanItem>) {
@@ -29,7 +29,7 @@ export class StackLoadContactCache {
       byFrame = new Map();
       byLower.set(lower, byFrame);
     }
-    const key = `${up.axis}:${up.sign}`;
+    const key = up.axis * 2 + Number(up.sign < 0);
     if (byFrame.has(key)) return byFrame.get(key)!;
     const area = geometryContactArea(upper, lower, this.items, up);
     byFrame.set(key, area);
