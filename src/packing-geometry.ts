@@ -122,10 +122,25 @@ export function placementSurface(p:Placement,item:ShapeItem):SolidSurface|undefi
 export function boxesIntersect(a:GeometryBox,b:GeometryBox):boolean {
   return a.x<b.x+b.length-EPS&&a.x+a.length>b.x+EPS&&a.y<b.y+b.width-EPS&&a.y+a.width>b.y+EPS&&a.z<b.z+b.height-EPS&&a.z+a.height>b.z+EPS;
 }
+function translatedBoxesIntersect(a:GeometryBox,ax:number,ay:number,az:number,b:GeometryBox,bx:number,by:number,bz:number):boolean {
+  const leftX=ax+a.x,leftY=ay+a.y,leftZ=az+a.z,rightX=bx+b.x,rightY=by+b.y,rightZ=bz+b.z;
+  return leftX<rightX+b.length-EPS&&leftX+a.length>rightX+EPS
+    &&leftY<rightY+b.width-EPS&&leftY+a.width>rightY+EPS
+    &&leftZ<rightZ+b.height-EPS&&leftZ+a.height>rightZ+EPS;
+}
 export function geometryIntersects(a:Placement,b:Placement,items:Map<string,ShapeItem>):boolean {
   if(!boxesIntersect(a,b))return false;
-  if(!items.get(a.instanceId)?.packingShape&&!items.get(b.instanceId)?.packingShape)return true;
-  return placementBoxes(a,items.get(a.instanceId)).some(left=>placementBoxes(b,items.get(b.instanceId)).some(right=>boxesIntersect(left,right)));
+  const leftItem=items.get(a.instanceId),rightItem=items.get(b.instanceId);
+  const leftBoxes=leftItem?.packingShape?localGeometry(leftItem.packingShape,a.rotation??0).boxes:undefined;
+  const rightBoxes=rightItem?.packingShape?localGeometry(rightItem.packingShape,b.rotation??0).boxes:undefined;
+  if(!leftBoxes&&!rightBoxes)return true;
+  if(leftBoxes&&rightBoxes){
+    for(const left of leftBoxes)for(const right of rightBoxes)if(translatedBoxesIntersect(left,a.x,a.y,a.z,right,b.x,b.y,b.z))return true;
+    return false;
+  }
+  if(leftBoxes){for(const left of leftBoxes)if(translatedBoxesIntersect(left,a.x,a.y,a.z,b,0,0,0))return true;return false;}
+  for(const right of rightBoxes!)if(translatedBoxesIntersect(a,0,0,0,right,b.x,b.y,b.z))return true;
+  return false;
 }
 export function fitsGeometrySpace(p:Placement,bag:Container,item?:ShapeItem):boolean {
   if(containerSpaceError(bag))return false;
