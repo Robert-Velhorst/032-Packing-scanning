@@ -345,6 +345,12 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     if(!error)for(const blocked of [...(container.unavailableSpaces??[])].sort((a,b)=>a.x-b.x||a.y-b.y||a.z-b.z||a.length-b.length||a.width-b.width||a.height-b.height))spaces=splitFreeSpaces(spaces,blocked,!useShapeSequence);
     return [container.id,spaces] as const;
   }));
+  const shapeSearchSpaces = useShapeSequence
+    ? new Map(containers.map(container => {
+      const spaces=containerError(container)||usableHeight(container)<=EPSILON?[]:packingRegions(container);
+      return [container.id,spaces.map(region => ({ ...region, shapeSearch: true }))] as const;
+    }))
+    : undefined;
   const itemById = new Map(items.map((item) => [item.instanceId, item]));
   const stackLoadContactCache = new StackLoadContactCache(itemById);
   // Rectangle-only contacts advance strictly upward; without a fragile or
@@ -476,7 +482,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
         ?[...(verticalEntryObstacles.get(container.id)??[]),...anchors.flatMap(anchor=>placementBoxes(anchor,itemById.get(anchor.instanceId)))]
         :undefined;
       const availableSpaces=freeSpaces.get(container.id)??[];
-      const spaces=hasShapes?[...availableSpaces,...packingRegions(container).map(region=>({...region,shapeSearch:true}))]:availableSpaces;
+      const spaces=hasShapes?[...availableSpaces,...(shapeSearchSpaces?.get(container.id)??[])]:availableSpaces;
       const orientations=geometryOrientations(item,container);
       const compartmentContexts=new Map<string|undefined,{compartment:ReturnType<typeof compartmentFor>;eligible:boolean;contentsError?:string;orientations:typeof orientations}>();
       for (const space of spaces) {
