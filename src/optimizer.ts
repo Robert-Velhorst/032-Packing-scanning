@@ -577,12 +577,17 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             const compareWeight = best && container.id !== best.container.id && lookahead === 0 && best.lookahead === 0
               && weightCost !== undefined && priorCost !== undefined && Math.abs(weightCost - priorCost) > 1e-12;
             if (!best || (compareAffinity ? affinity : compareWeight ? weightCost! < priorCost! : score < best.score)) {
-              placement.layer=1+bagPlacements.reduce((maxLayer, placed) => placed.compartmentId===space.compartmentId && placed.z + placed.height <= position.z + EPSILON ? Math.max(maxLayer, placed.layer) : maxLayer, 0);
               best = { placement, container, score, lookahead, affinity };
             }
           }
         }
       }
+    }
+
+    if(best){
+      const bestPlacements=placementsByContainer.get(best.container.id)??[];
+      best.placement.layer=1+bestPlacements.reduce((maxLayer,placed)=>placed.compartmentId===best.placement.compartmentId
+        &&placed.z+placed.height<=best.placement.z+EPSILON?Math.max(maxLayer,placed.layer):maxLayer,0);
     }
 
     if (!best) {
