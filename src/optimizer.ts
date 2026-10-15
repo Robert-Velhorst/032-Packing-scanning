@@ -29,6 +29,7 @@ interface FreeSpace {
 const volume = (box: { length: number; width: number; height: number }) => box.length * box.width * box.height;
 const spaceVolume = (box: FreeSpace) => box.length * box.width * box.height;
 const EPSILON = 0.01;
+const obstacleXOrder = (left: GeometryBox, right: GeometryBox) => left.x - right.x;
 const SUPPORT_INDEX_THRESHOLD=64;
 const SHAPED_SUPPORT_INDEX_THRESHOLD=8;
 // Bound the Cartesian product of shape-aware contact positions per orientation.
@@ -457,6 +458,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
   const verticalEntryObstacles=useShapeSequence?new Map(containers.map(bag=>{
     const obstacles:GeometryBox[]=[...(blockedSpaces.get(bag.id)??[])];
     for(const placed of placementsByContainer.get(bag.id)??[])obstacles.push(...placementBoxes(placed,itemById.get(placed.instanceId)));
+    obstacles.sort(obstacleXOrder);
     return [bag.id,obstacles] as const;
   })):undefined;
 
@@ -568,7 +570,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             // bypass those checks and still need the exact geometry gate here.
             if(rules.length>0&&!contactCollisionObstacles&&bagPlacements.some(p=>geometryIntersects(placement,p,itemById)))continue;
             if(!(supportIndex?hasPackingAndTravelSupport(placement,bagPlacements,itemById,mode==='fragile_protection'?1:.65,container,supportIndex):hasPackingAndTravelSupport(placement,bagPlacements,itemById,mode==='fragile_protection'?1:.65,container)))continue;
-            if(hasShapes&&!hasVerticalEntry(placement,bagPlacements,itemById,container,blockedSpaces.get(container.id),verticalEntryObstacles?.get(container.id)))continue;
+            if(hasShapes&&!hasVerticalEntry(placement,bagPlacements,itemById,container,blockedSpaces.get(container.id),verticalEntryObstacles?.get(container.id),true))continue;
             const separationError = rules.length?placementSeparationError(placement,[...placements,...savedMassPositions],rules,itemById):undefined;
             if(separationError){separationFailure=separationError;continue;}
             if (rejected.some((failed) => samePlacementGeometry(failed, placement))) continue;
@@ -660,7 +662,8 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     placements.push(best.placement);
     stackLoadContactCache.register(best.placement);
     placementsByContainer.get(best.container.id)?.push(best.placement);
-    verticalEntryObstacles?.get(best.container.id)?.push(...placementBoxes(best.placement,item));
+    const entryObstacles=verticalEntryObstacles?.get(best.container.id);
+    if(entryObstacles){entryObstacles.push(...placementBoxes(best.placement,item));entryObstacles.sort(obstacleXOrder);}
     const bagPlacements=placementsByContainer.get(best.container.id)!;
     if(supportIndexes?.has(best.container.id))supportIndexes.get(best.container.id)!.add(best.placement);
     else if(supportIndexes&&bagPlacements.length>=supportIndexThreshold)supportIndexes.set(best.container.id,new RectangularSupportIndex(itemById,bagPlacements));
