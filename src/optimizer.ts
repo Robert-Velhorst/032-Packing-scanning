@@ -32,7 +32,7 @@ const EPSILON = 0.01;
 const SUPPORT_INDEX_THRESHOLD=64;
 const SHAPED_SUPPORT_INDEX_THRESHOLD=8;
 // Bound the Cartesian product of shape-aware contact positions per orientation.
-const SHAPE_CONTACT_POSITION_LIMIT=5_000;
+const SHAPE_CONTACT_POSITION_LIMIT=2_500;
 
 export function buildPlan(trip: Trip, library: LibraryItem[], allContainers: Container[], mode: OptimizationMode = trip.mode): PackingPlan {
   const referencedItemIds = new Set(trip.entries.map(entry => entry.itemId));
