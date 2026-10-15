@@ -50,4 +50,8 @@ describe('reconstructed solid boundary',()=>{
     expect(()=>voxelSurface({...solid,occupiedCells:[]})).toThrow();
     expect(voxelSurface(solid)).toEqual(voxelSurface(structuredClone(solid)));
   });
+  it('traverses a fully connected solid at the maximum accepted grid size',()=>{
+    const size=46,occupiedCells=Array.from({length:size**3},(_,cell)=>cell),surface=voxelSurface({grid:{x:size,y:size,z:size},resolutionMm:10,occupiedCells});
+    expect(surface.faceCount).toBe(6*size*size);expect(surface.volumeMm3).toBe(size**3*10**3);
+  });
 });
