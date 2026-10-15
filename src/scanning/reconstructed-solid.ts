@@ -45,11 +45,15 @@ export function voxelSurface(solid: Pick<ReconstructedSolid,'grid'|'resolutionMm
     || !Number.isFinite(resolutionMm) || resolutionMm<10 || resolutionMm>218 || !Array.isArray(occupiedCells)
     || occupiedCells.length<1 || occupiedCells.length>grid.x*grid.y*grid.z
     || occupiedCells.some((n,i) => !Number.isInteger(n) || n<0 || n>=grid.x*grid.y*grid.z || (i>0 && n<=occupiedCells[i-1]))) return fail();
-  const cells=new Set(occupiedCells), index=(x:number,y:number,z:number)=>x+grid.x*(y+grid.y*z);
-  const occupied=(x:number,y:number,z:number)=>x>=0&&x<grid.x&&y>=0&&y<grid.y&&z>=0&&z<grid.z&&cells.has(index(x,y,z));
-  const total=grid.x*grid.y*grid.z,plane=grid.x*grid.y,reached=new Uint8Array(total),pending=new Int32Array(occupiedCells.length);
-  let head=0,tail=1;pending[0]=occupiedCells[0];reached[pending[0]]=1;
-  const enqueue=(cell:number)=>{if(cells.has(cell)&&!reached[cell]){reached[cell]=1;pending[tail++]=cell;}};
+  // 0 is empty, 1 is occupied and unvisited, and 2 is occupied and reached.
+  // Reusing this byte map avoids both the occupied-cell Set and a second bitmap.
+  const total=grid.x*grid.y*grid.z,plane=grid.x*grid.y,cellState=new Uint8Array(total);
+  for(const cell of occupiedCells)cellState[cell]=1;
+  const index=(x:number,y:number,z:number)=>x+grid.x*(y+grid.y*z);
+  const occupied=(x:number,y:number,z:number)=>x>=0&&x<grid.x&&y>=0&&y<grid.y&&z>=0&&z<grid.z&&cellState[index(x,y,z)]===2;
+  const pending=new Int32Array(occupiedCells.length);
+  let head=0,tail=1;pending[0]=occupiedCells[0];cellState[pending[0]]=2;
+  const enqueue=(cell:number)=>{if(cellState[cell]===1){cellState[cell]=2;pending[tail++]=cell;}};
   while(head<tail){
     const cell=pending[head++],x=cell%grid.x,y=Math.floor(cell/grid.x)%grid.y,z=Math.floor(cell/plane);
     if(x>0)enqueue(cell-1);if(x+1<grid.x)enqueue(cell+1);
