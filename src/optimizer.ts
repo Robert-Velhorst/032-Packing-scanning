@@ -369,6 +369,17 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
   // weight-limited item, a candidate cannot create a stacking conflict.
   const stackSensitiveIds = new Set(items.filter(item => item.fragile || item.maxTopLoadGrams !== undefined).map(item => item.instanceId));
   const shapeItems = items.filter(item => item.packingShape);
+  const shapeOrientations = new Map<string, ReturnType<typeof geometryOrientations>>();
+  const orientationsFor = (item: PlanItem, bag: Container) => {
+    if (!item.packingShape) return geometryOrientations(item, bag);
+    const key = `${bag.id}\u0000${item.instanceId}`;
+    let orientations = shapeOrientations.get(key);
+    if (!orientations) {
+      orientations = geometryOrientations(item, bag);
+      shapeOrientations.set(key, orientations);
+    }
+    return orientations;
+  };
   const placedIds = new Set<string>();
   const blockedBagIds = new Set<string>();
   const massConflicts: BagMassConflict[] = [];
@@ -471,7 +482,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
       const futureShapes=container.compartments?[]:shapeItems.filter(i=>{
         if(i.instanceId===item.instanceId||placedIds.has(i.instanceId)||!eligibleForBag(i,container)
           ||(container.massLimitGrams!==undefined&&massAfter+(i.upperMassGrams??0)>container.massLimitGrams+EPSILON))return false;
-        const orientations=geometryOrientations(i,container);
+        const orientations=orientationsFor(i,container);
         if(!orientations.some(o=>fitsOpening(o,container)&&o.length<=container.inside.length+EPSILON&&o.width<=container.inside.width+EPSILON&&o.height<=usableHeight(container)+EPSILON))return false;
         (futureOrientationsById??=new Map()).set(i.instanceId,orientations);
         return true;
@@ -484,7 +495,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
       // every free-space position evaluated below.
       const hasStackSensitivePlacement=stackSensitiveIds.size>0&&bagPlacements.some(placed=>stackSensitiveIds.has(placed.instanceId));
       const supportIndex=supportIndexes?.get(container.id);
-      const reservation=lookaheadDepth>1&&futureShapes.length>1?reservePendingShapes(futureShapes,bagPlacements,container,itemById,mode,lookaheadDepth,rules,usableHeight(container),blockedSpaces.get(container.id)??[]):undefined;
+      const reservation=lookaheadDepth>1&&futureShapes.length>1?reservePendingShapes(futureShapes,bagPlacements,container,itemById,mode,lookaheadDepth,rules,usableHeight(container),blockedSpaces.get(container.id)??[],orientationsFor):undefined;
       const reservedMassGrams=reservation?.placements.reduce((sum,placement)=>sum+(itemById.get(placement.instanceId)?.upperMassGrams??0),0)??0;
       const anchors=[...(reservation?.placements??[]),...futureShapes.flatMap(future=>{
         const o=futureOrientationsById?.get(future.instanceId)?.[0];
@@ -496,7 +507,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
         :undefined;
       const availableSpaces=freeSpaces.get(container.id)??[];
       const spaces=hasShapes?[...availableSpaces,...(shapeSearchSpaces?.get(container.id)??[])]:availableSpaces;
-      const orientations=geometryOrientations(item,container);
+      const orientations=orientationsFor(item,container);
       const compartmentContexts=new Map<string|undefined,{compartment:ReturnType<typeof compartmentFor>;eligible:boolean;contentsError?:string;orientations:typeof orientations}>();
       for (const space of spaces) {
         let context=compartmentContexts.get(space.compartmentId);
@@ -657,7 +668,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
 
 /** Small beam of simultaneous reservations used by repair attempts. These positions
  * influence scoring only; the final plan still checks each real insertion separately. */
-function reservePendingShapes(pending: PlanItem[], prior: Placement[], bag: Container, items: Map<string,PlanItem>, mode: OptimizationMode, depth: number, rules: SeparationRule[], usableHeight: number, blockedSpaces: ReturnType<typeof containerBlockedBoxes>) {
+function reservePendingShapes(pending: PlanItem[], prior: Placement[], bag: Container, items: Map<string,PlanItem>, mode: OptimizationMode, depth: number, rules: SeparationRule[], usableHeight: number, blockedSpaces: ReturnType<typeof containerBlockedBoxes>, orientationsFor:(item:PlanItem,bag:Container)=>ReturnType<typeof geometryOrientations>) {
   let beam: { placements: Placement[]; penalty: number; distance: number; massGrams:number }[] = [{placements:prior,penalty:0,distance:0,massGrams:massInContainer(bag.id,prior,items,bag.tareGrams??0)}];
   const future=[...pending].sort((a,b)=>Number(b.required)-Number(a.required)||b.volumeMm3-a.volumeMm3).slice(0,depth);
   for (const item of future) {
@@ -666,7 +677,7 @@ function reservePendingShapes(pending: PlanItem[], prior: Placement[], bag: Cont
       next.push({...state,penalty:state.penalty+item.volumeMm3*20});
       const itemMassGrams=item.upperMassGrams??0;
       if(bag.massLimitGrams!==undefined&&state.massGrams+itemMassGrams>bag.massLimitGrams+EPSILON)continue;
-      for (const orientation of geometryOrientations(item,bag)) {
+      for (const orientation of orientationsFor(item,bag)) {
         if(!fitsOpening(orientation,bag))continue;
         // Corners preserve alternatives at both ends. A bounded contact sample
         // adds positions between previously reserved shapes.
