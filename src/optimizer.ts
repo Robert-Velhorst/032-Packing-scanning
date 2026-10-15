@@ -764,7 +764,6 @@ function massInContainer(containerId: string, placements: Placement[], items: Ma
 
 function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVolumes = false): FreeSpace[] {
   const next: FreeSpace[] = [];
-  const previousSpaces = new Set(spaces);
   const usedRight=used.x+used.length,usedBack=used.y+used.width,usedTop=used.z+used.height;
   for (const space of spaces) {
     const right=space.x+space.length;
@@ -816,6 +815,7 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
   }
   if(unique.length<2)return unique;
   if(unique.length<32)return unique.filter((space,index)=>!unique.some((other,otherIndex)=>otherIndex!==index&&containsSpace(other,space)&&(!containsSpace(space,other)||otherIndex<index)));
+  const previousSpaces = new Set(spaces);
   // Rectangle-only plans reuse each candidate volume across many containment pairs.
   const ordered=unique.map((space,index)=>({space,index,right:space.x+space.length,back:space.y+space.width,top:space.z+space.height,volume:cacheCandidateVolumes?spaceVolume(space):undefined}))
     .sort((left,right)=>left.space.x-right.space.x||left.index-right.index);
