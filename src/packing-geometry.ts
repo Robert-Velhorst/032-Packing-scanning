@@ -51,7 +51,8 @@ function compile(shape:PackingShape):Compiled {
   // Exact disjoint greedy cuboids, without trimming or filling any occupied cell.
   for(let z=0;z<nz;z++)for(let y=0;y<ny;y++)for(let x=0;x<nx;x++)if(present[idx(x,y,z)]){
     let right=x+1;while(right<nx&&present[idx(right,y,z)])right++;
-    let back=y+1;while(back<ny&&Array.from({length:right-x},(_,i)=>present[idx(x+i,back,z)]).every(Boolean))back++;
+    let back=y+1;
+    while(back<ny){let filled=true;for(let a=x;a<right;a++)if(!present[idx(a,back,z)]){filled=false;break;}if(!filled)break;back++;}
     let top=z+1;
     while(top<nz){let filled=true;for(let b=y;b<back&&filled;b++)for(let a=x;a<right;a++)if(!present[idx(a,b,top)]){filled=false;break;}if(!filled)break;top++;}
     for(let c=z;c<top;c++)for(let b=y;b<back;b++)for(let a=x;a<right;a++)present[idx(a,b,c)]=0;
