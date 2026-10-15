@@ -30,7 +30,7 @@ const volume = (box: { length: number; width: number; height: number }) => box.l
 const spaceVolume = (box: FreeSpace) => box.length * box.width * box.height;
 const EPSILON = 0.01;
 const obstacleXOrder = (left: GeometryBox, right: GeometryBox) => left.x - right.x;
-const SUPPORT_INDEX_THRESHOLD=64;
+const SUPPORT_INDEX_THRESHOLD=16;
 const SHAPED_SUPPORT_INDEX_THRESHOLD=8;
 // Bound the Cartesian product of shape-aware contact positions per orientation.
 const SHAPE_CONTACT_POSITION_LIMIT=100;
