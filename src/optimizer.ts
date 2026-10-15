@@ -237,12 +237,16 @@ function searchInsertionOrders(orders: PlanItem[][], containers: Container[], lo
   };
   // Preserve existing rectangular-only mode behavior, including its tie order.
   if (!rules.length && !orders[0]?.some(item => item.packingShape)) {
+    const balancedDistributionAffectsScore = mode === 'balanced' && containers.length > 1
+      && containers.every(bag => typeof bag.tareGrams === 'number' && Number.isFinite(bag.tareGrams) && bag.tareGrams >= 0)
+      && (orders[0]?.every(item => typeof item.upperMassGrams === 'number' && Number.isFinite(item.upperMassGrams) && item.upperMassGrams >= 0) ?? false);
     const completePlanHasMaximumScore = mode === 'maximum_capacity' || mode === 'fragile_protection'
-      || mode === 'balanced' && containers.length === 1;
+      || mode === 'balanced' && !balancedDistributionAffectsScore;
     for (const order of orders) {
       evaluate(order);
       // A complete result is unbeatable in these modes. In balanced mode this
-      // is true only with one bag, where the balance penalty is always zero.
+      // also holds when recorded weights are incomplete, so no balance penalty
+      // can distinguish complete plans and the first complete order wins ties.
       if (completePlanHasMaximumScore && bestResult?.excluded.length === 0) break;
     }
     return { results: bestResult ? [bestResult] : [], limited: false };
