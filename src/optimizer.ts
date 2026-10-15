@@ -562,12 +562,11 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             // those same bounds for every corner candidate.
             if((useShapeSequence||(blockedSpaces.get(container.id)?.length??0)>0)
               &&!fitsGeometrySpaceInValidatedContainer(placement,container,item,blockedSpaces.get(container.id)))continue;
-            // Ordinary rectangular candidates come from free regions that have
-            // already been split around every placed box. Keep the exact
-            // geometry check for shape, interior, compartment, and separation
-            // searches, where candidate positions can intentionally bypass
-            // those rectangular free-space boundaries.
-            if((useShapeSequence||rules.length>0)&&!contactCollisionObstacles&&bagPlacements.some(p=>geometryIntersects(placement,p,itemById)))continue;
+            // Ordinary candidates remain inside free regions already split
+            // around every occupied geometry box. Shape-search positions are
+            // collision-filtered while generated; only clearance offsets can
+            // bypass those checks and still need the exact geometry gate here.
+            if(rules.length>0&&!contactCollisionObstacles&&bagPlacements.some(p=>geometryIntersects(placement,p,itemById)))continue;
             if(!(supportIndex?hasPackingAndTravelSupport(placement,bagPlacements,itemById,mode==='fragile_protection'?1:.65,container,supportIndex):hasPackingAndTravelSupport(placement,bagPlacements,itemById,mode==='fragile_protection'?1:.65,container)))continue;
             if(hasShapes&&!hasVerticalEntry(placement,bagPlacements,itemById,container,blockedSpaces.get(container.id),verticalEntryObstacles?.get(container.id)))continue;
             const separationError = rules.length?placementSeparationError(placement,[...placements,...savedMassPositions],rules,itemById):undefined;
