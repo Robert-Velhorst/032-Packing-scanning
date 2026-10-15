@@ -463,6 +463,10 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
   for (const item of items) {
     if (placedIds.has(item.instanceId)) continue;
     const candidateContainers = containers.filter(container => eligibleForBag(item,container));
+    const placementSequenceMetadata:Partial<Pick<Placement,'insertionOrder'>>=useShapeSequence?{insertionOrder:placements.length+1}:{};
+    const shapePlacementMetadata:Partial<Pick<Placement,'shapeKey'>>=item.packingShape?{shapeKey:shapeKey(item.packingShape)}:{};
+    const formPlacementMetadata:Partial<Pick<Placement,'packingFormId'|'packingFormKey'>>=item.packingForm
+      ?{packingFormId:item.packingForm.id,packingFormKey:packingFormKey(item.packingForm)}:{};
     const groupedRules = rules.filter(rule => rule.kind !== 'clearance' && (rule.firstEntryId === item.entryId || rule.secondEntryId === item.entryId));
     let loadFailure: string | undefined;
     let separationFailure: string | undefined;
@@ -478,6 +482,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
       if (blockedBagIds.has(container.id)||containerError(container)||interiorSupportError(container.packingInterior)) continue;
       const massAfter = (massByContainer.get(container.id) ?? container.tareGrams ?? 0) + (item.upperMassGrams ?? 0);
       if (container.massLimitGrams !== undefined && massAfter > container.massLimitGrams + EPSILON) continue;
+      const interiorPlacementMetadata:Partial<Pick<Placement,'interiorKey'>>=container.packingInterior?{interiorKey:interiorKey(container.packingInterior)}:{};
       const travelUp=container.packingInterior?interiorTravelUp(container.packingInterior):undefined;
       const incrementalStackCheck=shapeItems.length>0||!!travelUp&&(travelUp.axis!==2||travelUp.sign!==1);
       let futureOrientationsById: Map<string, ReturnType<typeof geometryOrientations>> | undefined;
@@ -510,18 +515,17 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
       const availableSpaces=freeSpaces.get(container.id)??[];
       const spaces=hasShapes?[...availableSpaces,...(shapeSearchSpaces?.get(container.id)??[])]:availableSpaces;
       const orientations=orientationsFor(item,container);
-      const compartmentContexts=new Map<string|undefined,{compartment:ReturnType<typeof compartmentFor>;eligible:boolean;contentsError?:string;orientations:typeof orientations}>();
+      const compartmentContexts=new Map<string|undefined,{compartment:ReturnType<typeof compartmentFor>;placementMetadata:Partial<Pick<Placement,'compartmentId'|'compartmentKey'>>;eligible:boolean;contentsError?:string;orientations:typeof orientations}>();
       for (const space of spaces) {
         let context=compartmentContexts.get(space.compartmentId);
         if(!context){
           const compartment=compartmentFor(container,space.compartmentId),eligible=eligibleForCompartment(item,compartment);
-          context={compartment,eligible,contentsError:eligible?compartmentMassError(compartment,bagPlacements,itemById,item):undefined,
+          context={compartment,placementMetadata:compartment?{compartmentId:compartment.id,compartmentKey:compartmentKey(compartment)}:{},eligible,contentsError:eligible?compartmentMassError(compartment,bagPlacements,itemById,item):undefined,
             orientations:eligible?orientations.filter(orientation=>fitsOpening(orientation,container,space.compartmentId)):[]};
           compartmentContexts.set(space.compartmentId,context);
         }
         if(!context.eligible)continue;
         if(context.contentsError){loadFailure=context.contentsError;continue;}
-        const {compartment}=context;
         for (const orientation of context.orientations) {
           if (orientation.length > space.length + EPSILON || orientation.width > space.width + EPSILON || orientation.height > space.height + EPSILON) continue;
           const contactCollisionObstacles=space.shapeSearch?verticalEntryObstacles?.get(container.id):undefined;
@@ -538,7 +542,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
               entryId: item.entryId,
               itemId: item.itemId,
               containerId: container.id,
-              ...(compartment?{compartmentId:compartment.id,compartmentKey:compartmentKey(compartment)}:{}),
+              ...context.placementMetadata,
               x: position.x,
               y: position.y,
               z: position.z,
@@ -547,10 +551,10 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
               height: orientation.height,
               layer: 1,
               rotation: orientation.rotation,
-              ...(useShapeSequence?{insertionOrder:placements.length+1}:{}),
-              ...(item.packingShape?{shapeKey:shapeKey(item.packingShape)}:{}),
-              ...(item.packingForm?{packingFormId:item.packingForm.id,packingFormKey:packingFormKey(item.packingForm)}:{}),
-              ...(container.packingInterior?{interiorKey:interiorKey(container.packingInterior)}:{}),
+              ...placementSequenceMetadata,
+              ...shapePlacementMetadata,
+              ...formPlacementMetadata,
+              ...interiorPlacementMetadata,
             };
             // Plain rectangular candidates come only from free regions already
             // clipped to the bag and split around any blocked geometry. When
