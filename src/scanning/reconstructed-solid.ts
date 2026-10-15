@@ -13,7 +13,6 @@ export interface SolidSurface {
 }
 export interface ReconstructedGeometry { solid: ReconstructedSolid; surface: SolidSurface }
 
-const directions = [[-1,0,0],[1,0,0],[0,-1,0],[0,1,0],[0,0,-1],[0,0,1]];
 const quads = [
   [[0,0,0],[0,0,1],[0,1,1],[0,1,0]],[[1,0,0],[1,1,0],[1,1,1],[1,0,1]],
   [[0,0,0],[1,0,0],[1,0,1],[0,0,1]],[[0,1,0],[0,1,1],[1,1,1],[1,1,0]],
@@ -51,8 +50,6 @@ export function voxelSurface(solid: Pick<ReconstructedSolid,'grid'|'resolutionMm
   // Reusing this byte map avoids both the occupied-cell Set and a second bitmap.
   const total=grid.x*grid.y*grid.z,plane=grid.x*grid.y,cellState=new Uint8Array(total);
   for(const cell of occupiedCells)cellState[cell]=1;
-  const index=(x:number,y:number,z:number)=>x+grid.x*(y+grid.y*z);
-  const occupied=(x:number,y:number,z:number)=>x>=0&&x<grid.x&&y>=0&&y<grid.y&&z>=0&&z<grid.z&&cellState[index(x,y,z)]===2;
   const pending=new Int32Array(occupiedCells.length);
   let head=0,tail=1;pending[0]=occupiedCells[0];cellState[pending[0]]=2;
   const enqueue=(cell:number)=>{if(cellState[cell]===1){cellState[cell]=2;pending[tail++]=cell;}};
@@ -71,8 +68,12 @@ export function voxelSurface(solid: Pick<ReconstructedSolid,'grid'|'resolutionMm
   let faceCount=0;
   for(const cell of occupiedCells){
     const x=cell%grid.x,y=Math.floor(cell/grid.x)%grid.y,z=Math.floor(cell/(grid.x*grid.y));
+    const exposed=(x===0||cellState[cell-1]!==2?1:0)|(x+1===grid.x||cellState[cell+1]!==2?2:0)
+      |(y===0||cellState[cell-grid.x]!==2?4:0)|(y+1===grid.y||cellState[cell+grid.x]!==2?8:0)
+      |(z===0||cellState[cell-plane]!==2?16:0)|(z+1===grid.z||cellState[cell+plane]!==2?32:0);
+    if(!exposed)continue;
     for(let side=0;side<6;side++){
-      const d=directions[side];if(occupied(x+d[0],y+d[1],z+d[2]))continue;
+      if((exposed&(1<<side))===0)continue;
       if(++faceCount>20000)return fail();
       const ids=quads[side].map(c=>{
         const a=x+c[0],b=y+c[1],cZ=z+c[2],key=a+64*(b+64*cZ);
