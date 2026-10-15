@@ -1,15 +1,17 @@
-import type { Container, LibraryItem, PackingPlan, Trip } from './types';
+import type { Container, LibraryItem, OptimizationMode, PackingPlan, Trip } from './types';
 
 export interface PlannerWorkerRequest {
   requestId: number;
   trip: Trip;
   items: LibraryItem[];
   containers: Container[];
+  modes?: OptimizationMode[];
 }
 
 export interface PlannerWorkerResponse {
   requestId: number;
   plan?: PackingPlan;
+  plans?: PackingPlan[];
   error?: string;
 }
 

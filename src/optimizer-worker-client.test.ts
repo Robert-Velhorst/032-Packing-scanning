@@ -27,6 +27,17 @@ describe('PlannerWorkerClient', () => {
     expect(shouldUsePlannerWorker(1, true)).toBe(true);
   });
 
+  it('passes batched comparison modes through the worker response', async () => {
+    const worker = new FakeWorker();
+    const client = new PlannerWorkerClient(() => worker as unknown as Worker);
+    const plans = [{ mode: 'balanced' }, { mode: 'easy_access' }] as PackingPlan[];
+    const pending = client.calculate({ ...request(3), modes: ['balanced', 'easy_access'] });
+    expect(worker.postMessage).toHaveBeenCalledWith(expect.objectContaining({ modes: ['balanced', 'easy_access'] }));
+    worker.respond({ requestId: 3, plans });
+    await expect(pending).resolves.toEqual({ requestId: 3, plans });
+    client.dispose();
+  });
+
   it('reuses an idle worker and releases it after the idle timeout', async () => {
     vi.useFakeTimers();
     const worker = new FakeWorker();

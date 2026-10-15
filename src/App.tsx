@@ -99,6 +99,15 @@ function PackingApp() {
     () => new Worker(new URL('./optimizer.worker.ts', import.meta.url), { type: 'module', name: 'packing-plan' }),
   );
   useEffect(() => () => plannerWorker.current?.dispose(), []);
+  const requestPlanComparison = useCallback((trip: Trip, items: LibraryItem[], containers: Container[], modes: OptimizationMode[]) => {
+    const requestId = ++planRequest.current;
+    const promise = plannerWorker.current!.calculate({ requestId, trip, items, containers, modes }).then(response => {
+      if (response.error) throw new Error(response.error);
+      if (!response.plans || response.plans.length !== modes.length) throw new Error('Plan comparisons could not be prepared.');
+      return response.plans;
+    });
+    return { requestId, promise, cancel: () => plannerWorker.current?.cancel(requestId) };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -503,6 +512,7 @@ function PackingApp() {
         {activeTrip && !plan && page !== 'items' && page !== 'bags' && page !== 'settings' && <div className="secondary-page" role="status">{planError || 'Preparing your packing plan…'}</div>}
         {page === 'workspace' && activeTrip && plan && <Workspace
           trip={activeTrip} data={data} containers={activeContainers} selectedContainer={selectedContainer} plan={plan} canvasView={canvasView} layer={layer} getPhoto={getPhoto} unit={data.unitSystem}
+          requestPlanComparison={requestPlanComparison}
           onSeparationRules={rules=>updateTrip(trip=>({...trip,separationRules:rules}))}
           onWeather={weather=>updateTrip(trip=>({...trip,weather}))}
           onPrintSequence={() => setPage('sequence')}
@@ -527,6 +537,7 @@ function PackingApp() {
 }
 
 interface WorkspaceProps {
+  requestPlanComparison:(trip:Trip,items:LibraryItem[],containers:Container[],modes:OptimizationMode[])=>{requestId:number;promise:Promise<PackingPlan[]>;cancel:()=>void};
   onWeather:(weather:SavedWeather|undefined)=>void;
   onSeparationRules:(rules:SeparationRule[])=>void;
   onReviewItem:(item:LibraryItem)=>void; onReviewBag:(bag:Container)=>void; onReviewMissing:()=>void;
@@ -667,7 +678,7 @@ function Workspace(props: WorkspaceProps) {
     <StackLoadNotes plan={plan} items={data.libraryItems} unit={unit} containerId={selectedContainer?.id}/>
     <SeparationRules trip={trip} items={data.libraryItems} unit={unit} onChange={props.onSeparationRules}/>
     <SeparationNotes trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit}/>
-    <section ref={planReviewRef} className="plan-review"><div className="review-heading"><div><span className="panel-kicker">PLAN CHECK</span><h2>Fit and trade-offs</h2></div><span className="review-caption">Deterministic geometric placement · generated on this device</span></div>{planReviewRequested ? <Suspense fallback={<p className="candidate-uncertainty" role="status">Opening approach comparisons…</p>}><PlanReview trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit} modeCopy={modeCopy} onSelect={props.onMode}/></Suspense> : <p className="candidate-uncertainty" role="status" aria-live="polite">Approach comparisons will be prepared when you reach this section.</p>}
+    <section ref={planReviewRef} className="plan-review"><div className="review-heading"><div><span className="panel-kicker">PLAN CHECK</span><h2>Fit and trade-offs</h2></div><span className="review-caption">Deterministic geometric placement · generated on this device</span></div>{planReviewRequested ? <Suspense fallback={<p className="candidate-uncertainty" role="status">Opening approach comparisons…</p>}><PlanReview trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit} modeCopy={modeCopy} onSelect={props.onMode} requestPlanComparison={props.requestPlanComparison}/></Suspense> : <p className="candidate-uncertainty" role="status" aria-live="polite">Approach comparisons will be prepared when you reach this section.</p>}
       {plan.excluded.filter((entry) => entry.reason !== 'Marked unavailable for this plan.').length > 0 && <div className="excluded-list"><strong>Needs a decision</strong>{plan.excluded.filter((entry) => entry.reason !== 'Marked unavailable for this plan.').map((entry) => <div key={entry.instanceId}><AlertTriangle size={15}/><span><strong>{entry.name}{entry.required ? ' · required' : ''}</strong><small>{entry.reason}</small></span>{trip.lockedPlacements.filter(saved => saved.instanceId === entry.instanceId).map(saved => <button className="button button-secondary" key={saved.instanceId} onClick={() => completed.has(saved.instanceId) ? props.onToggleComplete(saved.instanceId,false) : props.onToggleLock(saved)}>{completed.has(saved.instanceId) ? `Undo packed for ${entry.name}` : `Unlock ${entry.name}`}</button>)}<button className="text-button" onClick={() => props.onUnavailable(entry.instanceId)}>Remove from plan</button></div>)}</div>}
     </section>
     <div className="plan-trust-note"><Lock size={15}/><span>Locked placements are preserved during replanning. A geometric match is a suggestion, not a guarantee the bag will close.</span></div>

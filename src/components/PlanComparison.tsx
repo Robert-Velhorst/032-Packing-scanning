@@ -8,9 +8,10 @@ import type { Container, LibraryItem, OptimizationMode, PackingPlan, Trip, UnitS
 
 const comparisonModes: OptimizationMode[] = ['balanced', 'maximum_capacity', 'easy_access', 'fragile_protection'];
 
-export function PlanReview({ trip, items, bags, plan, unit, modeCopy, onSelect }: {
+export function PlanReview({ trip, items, bags, plan, unit, modeCopy, onSelect, requestPlanComparison }: {
   trip: Trip; items: LibraryItem[]; bags: Container[]; plan: PackingPlan; unit: UnitSystem;
   modeCopy: Record<OptimizationMode, { title: string; detail: string }>; onSelect: (mode: OptimizationMode) => void;
+  requestPlanComparison: (trip: Trip, items: LibraryItem[], bags: Container[], modes: OptimizationMode[]) => { requestId: number; promise: Promise<PackingPlan[]>; cancel: () => void };
 }) {
   const sectionRef = useRef<HTMLDivElement>(null);
   const [requested, setRequested] = useState(false);
@@ -38,24 +39,36 @@ export function PlanReview({ trip, items, bags, plan, unit, modeCopy, onSelect }
     let cancelled = false;
     let timer: number | undefined;
     let index = 0;
-    const plans: PackingPlan[] = [];
+    const modes = comparisonModes.filter(mode => mode !== plan.mode);
+    const plansByMode = new Map<OptimizationMode, PackingPlan>([[plan.mode, plan]]);
     setComparison(undefined);
-    const calculateNext = () => {
+    const finish = () => {
+      setComparison({ source: plan, plans: comparisonModes.map(mode => plansByMode.get(mode)!).filter(Boolean) });
+    };
+    const calculateFallback = () => {
       if (cancelled) return;
-      const mode = comparisonModes[index++];
-      plans.push(mode === plan.mode ? plan : buildPlan(trip, items, bags, mode));
-      if (index < comparisonModes.length) {
-        timer = window.setTimeout(calculateNext, 0);
+      const mode = modes[index++];
+      if (mode) plansByMode.set(mode, buildPlan(trip, items, bags, mode));
+      if (index < modes.length) {
+        timer = window.setTimeout(calculateFallback, 0);
       } else {
-        setComparison({ source: plan, plans });
+        finish();
       }
     };
-    timer = window.setTimeout(calculateNext, 0);
+    const task = requestPlanComparison(trip, items, bags, modes);
+    task.promise.then(plans => {
+      if (cancelled) return;
+      for (const candidate of plans) plansByMode.set(candidate.mode, candidate);
+      finish();
+    }).catch(() => {
+      if (!cancelled) timer = window.setTimeout(calculateFallback, 0);
+    });
     return () => {
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
+      task.cancel();
     };
-  }, [requested, plan, trip.id, trip.entries, trip.containerIds, trip.lockedPlacements, trip.unavailableInstanceIds, trip.rejectedPlacements, trip.separationRules, items, bags]);
+  }, [requested, plan, trip.id, trip.entries, trip.containerIds, trip.lockedPlacements, trip.unavailableInstanceIds, trip.rejectedPlacements, trip.separationRules, items, bags, requestPlanComparison]);
 
   const ready = comparison?.source === plan ? comparison.plans : undefined;
   return <div ref={sectionRef}>
