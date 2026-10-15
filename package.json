@@ -13,7 +13,7 @@
     "benchmark": "node scripts/physical-benchmark.ts",
     "benchmark:optimizer": "node scripts/optimizer-performance.mjs",
     "benchmark:optimizer:shapes": "node scripts/optimizer-performance.mjs --counts=20 --shapes=4",
-    "benchmark:reconstruction": "node scripts/reconstruction-performance.mjs",
+    "benchmark:reconstruction": "node --expose-gc scripts/reconstruction-performance.mjs",
     "check:benchmarks": "tsc -p tsconfig.tools.json",
     "preview": "vite preview --host 127.0.0.1",
     "start": "node server/index.ts",

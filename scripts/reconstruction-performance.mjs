@@ -18,6 +18,7 @@ const plugins = sourceRef ? [{
   enforce: 'pre',
   transform(_source, id) {
     if (!id.replaceAll('\\', '/').endsWith('/src/scanning/reconstructed-solid.ts')) return null;
+    if (sourceRef === 'working-tree') return _source;
     return execFileSync('git', ['show', `${sourceRef}:src/scanning/reconstructed-solid.ts`], { encoding: 'utf8' });
   },
 }] : [];
