@@ -5,6 +5,7 @@ import { PropertyEvidenceFields } from './PropertyEvidenceFields';
 import { changedPropertyEvidence } from '../property-evidence';
 import { CompartmentFields } from './CompartmentFields';
 import { useDeviceWorkspace } from './DeviceWorkspace';
+import { useScannerCapabilities } from '../scanning/useScannerCapabilities';
 import { adoptInterior, interiorGeometry, interiorSupportError, interiorTravelLabel } from '../packing-interior';
 import type { ReconstructedInterior } from '../scanning/interior-cavity';
 import type { Container, Evidence, Traveller, UnavailableSpace, ContainerCompartment, UnitSystem, PackingInterior } from '../types';
@@ -26,14 +27,17 @@ interface BagCaptureHelpers {
   sourceLabel:(source:Evidence['source'])=>string;
 }
 interface BagCaptureProps {
-  initial?:Container; unit:UnitSystem; travellers:Traveller[]; scanSupported:boolean; scanUnavailableReason?:string;
+  initial?:Container; unit:UnitSystem; travellers:Traveller[];
   onClose:()=>void;
   onSave:(bag:Omit<Container,'id'|'createdAt'>,draftSourceIds:string[])=>Promise<void>;
   helpers:BagCaptureHelpers; Modal:BagCaptureModal;
 }
-export function BagCapture({ initial, unit, travellers, scanSupported, scanUnavailableReason, onClose, onSave, helpers, Modal }: BagCaptureProps) {
+export function BagCapture({ initial, unit, travellers, onClose, onSave, helpers, Modal }: BagCaptureProps) {
   const { evidence, mmToDisplay, displayToMm, lengthInput, massInput, dimLabel, sourceLabel } = helpers;
   const {scanObject,deleteScanCapture}=useDeviceWorkspace().capture;
+  const scanCapabilities=useScannerCapabilities();
+  const scanSupported=scanCapabilities.supported;
+  const scanUnavailableReason=scanCapabilities.reason;
   const [name,setName]=useState(initial?.name ?? '');
   const [kind,setKind]=useState<Container['kind']>(initial?.kind ?? 'cabin_case');
   const [length,setLength]=useState(lengthInput(initial?.inside.length,unit));

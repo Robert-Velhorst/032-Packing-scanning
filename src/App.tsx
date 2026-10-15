@@ -24,13 +24,12 @@ import {
 } from 'lucide-react';
 import type { ItemDraft } from './components/ItemCapture';
 import type { InventoryFormatters } from './components/InventoryPages';
-import { useScannerCapabilities } from './scanning/useScannerCapabilities';
 import { LocalPhoto } from './components/LocalPhoto';
 import type { TripSuggestion } from './trip-assistant';
 import {  markPackingItemUnavailable, rejectPackingPlacement, setPackingItemComplete } from './packing-progress';
 import { measurementInput } from './measurement-input';
 import {workspaceStorage} from './storage';
-import { createInitialData } from './seed';
+import { createEmptyData } from './empty-data';
 import { PlannerWorkerClient, shouldUsePlannerWorker } from './optimizer-worker-client';
 import type { AppData, CarrierRule, Container, Evidence, ItemPriority, LibraryItem, OptimizationMode, PackEntry, PackingPlan, Placement, Trip, TripActivity, UnitSystem } from './types';
 
@@ -80,7 +79,6 @@ function PackingApp() {
   const device=useDeviceWorkspace();
   const {clearScanCaptures,deleteScanCapture}=device.capture;
   const {clearLocalData,deletePhoto,exportPhotos,getPhoto,importPhoto,loadAppData,prunePhotos,removeUnreferencedPhotos,saveAppData,savePhoto}=useMemo(()=>workspaceStorage(device.session),[device.session]);
-  const scanCapabilities = useScannerCapabilities();
   const [data, setData] = useState<AppData>();
   const [savedData,setSavedData]=useState<AppData>();
   const [page, setPage] = useState<Page>('workspace');
@@ -469,7 +467,7 @@ function PackingApp() {
     let scanCleanupFailed = false;
     try { await clearScanCaptures(); } catch { scanCleanupFailed = true; }
     await clearLocalData();
-    const empty = createInitialData(); empty.trips = []; empty.containers = []; empty.libraryItems = []; empty.activeTripId = '';
+    const empty = createEmptyData();
     await saveAppData(empty);
     setData(empty);setSavedData(empty);setSyncStatus('saved');setSyncError('');setEditingPhotoUrl(undefined);setNotice(scanCleanupFailed ? 'Packing data was deleted, but some native scan files could not be removed from this device.' : 'All local packing data and saved scans have been deleted.'); setPage('workspace');
   };
@@ -521,8 +519,8 @@ function PackingApp() {
 
     <nav className="mobile-nav" aria-label="Mobile navigation"><button className={page === 'workspace' || page === 'steps' ? 'selected' : ''} onClick={() => setPage('workspace')}><ClipboardList size={19}/><span>Plan</span></button><button className={page === 'items' ? 'selected' : ''} onClick={() => setPage('items')}><Package size={19}/><span>Items</span></button><button className={page === 'bags' ? 'selected' : ''} onClick={() => setPage('bags')}><Backpack size={19}/><span>Bags</span></button><button className={page === 'carrier-rules' ? 'selected' : ''} onClick={() => setPage('carrier-rules')}><BookOpen size={19}/><span>Rules</span></button><button className={page === 'settings' ? 'selected' : ''} onClick={() => setPage('settings')}><Settings size={19}/><span>Settings</span></button></nav>
 
-    {capture?.kind === 'item' && <Suspense fallback={<div className="modal-backdrop"><div className="modal" role="status">Opening item editor…</div></div>}><ItemCapture key={capture.item?.id ?? capture.suggestion?.id ?? 'new-item'} initial={capture.item} suggestedItem={capture.suggestion} unit={capture.resumed?.draft.unit??data.unitSystem} resumed={capture.resumed?.draft} resumedPhoto={capture.resumed?.photo} sourceTripId={activeTrip?.id} suggestion={capture.suggestion} scanSupported={scanCapabilities.supported} recognitionSupported={scanCapabilities.supported&&scanCapabilities.platform==='android'&&scanCapabilities.recognitionSupported===true} scanUnavailableReason={scanCapabilities.reason} existingPhotoUrl={editingPhotoUrl} onClose={()=>void closeItemEditor()} onPhotoStaged={()=>setCapture(null)} onSave={saveItem}/></Suspense>}
-    {capture?.kind === 'bag' && <Suspense fallback={<div role="status">Opening bag editor…</div>}><BagCapture key={capture.bag?.id ?? 'new-bag'} initial={capture.bag} unit={data.unitSystem} travellers={activeTrip?.travellers ?? []} scanSupported={scanCapabilities.supported} scanUnavailableReason={scanCapabilities.reason} onClose={() => setCapture(null)} onSave={saveBag} helpers={{evidence,mmToDisplay,displayToMm,lengthInput,massInput,dimLabel,sourceLabel}} Modal={Modal}/></Suspense>}
+    {capture?.kind === 'item' && <Suspense fallback={<div className="modal-backdrop"><div className="modal" role="status">Opening item editor…</div></div>}><ItemCapture key={capture.item?.id ?? capture.suggestion?.id ?? 'new-item'} initial={capture.item} suggestedItem={capture.suggestion} unit={capture.resumed?.draft.unit??data.unitSystem} resumed={capture.resumed?.draft} resumedPhoto={capture.resumed?.photo} sourceTripId={activeTrip?.id} suggestion={capture.suggestion} existingPhotoUrl={editingPhotoUrl} onClose={()=>void closeItemEditor()} onPhotoStaged={()=>setCapture(null)} onSave={saveItem}/></Suspense>}
+    {capture?.kind === 'bag' && <Suspense fallback={<div role="status">Opening bag editor…</div>}><BagCapture key={capture.bag?.id ?? 'new-bag'} initial={capture.bag} unit={data.unitSystem} travellers={activeTrip?.travellers ?? []} onClose={() => setCapture(null)} onSave={saveBag} helpers={{evidence,mmToDisplay,displayToMm,lengthInput,massInput,dimLabel,sourceLabel}} Modal={Modal}/></Suspense>}
     {capture?.kind === 'trip' && <Suspense fallback={<div className="modal-backdrop"><div className="modal" role="status">Opening pack editor…</div></div>}><TripCapture initial={capture.trip} onClose={() => setCapture(null)} onSave={createTrip} onDelete={capture.trip && !capture.trip.sample ? () => void deleteTrip(capture.trip!.id) : undefined} Modal={Modal}/></Suspense>}
     {capture?.kind === 'carrier-rule' && activeTrip && <Suspense fallback={<div className="modal-backdrop"><div className="modal" role="status">Opening carrier record…</div></div>}><CarrierRuleCapture key={capture.rule?.id ?? capture.draft?.fare ?? 'new-carrier-rule'} initial={capture.rule ?? capture.draft} bags={activeContainers} unit={data.unitSystem} onClose={() => setCapture(null)} onSave={saveCarrierRule} helpers={{lengthInput,massInput,dimLabel}} Modal={Modal}/></Suspense>}
   </div>;
