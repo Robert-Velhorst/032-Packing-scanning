@@ -1,0 +1,8 @@
+.scan-cloud-controls { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; }
+.scan-cloud-controls button { min-height:48px; padding:10px 12px; border:1px solid #bacbbc; border-radius:8px; background:#fff; color:#25392d; font:inherit; font-size:13px; cursor:pointer; }
+.scan-cloud-controls button:disabled { opacity:.55; cursor:default; }
+.scan-cloud-controls button:focus-visible { outline:3px solid #17684e; outline-offset:3px; }
+@media(max-width:620px) {
+  .scan-cloud-controls { display:grid; grid-template-columns:1fr 1fr; }
+  .scan-cloud-controls button:last-child { grid-column:1/-1; }
+}

@@ -55,17 +55,19 @@ export function parseInteriorCavity(value:unknown,source:SavedGeometryPreview,re
   }
   // Independently traverse the empty complement of all observed cells. A subset
   // selected merely to look closed, or an unreviewed escape, cannot pass.
-  const start=seed[0]+nx*(seed[1]+ny*seed[2]),visited=new Uint8Array(total),queue=[start];visited[start]=1;
-  const directions=[[-1,0,0],[1,0,0],[0,-1,0],[0,1,0],[0,0,-1],[0,0,1]];
-  for(let i=0;i<queue.length;i++){
-    const cell=queue[i],xyz=[cell%nx,Math.floor(cell/nx)%ny,Math.floor(cell/(nx*ny))];
-    for(let axis=0;axis<3;axis++)for(const sign of [-1,1])if(xyz[axis]===(sign===1?dimensions[axis]-1:0)&&(axis!==review.openingAxis||sign!==review.openingSign))return fail();
-    for(const direction of directions){
-      const next=xyz.map((value,j)=>value+direction[j]);if(next.some((value,j)=>value<0||value>=dimensions[j]))continue;
-      const index=next[0]+nx*(next[1]+ny*next[2]);if(!walls.has(index)&&!visited[index]){visited[index]=1;queue.push(index);}
-    }
+  const plane=nx*ny,start=seed[0]+nx*(seed[1]+ny*seed[2]),visited=new Uint8Array(total),queue=new Int32Array(total);
+  let head=0,tail=1;queue[0]=start;visited[start]=1;
+  const enqueue=(index:number)=>{if(!walls.has(index)&&!visited[index]){visited[index]=1;queue[tail++]=index;}};
+  while(head<tail){
+    const cell=queue[head++],x=cell%nx,y=Math.floor(cell/nx)%ny,z=Math.floor(cell/plane);
+    if(x===0&&(review.openingAxis!==0||review.openingSign!==-1)||x===nx-1&&(review.openingAxis!==0||review.openingSign!==1)
+      ||y===0&&(review.openingAxis!==1||review.openingSign!==-1)||y===ny-1&&(review.openingAxis!==1||review.openingSign!==1)
+      ||z===0&&(review.openingAxis!==2||review.openingSign!==-1)||z===dimensions[2]-1&&(review.openingAxis!==2||review.openingSign!==1))return fail();
+    if(x>0)enqueue(cell-1);if(x+1<nx)enqueue(cell+1);
+    if(y>0)enqueue(cell-nx);if(y+1<ny)enqueue(cell+nx);
+    if(z>0)enqueue(cell-plane);if(z+1<dimensions[2])enqueue(cell+plane);
   }
-  if(queue.length!==cavity.freeCells.length||cavity.freeCells.some(cell=>!visited[cell]))return fail();
+  if(tail!==cavity.freeCells.length||cavity.freeCells.some(cell=>!visited[cell]))return fail();
   // A 10 mm reference lattice validates topology/connectivity. Positive per-axis scaling
   // then fits its unchanged cells exactly inside the original source envelope.
   const reference=voxelSurface({grid:cavity.grid,resolutionMm:10,occupiedCells:cavity.freeCells});

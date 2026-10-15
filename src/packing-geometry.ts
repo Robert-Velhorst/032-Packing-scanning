@@ -51,7 +51,8 @@ function compile(shape:PackingShape):Compiled {
   // Exact disjoint greedy cuboids, without trimming or filling any occupied cell.
   for(let z=0;z<nz;z++)for(let y=0;y<ny;y++)for(let x=0;x<nx;x++)if(present[idx(x,y,z)]){
     let right=x+1;while(right<nx&&present[idx(right,y,z)])right++;
-    let back=y+1;while(back<ny&&Array.from({length:right-x},(_,i)=>present[idx(x+i,back,z)]).every(Boolean))back++;
+    let back=y+1;
+    while(back<ny){let filled=true;for(let a=x;a<right;a++)if(!present[idx(a,back,z)]){filled=false;break;}if(!filled)break;back++;}
     let top=z+1;
     while(top<nz){let filled=true;for(let b=y;b<back&&filled;b++)for(let a=x;a<right;a++)if(!present[idx(a,b,top)]){filled=false;break;}if(!filled)break;top++;}
     for(let c=z;c<top;c++)for(let b=y;b<back;b++)for(let a=x;a<right;a++)present[idx(a,b,c)]=0;
@@ -122,10 +123,25 @@ export function placementSurface(p:Placement,item:ShapeItem):SolidSurface|undefi
 export function boxesIntersect(a:GeometryBox,b:GeometryBox):boolean {
   return a.x<b.x+b.length-EPS&&a.x+a.length>b.x+EPS&&a.y<b.y+b.width-EPS&&a.y+a.width>b.y+EPS&&a.z<b.z+b.height-EPS&&a.z+a.height>b.z+EPS;
 }
+function translatedBoxesIntersect(a:GeometryBox,ax:number,ay:number,az:number,b:GeometryBox,bx:number,by:number,bz:number):boolean {
+  const leftX=ax+a.x,leftY=ay+a.y,leftZ=az+a.z,rightX=bx+b.x,rightY=by+b.y,rightZ=bz+b.z;
+  return leftX<rightX+b.length-EPS&&leftX+a.length>rightX+EPS
+    &&leftY<rightY+b.width-EPS&&leftY+a.width>rightY+EPS
+    &&leftZ<rightZ+b.height-EPS&&leftZ+a.height>rightZ+EPS;
+}
 export function geometryIntersects(a:Placement,b:Placement,items:Map<string,ShapeItem>):boolean {
   if(!boxesIntersect(a,b))return false;
-  if(!items.get(a.instanceId)?.packingShape&&!items.get(b.instanceId)?.packingShape)return true;
-  return placementBoxes(a,items.get(a.instanceId)).some(left=>placementBoxes(b,items.get(b.instanceId)).some(right=>boxesIntersect(left,right)));
+  const leftItem=items.get(a.instanceId),rightItem=items.get(b.instanceId);
+  const leftBoxes=leftItem?.packingShape?localGeometry(leftItem.packingShape,a.rotation??0).boxes:undefined;
+  const rightBoxes=rightItem?.packingShape?localGeometry(rightItem.packingShape,b.rotation??0).boxes:undefined;
+  if(!leftBoxes&&!rightBoxes)return true;
+  if(leftBoxes&&rightBoxes){
+    for(const left of leftBoxes)for(const right of rightBoxes)if(translatedBoxesIntersect(left,a.x,a.y,a.z,right,b.x,b.y,b.z))return true;
+    return false;
+  }
+  if(leftBoxes){for(const left of leftBoxes)if(translatedBoxesIntersect(left,a.x,a.y,a.z,b,0,0,0))return true;return false;}
+  for(const right of rightBoxes!)if(translatedBoxesIntersect(a,0,0,0,right,b.x,b.y,b.z))return true;
+  return false;
 }
 export function fitsGeometrySpace(p:Placement,bag:Container,item?:ShapeItem):boolean {
   if(containerSpaceError(bag))return false;
@@ -135,7 +151,12 @@ export function fitsGeometrySpace(p:Placement,bag:Container,item?:ShapeItem):boo
 export function fitsGeometrySpaceInValidatedContainer(p:Placement,bag:Container,item?:ShapeItem,blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag)):boolean {
   const usableHeight=bag.inside.height-(bag.lidClearanceMm??0);
   if(!fitsCompartment(p,bag)||p.x<0||p.y<0||p.z<0||p.x+p.length>bag.inside.length+EPS||p.y+p.width>bag.inside.width+EPS||p.z+p.height>usableHeight+EPS)return false;
-  return !placementBoxes(p,item).some(box=>blockedSpaces.some(blocked=>boxesIntersect(box,blocked)));
+  // This gate runs for every candidate; compare local shape boxes by offset instead of allocating translated boxes.
+  if(!blockedSpaces.length)return true;
+  if(!item?.packingShape){for(const blocked of blockedSpaces)if(boxesIntersect(p,blocked))return false;return true;}
+  for(const box of localGeometry(item.packingShape,p.rotation??0).boxes)
+    for(const blocked of blockedSpaces)if(translatedBoxesIntersect(box,p.x,p.y,p.z,blocked,0,0,0))return false;
+  return true;
 }
 /** Proper axis rotation; negative coordinates are deliberate and retain exact contact. */
 export function gravityBox(box:GeometryBox,up:GravityUp):GeometryBox{
@@ -302,14 +323,21 @@ export function hasPackingAndTravelSupport(p:Placement,placed:Placement[],items:
 export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,bag:Container,blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[]):boolean {
   const top=bag.inside.height;
   const obstacles=cachedObstacles??[...blockedSpaces,...placed.filter(other=>other.containerId===p.containerId).flatMap(other=>placementBoxes(other,items.get(other.instanceId)))];
-  for(const b of placementBoxes(p,items.get(p.instanceId))){
-    const sweepTop=b.z+Math.max(b.height,top-b.z+p.height),right=b.x+b.length,back=b.y+b.width;
-    for(const o of obstacles)if(b.x<o.x+o.length-EPS&&right>o.x+EPS&&b.y<o.y+o.width-EPS&&back>o.y+EPS&&b.z<o.z+o.height-EPS&&sweepTop>o.z+EPS)return false;
+  // Keep both rectangular and shaped candidate sweeps allocation-free.
+  const shape=items.get(p.instanceId)?.packingShape;
+  if(!shape){
+    const sweepTop=p.z+Math.max(p.height,top-p.z+p.height),right=p.x+p.length,back=p.y+p.width;
+    for(const o of obstacles)if(p.x<o.x+o.length-EPS&&right>o.x+EPS&&p.y<o.y+o.width-EPS&&back>o.y+EPS&&p.z<o.z+o.height-EPS&&sweepTop>o.z+EPS)return false;
+    return true;
+  }
+  for(const b of localGeometry(shape,p.rotation??0).boxes){
+    const x=p.x+b.x,y=p.y+b.y,z=p.z+b.z,right=x+b.length,back=y+b.width,sweepTop=z+Math.max(b.height,top-z+p.height);
+    for(const o of obstacles)if(x<o.x+o.length-EPS&&right>o.x+EPS&&y<o.y+o.width-EPS&&back>o.y+EPS&&z<o.z+o.height-EPS&&sweepTop>o.z+EPS)return false;
   }
   return true;
 }
 
-export function contactPositions(bag:Container,orientation:DimensionsMm&{rotation:number},item:ShapeItem,placed:Placement[],items:Map<string,ShapeItem>,region:GeometryBox={x:0,y:0,z:0,...bag.inside,height:usableContainerHeight(bag)},blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[]) {
+export function contactPositions(bag:Container,orientation:DimensionsMm&{rotation:number},item:ShapeItem,placed:Placement[],items:Map<string,ShapeItem>,region:GeometryBox={x:0,y:0,z:0,...bag.inside,height:usableContainerHeight(bag)},blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[],maxPositions=20000,collisionObstacles?:readonly GeometryBox[]) {
   const local=placementBoxes({x:0,y:0,z:0,...orientation},item),obstacles=cachedObstacles??[...placed.flatMap(p=>placementBoxes(p,items.get(p.instanceId))),...blockedSpaces];
   const values=[new Set([region.x,region.x+region.length-orientation.length]),new Set([region.y,region.y+region.width-orientation.width]),new Set([region.z])],mins=['x','y','z'] as const;
   for(const b of obstacles)for(const c of local)for(let axis=0;axis<3;axis++){
@@ -318,7 +346,13 @@ export function contactPositions(bag:Container,orientation:DimensionsMm&{rotatio
   }
   const minimum=[region.x,region.y,region.z],maximum=[region.x+region.length-orientation.length,region.y+region.width-orientation.width,region.z+region.height-orientation.height];
   const coords=values.map((set,i)=>[...set].filter(v=>v>=minimum[i]-EPS&&v<=maximum[i]+EPS).map(v=>Math.max(minimum[i],v)).sort((a,b)=>a-b));
-  const positions:Array<{x:number;y:number;z:number}>=[];let limited=false;
-  outer:for(const z of coords[2])for(const y of coords[1])for(const x of coords[0]){if(positions.length>=20000){limited=true;break outer;}positions.push({x,y,z});}
+  const positions:Array<{x:number;y:number;z:number}>=[];let limited=false,examined=0;
+  outer:for(const z of coords[2])for(const y of coords[1])for(const x of coords[0]){
+    if(examined>=maxPositions){limited=true;break outer;}
+    examined++;
+    // Reject overlaps before allocating positions; count rejected coordinates against the same search cap.
+    if(collisionObstacles?.some(obstacle=>local.some(box=>translatedBoxesIntersect(box,x,y,z,obstacle,0,0,0))))continue;
+    positions.push({x,y,z});
+  }
   return {positions,limited};
 }

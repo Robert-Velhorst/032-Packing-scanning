@@ -2,7 +2,6 @@ package com.packingscanning.app.scanning;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
-import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.BufferedReader;
@@ -11,7 +10,8 @@ import java.io.InputStreamReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.OutputStreamWriter;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.security.MessageDigest;
-import java.security.DigestInputStream;
 
 /** Private, UUID-addressed captures. No content provider, public path or upload operation. */
 public final class CaptureStore {
@@ -83,11 +82,10 @@ public final class CaptureStore {
         checked(() -> { if (!destination.mkdir()) throw new IOException("A private capture folder could not be created."); return null; });
         try {
             try (PlainBuffer buffer = new PlainBuffer(8000000)) {
-                BufferedWriter out = new BufferedWriter(new OutputStreamWriter(buffer,StandardCharsets.UTF_8));
-                out.write("ply\nformat ascii 1.0\ncomment units metres; capture-local right-handed camera frame\nelement vertex " + snapshot.points.size()
-                    + "\nproperty float x\nproperty float y\nproperty float z\nproperty float confidence\nend_header\n");
-                for (float[] point : snapshot.points) out.write(point[0] + " " + point[1] + " " + point[2] + " " + point[3] + "\n");
-                out.flush();
+                String header="ply\nformat binary_little_endian 1.0\ncomment units metres; capture-local right-handed camera frame\nelement vertex " + snapshot.points.size()
+                    + "\nproperty float x\nproperty float y\nproperty float z\nproperty float confidence\nend_header\n";
+                buffer.write(header.getBytes(StandardCharsets.US_ASCII));
+                writeBinaryPoints(buffer,snapshot.points);
                 writeCapture(destination,id,"points.ply",buffer.toByteArray());
             }
             SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",Locale.US);
@@ -131,27 +129,32 @@ public final class CaptureStore {
         MessageDigest digest=MessageDigest.getInstance("SHA-256");
         List<float[]> points=new ArrayList<>();int declared=-1;
         byte[] ply=readCapture(capture,id,"points.ply",8000000);
-        try(BufferedReader reader=new BufferedReader(new InputStreamReader(new DigestInputStream(new ByteArrayInputStream(ply),digest),StandardCharsets.UTF_8))) {
-            if(!"ply".equals(reader.readLine())||!"format ascii 1.0".equals(reader.readLine())) throw new IOException("Unsupported source point format.");
-            String line; boolean ended=false; int lines=2; List<String> properties=new ArrayList<>();
-            while((line=reader.readLine())!=null&&++lines<=20) {
-                if(line.equals("end_header")){ended=true;break;}
-                if(line.startsWith("comment ")) continue;
-                if(line.startsWith("element vertex ")&&declared==-1) declared=Integer.parseInt(line.substring(15));
-                else if(line.startsWith("property ")) properties.add(line);
-                else throw new IOException("Unsupported point header.");
-            }
-            if(!ended||declared<4||declared>DepthCloud.MAX_POINTS||declared!=geometry.getInt("pointCount")
-                ||!properties.equals(Arrays.asList("property float x","property float y","property float z","property float confidence"))) throw new IOException("Invalid point header.");
-            while((line=reader.readLine())!=null) {
-                if(points.size()>=declared||line.length()>160) throw new IOException("Invalid point data length.");
-                String[] parts=line.trim().split("\\s+");
-                if(parts.length!=4) throw new IOException("Invalid point data.");
-                float[] point=new float[4];
-                for(int i=0;i<4;i++){point[i]=Float.parseFloat(parts[i]);if(!Float.isFinite(point[i]))throw new IOException("Invalid point value.");}
-                if(Math.abs(point[0])>1.5||Math.abs(point[1])>1.5||Math.abs(point[2])>1.5||point[3]<0.8f||point[3]>1)throw new IOException("Point is outside supported capture values.");
-                points.add(point);
-            }
+        try {
+            digest.update(ply);
+            PointHeader header=parsePointHeader(ply);
+            declared=header.count;
+            if(declared<4||declared>DepthCloud.MAX_POINTS||declared!=geometry.getInt("pointCount")) throw new IOException("Invalid point header.");
+            if("binary_little_endian 1.0".equals(header.format)) {
+                long expectedLength=(long)header.dataOffset+(long)declared*16;
+                if(expectedLength!=ply.length) throw new IOException("Invalid binary point data length.");
+                ByteBuffer data=ByteBuffer.wrap(ply,header.dataOffset,ply.length-header.dataOffset).order(ByteOrder.LITTLE_ENDIAN);
+                for(int index=0;index<declared;index++) {
+                    float[] point={data.getFloat(),data.getFloat(),data.getFloat(),data.getFloat()};
+                    validatePoint(point);points.add(point);
+                }
+            } else if("ascii 1.0".equals(header.format)) {
+                try(BufferedReader reader=new BufferedReader(new InputStreamReader(new ByteArrayInputStream(ply,header.dataOffset,ply.length-header.dataOffset),StandardCharsets.UTF_8))) {
+                    String line;
+                    while((line=reader.readLine())!=null) {
+                        if(points.size()>=declared||line.length()>160) throw new IOException("Invalid point data length.");
+                        String[] parts=line.trim().split("\\s+");
+                        if(parts.length!=4) throw new IOException("Invalid point data.");
+                        float[] point=new float[4];
+                        for(int i=0;i<4;i++){point[i]=Float.parseFloat(parts[i]);}
+                        validatePoint(point);points.add(point);
+                    }
+                }
+            } else throw new IOException("Unsupported source point format.");
         } finally { Arrays.fill(ply,(byte)0); }
         if(points.size()!=declared) throw new IOException("Incomplete source points.");
         JSONObject envelopeDetails=geometry.optJSONObject("envelope");
@@ -172,6 +175,51 @@ public final class CaptureStore {
     private static final class SourceGeometry {
         final JSONObject stored,record;final List<float[]> points;final ScanEnvelope envelope;final String method,hash;
         SourceGeometry(JSONObject stored,JSONObject record,List<float[]> points,ScanEnvelope envelope,String method,String hash){this.stored=stored;this.record=record;this.points=points;this.envelope=envelope;this.method=method;this.hash=hash;}
+    }
+
+    private static final class PointHeader {
+        final String format;
+        final int count,dataOffset;
+        PointHeader(String format,int count,int dataOffset){this.format=format;this.count=count;this.dataOffset=dataOffset;}
+    }
+
+    private static PointHeader parsePointHeader(byte[] ply) throws IOException {
+        int end=-1;
+        for(int i=0;i<ply.length&&i<4096;i++) {
+            if(i+11<=ply.length&&ply[i]=='e'&&ply[i+1]=='n'&&ply[i+2]=='d'&&ply[i+3]=='_'&&ply[i+4]=='h'&&ply[i+5]=='e'&&ply[i+6]=='a'&&ply[i+7]=='d'&&ply[i+8]=='e'&&ply[i+9]=='r'&&ply[i+10]=='\n') {end=i+11;break;}
+        }
+        if(end<0) throw new IOException("Invalid point header.");
+        String[] lines=new String(ply,0,end,StandardCharsets.US_ASCII).split("\\n");
+        if(lines.length<7||lines.length>20||!"ply".equals(lines[0])) throw new IOException("Invalid point header.");
+        String format=lines[1].startsWith("format ")?lines[1].substring(7):"";
+        int count=-1;List<String> properties=new ArrayList<>();
+        for(int i=2;i<lines.length-1;i++) {
+            String line=lines[i];
+            if(line.startsWith("comment ")) continue;
+            if(line.startsWith("element vertex ")&&count==-1) {
+                try { count=Integer.parseInt(line.substring(15)); }
+                catch(NumberFormatException error){throw new IOException("Invalid point count.",error);}
+            } else if(line.startsWith("property ")) properties.add(line);
+            else throw new IOException("Unsupported point header.");
+        }
+        if(count<0||!properties.equals(Arrays.asList("property float x","property float y","property float z","property float confidence"))) throw new IOException("Invalid point header.");
+        return new PointHeader(format,count,end);
+    }
+
+    private static void writeBinaryPoints(PlainBuffer buffer,List<float[]> points) {
+        ByteBuffer batch=ByteBuffer.allocate(8192).order(ByteOrder.LITTLE_ENDIAN);
+        try {
+            for(float[] point:points) {
+                for(int axis=0;axis<4;axis++) batch.putFloat(point[axis]);
+                if(!batch.hasRemaining()) {buffer.write(batch.array(),0,batch.position());batch.clear();}
+            }
+            if(batch.position()>0) buffer.write(batch.array(),0,batch.position());
+        } finally { Arrays.fill(batch.array(),(byte)0); }
+    }
+
+    private static void validatePoint(float[] point) throws IOException {
+        for(float value:point) if(!Float.isFinite(value)) throw new IOException("Invalid point value.");
+        if(Math.abs(point[0])>1.5||Math.abs(point[1])>1.5||Math.abs(point[2])>1.5||point[3]<0.8f||point[3]>1)throw new IOException("Point is outside supported capture values.");
     }
     public JSONObject preview(String id) throws Exception {
         SourceGeometry source=readSource(id);JSONObject record=source.record;List<float[]> points=source.points;ScanEnvelope envelope=source.envelope;String method=source.method,target=record.getString("target");

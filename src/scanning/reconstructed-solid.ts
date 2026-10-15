@@ -47,13 +47,16 @@ export function voxelSurface(solid: Pick<ReconstructedSolid,'grid'|'resolutionMm
     || occupiedCells.some((n,i) => !Number.isInteger(n) || n<0 || n>=grid.x*grid.y*grid.z || (i>0 && n<=occupiedCells[i-1]))) return fail();
   const cells=new Set(occupiedCells), index=(x:number,y:number,z:number)=>x+grid.x*(y+grid.y*z);
   const occupied=(x:number,y:number,z:number)=>x>=0&&x<grid.x&&y>=0&&y<grid.y&&z>=0&&z<grid.z&&cells.has(index(x,y,z));
-  const reached=new Set<number>(),pending=[occupiedCells[0]];
-  for(let i=0;i<pending.length;i++){
-    const cell=pending[i];if(reached.has(cell))continue;reached.add(cell);
-    const x=cell%grid.x,y=Math.floor(cell/grid.x)%grid.y,z=Math.floor(cell/(grid.x*grid.y));
-    for(const d of directions)if(occupied(x+d[0],y+d[1],z+d[2])){const next=index(x+d[0],y+d[1],z+d[2]);if(!reached.has(next))pending.push(next);}
+  const total=grid.x*grid.y*grid.z,plane=grid.x*grid.y,reached=new Uint8Array(total),pending=new Int32Array(occupiedCells.length);
+  let head=0,tail=1;pending[0]=occupiedCells[0];reached[pending[0]]=1;
+  const enqueue=(cell:number)=>{if(cells.has(cell)&&!reached[cell]){reached[cell]=1;pending[tail++]=cell;}};
+  while(head<tail){
+    const cell=pending[head++],x=cell%grid.x,y=Math.floor(cell/grid.x)%grid.y,z=Math.floor(cell/plane);
+    if(x>0)enqueue(cell-1);if(x+1<grid.x)enqueue(cell+1);
+    if(y>0)enqueue(cell-grid.x);if(y+1<grid.y)enqueue(cell+grid.x);
+    if(z>0)enqueue(cell-plane);if(z+1<grid.z)enqueue(cell+plane);
   }
-  if(reached.size!==occupiedCells.length)return fail();
+  if(tail!==occupiedCells.length)return fail();
   const verticesMm:number[]=[],triangles:number[]=[],vertexIds=new Map<number,number>();
   const edges=new Map<number,{count:number;orientation:number}>(),links=new Map<number,Array<[number,number]>>();let faceCount=0;
   for(const cell of occupiedCells){

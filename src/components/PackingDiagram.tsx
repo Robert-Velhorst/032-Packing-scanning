@@ -5,10 +5,10 @@ import { containerBlockedBoxes, containerSpaceError } from '../container-space';
 import { ContainerSpaceNotes } from './ContainerSpaceNotes';
 
 /** SVG fallback and print diagram share the real planned coordinates with the 3D view. */
-export function PackingDiagram({ bag, placements, currentId, numbers, notes=true,items=[] }: { bag: Container; placements: Placement[]; currentId: string; numbers: Record<string, string>; notes?:boolean;items?:LibraryItem[] }) {
+export function PackingDiagram({ bag, placements, currentId, numbers, notes=true,items=[],itemIndex }: { bag: Container; placements: Placement[]; currentId: string; numbers: Record<string, string>; notes?:boolean;items?:LibraryItem[];itemIndex?:ReadonlyMap<string,LibraryItem> }) {
   const padding = Math.max(bag.inside.length, bag.inside.width) * 0.06;
   const label = 'Top view of ' + bag.name + '. Numbered occupied projections show planned item positions; the current step has a stronger outline. Amber outlines project recorded unavailable areas; their height is listed below. Blue outlines labelled C1, C2 and so on show recorded usable compartments; names are listed below.';
-  const lookup=new Map(items.map(item=>[item.id,item]));
+  const lookup=itemIndex??new Map(items.map(item=>[item.id,item]));
   const visibleOrder = [...placements].sort((a,b) => Number(a.instanceId === currentId) - Number(b.instanceId === currentId));
   return <div className="packing-diagram-with-notes"><svg className="packing-diagram" role="img" aria-label={label} viewBox={`${-padding} ${-padding} ${bag.inside.length + padding * 2} ${bag.inside.width + padding * 2}`}>
     <title>{label}</title>

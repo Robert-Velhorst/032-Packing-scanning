@@ -1,4 +1,5 @@
 import type { AppData, Evidence, LibraryItem, Trip } from './types.ts';
+import { createEmptyData } from './empty-data.ts';
 
 const now = () => new Date().toISOString();
 
@@ -94,13 +95,10 @@ const sampleTrip: Trip = {
 
 export function createInitialData(): AppData {
   return {
-    schemaVersion: 1,
-    unitSystem: 'metric',
-    settings: { automaticPhotoDeletionDays: null, automaticScanDeletionDays: null, highContrast: false, reduceMotion: false },
+    ...createEmptyData(),
     trips: [sampleTrip],
     containers: [sampleContainer],
     libraryItems: sampleItems,
     activeTripId: sampleTrip.id,
-    locale: 'en',
   };
 }

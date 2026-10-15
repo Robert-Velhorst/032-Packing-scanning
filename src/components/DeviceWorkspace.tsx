@@ -2,12 +2,16 @@ import {createContext,useCallback,useContext,useEffect,useMemo,useRef,useState,t
 import {Capacitor} from '@capacitor/core';
 import {accountRequest,type PackingAccountState,type PackingAccountProfile} from '../account-client';
 import {createWorkspace,emptyWorkspace,listWorkspaces,unlockWorkspace,type AttachWorkspace,type ProtectedSession,type WorkspaceDescriptor} from '../protected-storage';
-import {captureClient,getCaptureStorageState,lockCaptureStorage,openCaptureWorkspace,onCaptureWorkspaceLocked,selectGuestCaptureStorage,type CaptureClient,type CaptureStorageState} from '../scanning/native';
+import {captureClient} from '../scanning/lazy-capture-client';
+import type {CaptureClient} from '../scanning/native';
+import type {CaptureStorageState} from '../scanning/native-storage';
 import {workspaceStorage} from '../storage';
 import type {AppData} from '../types';
 import type {BackupSelection} from '../native-files';
 import type {ItemPhotoSelection} from '../native-item-photo';
 import type {ItemEditorDraft} from '../item-photo-draft';
+
+const loadNativeCapture=()=>import('../scanning/native-storage');
 
 interface DeviceControls {
   session?:ProtectedSession;
@@ -59,29 +63,31 @@ export function DeviceWorkspace({children}:{children:ReactNode}){
   const active=useRef<ProtectedSession|undefined>(undefined),generation=useRef(0),channel=useRef<BroadcastChannel|undefined>(undefined);
   const renewInteraction=useRef<(()=>Promise<void>)|undefined>(undefined);
   const close=useCallback((announce=true)=>{const current=active.current;active.current=undefined;captureRef.current.revoke();current?.close();const epoch=++generation.current;
-    const state=captureState.current;if(state)void lockCaptureStorage(state.revision).then(next=>{if(epoch===generation.current)captureState.current=next;}).catch(()=>{if(epoch===generation.current)setNotice('The workspace is hidden, but native capture locking could not be confirmed. Reload before unlocking again.');});
+    const state=captureState.current;if(state)void loadNativeCapture().then(({lockCaptureStorage})=>lockCaptureStorage(state.revision)).then(next=>{if(epoch===generation.current)captureState.current=next;}).catch(()=>{if(epoch===generation.current)setNotice('The workspace is hidden, but native capture locking could not be confirmed. Reload before unlocking again.');});
     setSession(undefined);setCaptureLease(undefined);setPassphrase('');setMode('locked');if(announce&&current)channel.current?.postMessage({type:'lock',id:current.descriptor.id});},[]);
-  const choose=useCallback(async()=>{close();try{if(native){let state=await getCaptureStorageState();if(state){state=await lockCaptureStorage(state.revision);captureState.current=state;setNativeProtection(true);}nativeHandshake.current=true;if(!state){setWorkspaces([]);setNotice('Protected workspaces are unavailable in this native installation. You can choose guest packs.');return;}}const list=await listWorkspaces();setWorkspaces(list);setSelected(current=>list.some(w=>w.id===current)?current:list[0]?.id??'');}catch{setNotice('Saved workspace information could not be opened. Your records have not been replaced.');}},[close,native]);
+  const choose=useCallback(async()=>{close();try{if(native){const bridge=await loadNativeCapture();let state=await bridge.getCaptureStorageState();if(state){state=await bridge.lockCaptureStorage(state.revision);captureState.current=state;setNativeProtection(true);}nativeHandshake.current=true;if(!state){setWorkspaces([]);setNotice('Protected workspaces are unavailable in this native installation. You can choose guest packs.');return;}}const list=await listWorkspaces();setWorkspaces(list);setSelected(current=>list.some(w=>w.id===current)?current:list[0]?.id??'');}catch{setNotice('Saved workspace information could not be opened. Your records have not been replaced.');}},[close,native]);
   useEffect(()=>{
     let mounted=true;
     void (async()=>{
-      let state=await getCaptureStorageState();if(!mounted)return;
-      if(state){state=await lockCaptureStorage(state.revision);if(!mounted)return;captureState.current=state;setNativeProtection(true);}
+      let state:CaptureStorageState|undefined;
+      if(native){const bridge=await loadNativeCapture();state=await bridge.getCaptureStorageState();}
+      if(!mounted)return;
+      if(state){state=await loadNativeCapture().then(bridge=>bridge.lockCaptureStorage(state!.revision));if(!mounted)return;captureState.current=state;setNativeProtection(true);}
       nativeHandshake.current=true;
       if(native&&!state){setMode('guest');return;}
       const list=await listWorkspaces();if(!mounted)return;setWorkspaces(list);setSelected(list[0]?.id??'');
-      if(!list.length&&state){const guest=await selectGuestCaptureStorage(state.revision);if(!mounted){void lockCaptureStorage(guest.revision);return;}captureState.current=guest;setCaptureLease(guest.lease??undefined);}
+      if(!list.length&&state){const bridge=await loadNativeCapture();const guest=await bridge.selectGuestCaptureStorage(state.revision);if(!mounted){void bridge.lockCaptureStorage(guest.revision);return;}captureState.current=guest;setCaptureLease(guest.lease??undefined);}
       setMode(list.length?'locked':'guest');
     })().catch(()=>{if(mounted){setMode('locked');setNotice('Saved workspace or native storage information could not be opened. Reload before continuing.');}});
     if(typeof BroadcastChannel!=='undefined'){
       const messages=new BroadcastChannel('packing-scanning-device-v1');channel.current=messages;
       messages.onmessage=event=>{const message=event.data as {type?:unknown;id?:unknown};const current=active.current;if(current&&(message?.type==='lock'&&message.id===current.descriptor.id||message?.type==='account'&&message.id!==current.descriptor.accountId))close(false);};
     }
-    return()=>{mounted=false;captureRef.current.revoke();active.current?.close();active.current=undefined;const state=captureState.current;if(state)void lockCaptureStorage(state.revision).catch(()=>undefined);generation.current++;channel.current?.close();channel.current=undefined;};
+    return()=>{mounted=false;captureRef.current.revoke();active.current?.close();active.current=undefined;const state=captureState.current;if(state)void loadNativeCapture().then(bridge=>bridge.lockCaptureStorage(state.revision)).catch(()=>undefined);generation.current++;channel.current?.close();channel.current=undefined;};
   },[native,close]);
   useEffect(()=>{
     if(!session)return;
-    let last=Date.now(),checking=false,alive=true;const verify=async()=>{if(!nativeProtection||checking)return;checking=true;try{const state=await getCaptureStorageState();if(!alive)return;if(state?.lease!==session.attachment?.captureLease)close();else if(!document.hidden)last=Date.now();}catch{if(alive)close();}finally{checking=false;}};
+    let last=Date.now(),checking=false,alive=true;const verify=async()=>{if(!nativeProtection||checking)return;checking=true;try{const state=await (await loadNativeCapture()).getCaptureStorageState();if(!alive)return;if(state?.lease!==session.attachment?.captureLease)close();else if(!document.hidden)last=Date.now();}catch{if(alive)close();}finally{checking=false;}};
     const renew=async()=>{
       if(!alive||active.current!==session||document.hidden||Date.now()-last>=5*60*1000){
         if(alive&&active.current===session)close();
@@ -108,19 +114,19 @@ export function DeviceWorkspace({children}:{children:ReactNode}){
     scheduleIdleCheck();
     for(const type of ['pointerdown','keydown','touchstart'])window.addEventListener(type,activity,{passive:true});
     document.addEventListener('visibilitychange',hidden);window.addEventListener('pagehide',leaving);
-    let listener:Awaited<ReturnType<typeof onCaptureWorkspaceLocked>>|undefined;if(nativeProtection)void onCaptureWorkspaceLocked(event=>{if(alive&&event.lease===session.attachment?.captureLease)close(false);}).then(value=>{if(alive)listener=value;else void value.remove();}).catch(()=>{if(alive)close();});
+    let listener:{remove:()=>Promise<void>}|undefined;if(nativeProtection)void loadNativeCapture().then(({onCaptureWorkspaceLocked})=>onCaptureWorkspaceLocked(event=>{if(alive&&event.lease===session.attachment?.captureLease)close(false);})).then(value=>{if(alive)listener=value;else void value.remove();}).catch(()=>{if(alive)close();});
     return()=>{alive=false;if(renewInteraction.current===renew)renewInteraction.current=undefined;void listener?.remove();if(idleTimer)clearTimeout(idleTimer);for(const type of ['pointerdown','keydown','touchstart'])window.removeEventListener(type,activity);document.removeEventListener('visibilitychange',hidden);window.removeEventListener('pagehide',leaving);};
   },[session,close,nativeProtection,capture]);
   const activate=(opened:ProtectedSession)=>{if(document.hidden){opened.close();close();return;}active.current=opened;setSession(opened);setCaptureLease(opened.attachment?.captureLease);setMode('open');setNotice('');};
-  const refreshCapture=async()=>{if(native&&!nativeHandshake.current)throw new Error('Native capture storage has not been verified. Reload saved workspaces before continuing.');if(!nativeProtection)return;const state=await getCaptureStorageState();if(!state)throw new Error('Native protection is unavailable. Reload the app.');captureState.current=state;};
+  const refreshCapture=async()=>{if(native&&!nativeHandshake.current)throw new Error('Native capture storage has not been verified. Reload saved workspaces before continuing.');if(!nativeProtection)return;const state=await (await loadNativeCapture()).getCaptureStorageState();if(!state)throw new Error('Native protection is unavailable. Reload the app.');captureState.current=state;};
   const attachFor=(epoch:number):AttachWorkspace|undefined=>nativeProtection?async(descriptor,raw)=>{
     if(epoch!==generation.current||document.hidden)throw new Error('The workspace selection changed before unlocking.');const revision=captureState.current?.revision;if(!revision)throw new Error('Reload native capture storage first.');
-    const state=await openCaptureWorkspace(revision,descriptor.id,descriptor.accountId,raw);if(!state.lease||!state.protectedWorkspace)throw new Error('The protected capture workspace was not selected.');
-    if(epoch!==generation.current||document.hidden){await lockCaptureStorage(state.revision);throw new Error('The workspace selection changed before unlocking.');}
+    const bridge=await loadNativeCapture();const state=await bridge.openCaptureWorkspace(revision,descriptor.id,descriptor.accountId,raw);if(!state.lease||!state.protectedWorkspace)throw new Error('The protected capture workspace was not selected.');
+    if(epoch!==generation.current||document.hidden){await bridge.lockCaptureStorage(state.revision);throw new Error('The workspace selection changed before unlocking.');}
     captureState.current=state;const client=captureClient(state.lease);
-    return {captureLease:state.lease,close:()=>{client.revoke();void lockCaptureStorage(state.revision).catch(()=>undefined);},clearCaptures:()=>client.clearScanCaptures()};
+    return {captureLease:state.lease,close:()=>{client.revoke();void loadNativeCapture().then(value=>value.lockCaptureStorage(state.revision)).catch(()=>undefined);},clearCaptures:()=>client.clearScanCaptures()};
   }:undefined;
-  const useGuest=async()=>{const epoch=++generation.current;setBusy(true);setNotice('');try{await refreshCapture();if(epoch!==generation.current)return;if(nativeProtection){const state=await selectGuestCaptureStorage(captureState.current!.revision);if(epoch!==generation.current){await lockCaptureStorage(state.revision);return;}captureState.current=state;setCaptureLease(state.lease??undefined);}setPassphrase('');setMode('guest');}catch(error){setNotice(error instanceof Error?error.message:'Guest storage could not be selected.');}finally{setBusy(false);}};
+  const useGuest=async()=>{const epoch=++generation.current;setBusy(true);setNotice('');try{await refreshCapture();if(epoch!==generation.current)return;if(nativeProtection){const bridge=await loadNativeCapture();const state=await bridge.selectGuestCaptureStorage(captureState.current!.revision);if(epoch!==generation.current){await bridge.lockCaptureStorage(state.revision);return;}captureState.current=state;setCaptureLease(state.lease??undefined);}setPassphrase('');setMode('guest');}catch(error){setNotice(error instanceof Error?error.message:'Guest storage could not be selected.');}finally{setBusy(false);}};
   const accountKnown=(id:string,announce=false)=>{if(announce)channel.current?.postMessage({type:'account',id});if(active.current&&active.current.descriptor.accountId!==id){close();setNotice('The signed-in account changed. Unlock its separate device workspace or use guest packs.');return false;}return true;};
   const accountEnded=(message?:string)=>{channel.current?.postMessage({type:'account',id:null});if(active.current){close();setNotice(message??'Your protected workspace is locked. The device passphrase can open its offline copy.');}};
   const create=async(profile:PackingAccountProfile,label:string,password:string,data:AppData,copy:boolean)=>{

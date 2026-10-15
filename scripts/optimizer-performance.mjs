@@ -10,7 +10,17 @@ const value = (name, fallback) => {
 const counts = value('counts', '50,100,250').split(',').map(Number);
 const runs = Number(value('runs', '3'));
 const shapeCount = Number(value('shapes', '0'));
+const bagCount = Number(value('bags', '1'));
 const optimizerRef = value('optimizer-ref', '');
+const stackLoadRef = value('stack-load-ref', '');
+const packingGeometryRef = value('packing-geometry-ref', '');
+const bagWeightsRef = value('bag-weights-ref', '');
+const retrievalRef = value('retrieval-ref', '');
+const retrievalChecks = value('retrieval-checks', 'false') === 'true';
+const mode = value('mode', '');
+if (mode && !['balanced', 'maximum_capacity', 'easy_access', 'fragile_protection'].includes(mode)) {
+  throw new Error('Use --mode=balanced,maximum_capacity,easy_access, or fragile_protection.');
+}
 const assertRectangularPlacementsDoNotOverlap = (plan) => {
   if (shapeCount > 0) return;
   const placements = plan.placements;
@@ -33,6 +43,7 @@ if (!counts.length || counts.some((count) => !Number.isInteger(count) || count <
 }
 if (!Number.isInteger(runs) || runs < 1 || runs > 10) throw new Error('Use --runs= with a count from 1 to 10.');
 if (!Number.isInteger(shapeCount) || shapeCount < 0 || shapeCount > 500) throw new Error('Use --shapes= with a count from 0 to 500.');
+if (!Number.isInteger(bagCount) || bagCount < 1 || bagCount > 10) throw new Error('Use --bags= with a count from 1 to 10.');
 
 function benchmarkShape() {
   const grid = { x: 12, y: 10, z: 6 };
@@ -74,23 +85,59 @@ function benchmarkShape() {
   };
 }
 
+const benchmarkOverrides = [];
+if (optimizerRef) benchmarkOverrides.push({
+  name: 'optimizer-benchmark-source',
+  enforce: 'pre',
+  transform(_source, id) {
+    if (!id.replaceAll('\\', '/').endsWith('/src/optimizer.ts')) return null;
+    return execFileSync('git', ['show', `${optimizerRef}:src/optimizer.ts`], { encoding: 'utf8' });
+  },
+});
+if (stackLoadRef) benchmarkOverrides.push({
+  name: 'stack-load-benchmark-source',
+  enforce: 'pre',
+  transform(_source, id) {
+    if (!id.replaceAll('\\', '/').endsWith('/src/stack-load.ts')) return null;
+    return execFileSync('git', ['show', `${stackLoadRef}:src/stack-load.ts`], { encoding: 'utf8' });
+  },
+});
+if (packingGeometryRef) benchmarkOverrides.push({
+  name: 'packing-geometry-benchmark-source',
+  enforce: 'pre',
+  transform(_source, id) {
+    if (!id.replaceAll('\\', '/').endsWith('/src/packing-geometry.ts')) return null;
+    return execFileSync('git', ['show', `${packingGeometryRef}:src/packing-geometry.ts`], { encoding: 'utf8' });
+  },
+});
+if (bagWeightsRef) benchmarkOverrides.push({
+  name: 'bag-weights-benchmark-source',
+  enforce: 'pre',
+  transform(_source, id) {
+    if (!id.replaceAll('\\', '/').endsWith('/src/bag-weights.ts')) return null;
+    return execFileSync('git', ['show', `${bagWeightsRef}:src/bag-weights.ts`], { encoding: 'utf8' });
+  },
+});
+if (retrievalRef) benchmarkOverrides.push({
+  name: 'retrieval-benchmark-source',
+  enforce: 'pre',
+  transform(_source, id) {
+    if (!id.replaceAll('\\', '/').endsWith('/src/retrieval.ts')) return null;
+    return execFileSync('git', ['show', `${retrievalRef}:src/retrieval.ts`], { encoding: 'utf8' });
+  },
+});
 const vite = await createServer({
-  plugins: optimizerRef ? [{
-    name: 'optimizer-benchmark-source',
-    enforce: 'pre',
-    transform(_source, id) {
-      if (!id.replaceAll('\\', '/').endsWith('/src/optimizer.ts')) return null;
-      return execFileSync('git', ['show', `${optimizerRef}:src/optimizer.ts`], { encoding: 'utf8' });
-    },
-  }] : [],
+  plugins: benchmarkOverrides,
   optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error',
 });
 try {
   const { createInitialData } = await vite.ssrLoadModule('/src/seed.ts');
   const { buildPlan } = await vite.ssrLoadModule('/src/optimizer.ts');
+  const { assessRetrieval } = await vite.ssrLoadModule('/src/retrieval.ts');
   const seed = createInitialData();
   const fixture = (count) => {
     if (shapeCount > count) throw new Error(`Cannot benchmark ${shapeCount} shapes in a ${count}-item plan.`);
+    const containerIds = Array.from({ length: bagCount }, (_, index) => index === 0 ? 'benchmark-bag' : `benchmark-bag-${index + 1}`);
     const shapeIndices = new Set(Array.from({ length: shapeCount }, (_, index) => Math.floor(index * count / shapeCount)));
     const shaped = shapeCount ? benchmarkShape() : undefined;
     const items = Array.from({ length: count }, (_, index) => {
@@ -114,7 +161,8 @@ try {
     const trip = {
       ...structuredClone(seed.trips[0]),
       sample: false,
-      containerIds: ['benchmark-bag'],
+      ...(mode ? { mode } : {}),
+      containerIds,
       entries: items.map((item, index) => ({
         id: `benchmark-entry-${index}`,
         itemId: item.id,
@@ -128,15 +176,15 @@ try {
       unavailableInstanceIds: [],
       lockedPlacements: [],
     };
-    const bag = {
+    const bags = containerIds.map(id => ({
       ...structuredClone(seed.containers[0]),
-      id: 'benchmark-bag',
+      id,
       inside: { length: 1000, width: 800, height: 500 },
       opening: { length: 1000, width: 800 },
       massLimitGrams: 100000,
       travellerIds: ['traveller-you'],
-    };
-    return { trip, items, bags: [bag] };
+    }));
+    return { trip, items, bags };
   };
 
   const results = [];
@@ -150,6 +198,10 @@ try {
     const expectedFingerprint = fingerprint(warmup);
     const samples = [];
     const cpuSamples = [];
+    const retrievalItems = retrievalChecks ? new Map(warmup.placements.map(placement => [placement.instanceId,
+      input.items.find(item => item.id === placement.itemId)]).filter((entry) => entry[1])) : undefined;
+    const expectedRetrieval = retrievalChecks ? JSON.stringify(assessRetrieval(warmup.placements, input.bags, retrievalItems)) : '';
+    const retrievalSamples = [];
     for (let run = 0; run < runs; run += 1) {
       const cpuStart = process.cpuUsage();
       const start = performance.now();
@@ -160,19 +212,32 @@ try {
       if (plan.placements.length !== count) throw new Error(`Run ${run + 1} placed ${plan.placements.length} of ${count} items.`);
       if (fingerprint(plan) !== expectedFingerprint) throw new Error(`Run ${run + 1} changed the warm-up placements.`);
       assertRectangularPlacementsDoNotOverlap(plan);
+      if (retrievalChecks) {
+        const retrievalStart = performance.now();
+        const review = assessRetrieval(warmup.placements, input.bags, retrievalItems);
+        retrievalSamples.push((performance.now() - retrievalStart) / 1000);
+        if (JSON.stringify(review) !== expectedRetrieval) throw new Error(`Run ${run + 1} changed retrieval review results.`);
+      }
     }
     const sorted = [...samples].sort((left, right) => left - right);
     const sortedCpu = [...cpuSamples].sort((left, right) => left - right);
+    const sortedRetrieval = [...retrievalSamples].sort((left, right) => left - right);
     results.push({ itemCount: count, medianSeconds: sorted[Math.floor(sorted.length / 2)], samplesSeconds: samples,
       medianCpuSeconds: sortedCpu[Math.floor(sortedCpu.length / 2)], samplesCpuSeconds: cpuSamples,
+      ...(retrievalChecks ? { retrievalMedianSeconds: sortedRetrieval[Math.floor(sortedRetrieval.length / 2)], retrievalSamplesSeconds: retrievalSamples } : {}),
       placed: count, placementFingerprint: expectedFingerprint });
   }
   console.log(JSON.stringify({
-    fixture: shapeCount ? `varied rectangles with ${shapeCount} synthetic voxel U-shapes in a 1000x800x500 mm bag`
-      : 'varied rectangular items in a 1000x800x500 mm bag',
+    fixture: shapeCount ? `varied rectangles with ${shapeCount} synthetic voxel U-shapes in ${bagCount} 1000x800x500 mm bags`
+      : `varied rectangular items in ${bagCount} 1000x800x500 mm bags`,
     dimensions: shapeCount ? '120x100x60 mm voxel U-shapes mixed with 48-200 x 36-162 x 18-120 mm rectangles'
       : '48-200 x 36-162 x 18-120 mm, deterministic per item index',
+    mode: mode || seed.trips[0].mode,
     optimizerRef: optimizerRef || 'working tree',
+    stackLoadRef: stackLoadRef || 'working tree',
+    packingGeometryRef: packingGeometryRef || 'working tree',
+    bagWeightsRef: bagWeightsRef || 'working tree',
+    retrievalRef: retrievalRef || 'working tree',
     node: process.version,
     shapeCount,
     warmupRunsPerSize: 1,

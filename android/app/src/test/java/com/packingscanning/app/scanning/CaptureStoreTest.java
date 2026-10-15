@@ -6,6 +6,8 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 import java.io.File;
 import java.nio.file.Files;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import static org.junit.Assert.*;
@@ -33,9 +35,18 @@ public class CaptureStoreTest {
         JSONObject saved = store.save("item",fixture());
         String id = saved.getJSONObject("record").getString("id");
         File folder = new File(temporary.getRoot(),"packing-scans/" + id);
-        String ply = new String(Files.readAllBytes(new File(folder,"points.ply").toPath()),StandardCharsets.UTF_8);
-        assertTrue(ply.startsWith("ply\nformat ascii 1.0"));
-        assertTrue(ply.contains("element vertex 400\n"));
+        byte[] ply = Files.readAllBytes(new File(folder,"points.ply").toPath());
+        int headerEnd=headerEnd(ply);
+        assertTrue(new String(ply,0,headerEnd,StandardCharsets.US_ASCII).startsWith("ply\nformat binary_little_endian 1.0"));
+        assertTrue(new String(ply,0,headerEnd,StandardCharsets.US_ASCII).contains("element vertex 400\n"));
+        assertEquals(headerEnd+400*16,ply.length);
+        long asciiBytes="ply\nformat ascii 1.0\ncomment units metres; capture-local right-handed camera frame\nelement vertex 400\nproperty float x\nproperty float y\nproperty float z\nproperty float confidence\nend_header\n".length();
+        ByteBuffer binaryPoints=ByteBuffer.wrap(ply,headerEnd,ply.length-headerEnd).order(ByteOrder.LITTLE_ENDIAN);
+        while(binaryPoints.hasRemaining()) {
+            for(int axis=0;axis<4;axis++)asciiBytes+=Float.toString(binaryPoints.getFloat()).length();
+            asciiBytes+=4; // three spaces and one newline
+        }
+        assertTrue("Binary PLY should use fewer bytes than its ASCII equivalent.",ply.length<asciiBytes);
         assertFalse(new File(folder,"points.ply.partial").exists());
         JSONObject stored = new JSONObject(new String(Files.readAllBytes(new File(folder,"capture.json").toPath()),StandardCharsets.UTF_8));
         assertEquals(400,stored.getJSONObject("record").getJSONObject("geometry").getInt("pointCount"));
@@ -82,15 +93,39 @@ public class CaptureStoreTest {
         assertThrows(java.io.IOException.class,()->store.preview("../private"));
         JSONObject saved=store.save("item",fixture());String id=saved.getJSONObject("record").getString("id");
         File ply=new File(temporary.getRoot(),"packing-scans/"+id+"/points.ply");
-        String original=new String(Files.readAllBytes(ply.toPath()),StandardCharsets.UTF_8);
-        Files.write(ply.toPath(),original.replace("element vertex 400","element vertex 60001").getBytes(StandardCharsets.UTF_8));
+        byte[] original=Files.readAllBytes(ply.toPath());
+        int headerEnd=headerEnd(original);
+        String originalHeader=new String(original,0,headerEnd,StandardCharsets.US_ASCII);
+        byte[] changedHeader=originalHeader.replace("element vertex 400","element vertex 60001").getBytes(StandardCharsets.US_ASCII);
+        byte[] changed=new byte[changedHeader.length+original.length-headerEnd];System.arraycopy(changedHeader,0,changed,0,changedHeader.length);System.arraycopy(original,headerEnd,changed,changedHeader.length,original.length-headerEnd);
+        Files.write(ply.toPath(),changed);
         assertThrows(java.io.IOException.class,()->store.preview(id));
-        Files.write(ply.toPath(),original.replaceFirst("0.9","NaN").getBytes(StandardCharsets.UTF_8));
+        byte[] invalidPoint=original.clone();ByteBuffer.wrap(invalidPoint).order(ByteOrder.LITTLE_ENDIAN).putFloat(headerEnd,Float.NaN);
+        Files.write(ply.toPath(),invalidPoint);
         assertThrows(java.io.IOException.class,()->store.preview(id));
-        Files.write(ply.toPath(),original.getBytes(StandardCharsets.UTF_8));
+        Files.write(ply.toPath(),original);
         File metadata=new File(temporary.getRoot(),"packing-scans/"+id+"/capture.json");
         saved.getJSONObject("record").put("id",UUID.randomUUID().toString());Files.write(metadata.toPath(),saved.toString().getBytes(StandardCharsets.UTF_8));
         assertThrows(java.io.IOException.class,()->store.preview(id));
+    }
+
+    @Test public void readsHistoricalAsciiPlyCaptures() throws Exception {
+        CaptureStore store=new CaptureStore(temporary.getRoot());JSONObject saved=store.save("item",fixture());String id=saved.getJSONObject("record").getString("id");
+        File plyFile=new File(temporary.getRoot(),"packing-scans/"+id+"/points.ply");byte[] binary=Files.readAllBytes(plyFile.toPath());int start=headerEnd(binary);
+        ByteBuffer points=ByteBuffer.wrap(binary,start,binary.length-start).order(ByteOrder.LITTLE_ENDIAN);
+        StringBuilder ascii=new StringBuilder("ply\nformat ascii 1.0\ncomment units metres; capture-local right-handed camera frame\nelement vertex 400\nproperty float x\nproperty float y\nproperty float z\nproperty float confidence\nend_header\n");
+        while(points.hasRemaining())ascii.append(Float.toString(points.getFloat())).append(' ').append(Float.toString(points.getFloat())).append(' ').append(Float.toString(points.getFloat())).append(' ').append(Float.toString(points.getFloat())).append('\n');
+        Files.write(plyFile.toPath(),ascii.toString().getBytes(StandardCharsets.US_ASCII));
+        JSONObject preview=store.preview(id);assertEquals(400,preview.getInt("pointCount"));assertEquals(1600,preview.getJSONArray("pointsMm").length());
+    }
+
+    private static int headerEnd(byte[] bytes) {
+        byte[] marker="end_header\n".getBytes(StandardCharsets.US_ASCII);
+        outer: for(int i=0;i<=bytes.length-marker.length;i++) {
+            for(int j=0;j<marker.length;j++)if(bytes[i+j]!=marker[j])continue outer;
+            return i+marker.length;
+        }
+        throw new AssertionError("Missing PLY header end.");
     }
     private static DepthCloud.Snapshot closedShell() {
         DepthCloud cloud=new DepthCloud(.5);int side=40,count=side*side*side-(side-2)*(side-2)*(side-2);float[] points=new float[count*4];int n=0;

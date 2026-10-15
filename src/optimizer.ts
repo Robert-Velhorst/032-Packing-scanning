@@ -12,7 +12,7 @@ import { assessStackLoads, hasStackContact, StackLoadContactCache, topLoadError 
 import { packingItem, packingFormKey } from './packing-forms';
 import { isValidRejectedPlacement, samePlacementGeometry } from './packing-progress';
 import { containerBlockedBoxes, containerSpaceError, usableContainerHeight, usableContainerVolume } from './container-space';
-import { interiorKey, interiorSupportError } from './packing-interior';
+import { interiorKey, interiorSupportError, interiorTravelUp } from './packing-interior';
 import { contactPositions, fitsGeometrySpaceInValidatedContainer, geometryIntersects, geometryOrientations, hasGeometrySupport, hasPackingAndTravelSupport, hasVerticalEntry, orientationForRotation, packingShapeError, placementBoxes, RectangularSupportIndex, shapeDimensions, shapeKey, shapeVolume, type GeometryBox } from './packing-geometry';
 
 interface FreeSpace {
@@ -26,17 +26,13 @@ interface FreeSpace {
   height: number;
 }
 
-interface Candidate extends FreeSpace {
-  rotation: number;
-  score: number;
-  dimensions: { length: number; width: number; height: number };
-}
-
 const volume = (box: { length: number; width: number; height: number }) => box.length * box.width * box.height;
 const spaceVolume = (box: FreeSpace) => box.length * box.width * box.height;
 const EPSILON = 0.01;
 const SUPPORT_INDEX_THRESHOLD=64;
 const SHAPED_SUPPORT_INDEX_THRESHOLD=8;
+// Bound the Cartesian product of shape-aware contact positions per orientation.
+const SHAPE_CONTACT_POSITION_LIMIT=100;
 
 export function buildPlan(trip: Trip, library: LibraryItem[], allContainers: Container[], mode: OptimizationMode = trip.mode): PackingPlan {
   const referencedItemIds = new Set(trip.entries.map(entry => entry.itemId));
@@ -243,10 +239,27 @@ function searchInsertionOrders(orders: PlanItem[][], containers: Container[], lo
   };
   // Preserve existing rectangular-only mode behavior, including its tie order.
   if (!rules.length && !orders[0]?.some(item => item.packingShape)) {
-    for (const order of orders) evaluate(order);
+    const balancedDistributionAffectsScore = mode === 'balanced' && containers.length > 1
+      && containers.every(bag => typeof bag.tareGrams === 'number' && Number.isFinite(bag.tareGrams) && bag.tareGrams >= 0)
+      && (orders[0]?.every(item => typeof item.upperMassGrams === 'number' && Number.isFinite(item.upperMassGrams) && item.upperMassGrams >= 0) ?? false);
+    const completePlanHasMaximumScore = mode === 'maximum_capacity' || mode === 'fragile_protection'
+      || mode === 'balanced' && !balancedDistributionAffectsScore;
+    for (const order of orders) {
+      evaluate(order);
+      // A complete result is unbeatable in these modes. In balanced mode this
+      // also holds when recorded weights are incomplete, so no balance penalty
+      // can distinguish complete plans and the first complete order wins ties.
+      if (completePlanHasMaximumScore && bestResult?.excluded.length === 0) break;
+    }
     return { results: bestResult ? [bestResult] : [], limited: false };
   }
-  for (const order of orders) evaluate(order);
+  for (const order of orders) {
+    evaluate(order);
+    // Complete plans have the same score in these cases, so alternate insertion
+    // orders cannot improve the selected result once every item is placed.
+    if ((mode === 'maximum_capacity' || mode === 'fragile_protection' || (mode === 'balanced' && containers.length === 1))
+      && bestResult?.excluded.length === 0) break;
+  }
   const complete = () => foundComplete;
   while (frontier.length && seen.size < 24 && !complete()) {
     frontier.sort((a,b) => b.result.score - a.result.score);
@@ -344,12 +357,29 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     if(!error)for(const blocked of [...(container.unavailableSpaces??[])].sort((a,b)=>a.x-b.x||a.y-b.y||a.z-b.z||a.length-b.length||a.width-b.width||a.height-b.height))spaces=splitFreeSpaces(spaces,blocked,!useShapeSequence);
     return [container.id,spaces] as const;
   }));
+  const shapeSearchSpaces = useShapeSequence
+    ? new Map(containers.map(container => {
+      const spaces=containerError(container)||usableHeight(container)<=EPSILON?[]:packingRegions(container);
+      return [container.id,spaces.map(region => ({ ...region, shapeSearch: true }))] as const;
+    }))
+    : undefined;
   const itemById = new Map(items.map((item) => [item.instanceId, item]));
   const stackLoadContactCache = new StackLoadContactCache(itemById);
   // Rectangle-only contacts advance strictly upward; without a fragile or
   // weight-limited item, a candidate cannot create a stacking conflict.
   const stackSensitiveIds = new Set(items.filter(item => item.fragile || item.maxTopLoadGrams !== undefined).map(item => item.instanceId));
   const shapeItems = items.filter(item => item.packingShape);
+  const shapeOrientations = new Map<string, ReturnType<typeof geometryOrientations>>();
+  const orientationsFor = (item: PlanItem, bag: Container) => {
+    if (!item.packingShape) return geometryOrientations(item, bag);
+    const key = `${bag.id}\u0000${item.instanceId}`;
+    let orientations = shapeOrientations.get(key);
+    if (!orientations) {
+      orientations = geometryOrientations(item, bag);
+      shapeOrientations.set(key, orientations);
+    }
+    return orientations;
+  };
   const placedIds = new Set<string>();
   const blockedBagIds = new Set<string>();
   const massConflicts: BagMassConflict[] = [];
@@ -433,11 +463,15 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
   for (const item of items) {
     if (placedIds.has(item.instanceId)) continue;
     const candidateContainers = containers.filter(container => eligibleForBag(item,container));
+    const placementSequenceMetadata:Partial<Pick<Placement,'insertionOrder'>>=useShapeSequence?{insertionOrder:placements.length+1}:{};
+    const shapePlacementMetadata:Partial<Pick<Placement,'shapeKey'>>=item.packingShape?{shapeKey:shapeKey(item.packingShape)}:{};
+    const formPlacementMetadata:Partial<Pick<Placement,'packingFormId'|'packingFormKey'>>=item.packingForm
+      ?{packingFormId:item.packingForm.id,packingFormKey:packingFormKey(item.packingForm)}:{};
     const groupedRules = rules.filter(rule => rule.kind !== 'clearance' && (rule.firstEntryId === item.entryId || rule.secondEntryId === item.entryId));
     let loadFailure: string | undefined;
     let separationFailure: string | undefined;
     let searchLimited=false;
-    let best: { placement: Placement; container: Container; candidate: Candidate; lookahead: number; affinity: boolean } | undefined;
+    let best: { placement: Placement; container: Container; score: number; lookahead: number; affinity: boolean } | undefined;
     const lookaheadCache = new Map<string,number>();
     const balancingBags = mode === 'balanced' ? candidateContainers.filter(bag => !blockedBagIds.has(bag.id) && !containerError(bag) && !interiorSupportError(bag.packingInterior)) : [];
     const completeBalancedTotals = balancingBags.every(bag => typeof bag.tareGrams === 'number' && Number.isFinite(bag.tareGrams) && bag.tareGrams >= 0
@@ -448,11 +482,14 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
       if (blockedBagIds.has(container.id)||containerError(container)||interiorSupportError(container.packingInterior)) continue;
       const massAfter = (massByContainer.get(container.id) ?? container.tareGrams ?? 0) + (item.upperMassGrams ?? 0);
       if (container.massLimitGrams !== undefined && massAfter > container.massLimitGrams + EPSILON) continue;
+      const interiorPlacementMetadata:Partial<Pick<Placement,'interiorKey'>>=container.packingInterior?{interiorKey:interiorKey(container.packingInterior)}:{};
+      const travelUp=container.packingInterior?interiorTravelUp(container.packingInterior):undefined;
+      const incrementalStackCheck=shapeItems.length>0||!!travelUp&&(travelUp.axis!==2||travelUp.sign!==1);
       let futureOrientationsById: Map<string, ReturnType<typeof geometryOrientations>> | undefined;
       const futureShapes=container.compartments?[]:shapeItems.filter(i=>{
         if(i.instanceId===item.instanceId||placedIds.has(i.instanceId)||!eligibleForBag(i,container)
           ||(container.massLimitGrams!==undefined&&massAfter+(i.upperMassGrams??0)>container.massLimitGrams+EPSILON))return false;
-        const orientations=geometryOrientations(i,container);
+        const orientations=orientationsFor(i,container);
         if(!orientations.some(o=>fitsOpening(o,container)&&o.length<=container.inside.length+EPSILON&&o.width<=container.inside.width+EPSILON&&o.height<=usableHeight(container)+EPSILON))return false;
         (futureOrientationsById??=new Map()).set(i.instanceId,orientations);
         return true;
@@ -460,8 +497,13 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
       const future=futureShapes.reduce<PlanItem|undefined>((best,i)=>!best||i.volumeMm3>best.volumeMm3?i:best,undefined);
       const hasShapes=useShapeSequence;
       const bagPlacements=placementsByContainer.get(container.id)??[];
+      const highestFragilePlacementZ=item.fragile&&mode==='balanced'?bagPlacements.reduce((highest,placement)=>itemById.get(placement.instanceId)?.fragile?Math.max(highest,placement.z):highest,Number.NEGATIVE_INFINITY):Number.NEGATIVE_INFINITY;
+      // This candidate-independent stack condition must not scan the bag for
+      // every free-space position evaluated below.
+      const hasStackSensitivePlacement=stackSensitiveIds.size>0&&bagPlacements.some(placed=>stackSensitiveIds.has(placed.instanceId));
       const supportIndex=supportIndexes?.get(container.id);
-      const reservation=lookaheadDepth>1&&futureShapes.length>1?reservePendingShapes(futureShapes,bagPlacements,container,itemById,mode,lookaheadDepth,rules,usableHeight(container),blockedSpaces.get(container.id)??[]):undefined;
+      const reservation=lookaheadDepth>1&&futureShapes.length>1?reservePendingShapes(futureShapes,bagPlacements,container,itemById,mode,lookaheadDepth,rules,usableHeight(container),blockedSpaces.get(container.id)??[],orientationsFor):undefined;
+      const reservedMassGrams=reservation?.placements.reduce((sum,placement)=>sum+(itemById.get(placement.instanceId)?.upperMassGrams??0),0)??0;
       const anchors=[...(reservation?.placements??[]),...futureShapes.flatMap(future=>{
         const o=futureOrientationsById?.get(future.instanceId)?.[0];
         return o&&o.length<=container.inside.length&&o.width<=container.inside.width&&o.height<=usableHeight(container)?cornerPositions(initialSpace(container,usableHeight(container)),o).map(position=>({instanceId:future.instanceId,entryId:future.entryId,itemId:future.itemId,containerId:container.id,...position,...o,layer:1})):[];
@@ -471,34 +513,36 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
         ?[...(verticalEntryObstacles.get(container.id)??[]),...anchors.flatMap(anchor=>placementBoxes(anchor,itemById.get(anchor.instanceId)))]
         :undefined;
       const availableSpaces=freeSpaces.get(container.id)??[];
-      const spaces=hasShapes?[...availableSpaces,...packingRegions(container).map(region=>({...region,shapeSearch:true}))]:availableSpaces;
-      const orientations=geometryOrientations(item,container);
-      const compartmentContexts=new Map<string|undefined,{compartment:ReturnType<typeof compartmentFor>;eligible:boolean;contentsError?:string;orientations:typeof orientations}>();
+      const spaces=hasShapes?[...availableSpaces,...(shapeSearchSpaces?.get(container.id)??[])]:availableSpaces;
+      const orientations=orientationsFor(item,container);
+      const compartmentContexts=new Map<string|undefined,{compartment:ReturnType<typeof compartmentFor>;placementMetadata:Partial<Pick<Placement,'compartmentId'|'compartmentKey'>>;eligible:boolean;contentsError?:string;orientations:typeof orientations}>();
       for (const space of spaces) {
         let context=compartmentContexts.get(space.compartmentId);
         if(!context){
           const compartment=compartmentFor(container,space.compartmentId),eligible=eligibleForCompartment(item,compartment);
-          context={compartment,eligible,contentsError:eligible?compartmentMassError(compartment,bagPlacements,itemById,item):undefined,
+          context={compartment,placementMetadata:compartment?{compartmentId:compartment.id,compartmentKey:compartmentKey(compartment)}:{},eligible,contentsError:eligible?compartmentMassError(compartment,bagPlacements,itemById,item):undefined,
             orientations:eligible?orientations.filter(orientation=>fitsOpening(orientation,container,space.compartmentId)):[]};
           compartmentContexts.set(space.compartmentId,context);
         }
         if(!context.eligible)continue;
         if(context.contentsError){loadFailure=context.contentsError;continue;}
-        const {compartment}=context;
         for (const orientation of context.orientations) {
           if (orientation.length > space.length + EPSILON || orientation.width > space.width + EPSILON || orientation.height > space.height + EPSILON) continue;
-          const contacts=space.shapeSearch?contactPositions(container,orientation,item,shapeContactObstacles?[]:[...bagPlacements,...anchors],itemById,space,blockedSpaces.get(container.id),shapeContactObstacles):undefined;
+          const contactCollisionObstacles=space.shapeSearch?verticalEntryObstacles?.get(container.id):undefined;
+          const contacts=space.shapeSearch?contactPositions(container,orientation,item,shapeContactObstacles?[]:[...bagPlacements,...anchors],itemById,space,blockedSpaces.get(container.id),shapeContactObstacles,SHAPE_CONTACT_POSITION_LIMIT,contactCollisionObstacles):undefined;
           if(contacts?.limited)searchLimited=true;
-          const positions = separationPositions(contacts?.positions??cornerPositions(space, orientation),space,item,orientation,item.entryId,bagPlacements,rules,itemById);
+          const basePositions=contacts?.positions??cornerPositions(space, orientation);
+          const positions = rules.length
+            ? separationPositions(basePositions,space,item,orientation,item.entryId,bagPlacements,rules,itemById)
+            : basePositions;
           if(positions.length>=20000)searchLimited=true;
           for (const position of positions) {
-            const candidateBase = { ...position, length: orientation.length, width: orientation.width, height: orientation.height };
             const placement: Placement = {
               instanceId: item.instanceId,
               entryId: item.entryId,
               itemId: item.itemId,
               containerId: container.id,
-              ...(compartment?{compartmentId:compartment.id,compartmentKey:compartmentKey(compartment)}:{}),
+              ...context.placementMetadata,
               x: position.x,
               y: position.y,
               z: position.z,
@@ -507,28 +551,33 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
               height: orientation.height,
               layer: 1,
               rotation: orientation.rotation,
-              ...(useShapeSequence?{insertionOrder:placements.length+1}:{}),
-              ...(item.packingShape?{shapeKey:shapeKey(item.packingShape)}:{}),
-              ...(item.packingForm?{packingFormId:item.packingForm.id,packingFormKey:packingFormKey(item.packingForm)}:{}),
-              ...(container.packingInterior?{interiorKey:interiorKey(container.packingInterior)}:{}),
+              ...placementSequenceMetadata,
+              ...shapePlacementMetadata,
+              ...formPlacementMetadata,
+              ...interiorPlacementMetadata,
             };
-            if(!fitsGeometrySpaceInValidatedContainer(placement,container,item,blockedSpaces.get(container.id)))continue;
-            // Ordinary rectangular candidates come from free regions that have
-            // already been split around every placed box. Keep the exact
-            // geometry check for shape, interior, compartment, and separation
-            // searches, where candidate positions can intentionally bypass
-            // those rectangular free-space boundaries.
-            if((useShapeSequence||rules.length>0)&&bagPlacements.some(p=>geometryIntersects(placement,p,itemById)))continue;
+            // Plain rectangular candidates come only from free regions already
+            // clipped to the bag and split around any blocked geometry. When
+            // there is no shape sequence or blocked geometry, this check repeats
+            // those same bounds for every corner candidate.
+            if((useShapeSequence||(blockedSpaces.get(container.id)?.length??0)>0)
+              &&!fitsGeometrySpaceInValidatedContainer(placement,container,item,blockedSpaces.get(container.id)))continue;
+            // Ordinary candidates remain inside free regions already split
+            // around every occupied geometry box. Shape-search positions are
+            // collision-filtered while generated; only clearance offsets can
+            // bypass those checks and still need the exact geometry gate here.
+            if(rules.length>0&&!contactCollisionObstacles&&bagPlacements.some(p=>geometryIntersects(placement,p,itemById)))continue;
             if(!(supportIndex?hasPackingAndTravelSupport(placement,bagPlacements,itemById,mode==='fragile_protection'?1:.65,container,supportIndex):hasPackingAndTravelSupport(placement,bagPlacements,itemById,mode==='fragile_protection'?1:.65,container)))continue;
             if(hasShapes&&!hasVerticalEntry(placement,bagPlacements,itemById,container,blockedSpaces.get(container.id),verticalEntryObstacles?.get(container.id)))continue;
             const separationError = rules.length?placementSeparationError(placement,[...placements,...savedMassPositions],rules,itemById):undefined;
             if(separationError){separationFailure=separationError;continue;}
             if (rejected.some((failed) => samePlacementGeometry(failed, placement))) continue;
-            const needsStackCheck = useShapeSequence || stackSensitiveIds.has(item.instanceId) || bagPlacements.some(placed => stackSensitiveIds.has(placed.instanceId));
-            const conflicts = needsStackCheck && hasStackContact(placement, bagPlacements, itemById, container)
-              ? assessStackLoads([...bagPlacements, placement], itemById, [container],stackLoadContactCache).filter(load => load.status === 'conflict')
-              : [];
-            if (conflicts.length) {
+            const needsStackCheck = useShapeSequence || stackSensitiveIds.has(item.instanceId) || hasStackSensitivePlacement;
+            const stackConflict=needsStackCheck&&hasStackContact(placement,bagPlacements,itemById,container)
+              &&(incrementalStackCheck?stackLoadContactCache.wouldCreateStackConflict(placement,bagPlacements,[container])
+                :assessStackLoads([...bagPlacements,placement],itemById,[container],stackLoadContactCache).some(load=>load.status==='conflict'));
+            if (stackConflict) {
+              const conflicts=assessStackLoads([...bagPlacements, placement], itemById, [container],stackLoadContactCache).filter(load => load.status === 'conflict');
               loadFailure = conflicts.map(load => `${load.orientation==='travel'?'Travel orientation - ':''}${itemById.get(load.instanceId)?.name ?? 'Item'}: ${load.reason}`).join(' ');
               continue;
             }
@@ -545,7 +594,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
                   if(geometryIntersects(next,placement,itemById)||placementSeparationError(next,prior,rules,itemById)||!hasVerticalEntry(next,prior,itemById,container,blockedSpaces.get(container.id)))penalty+=itemById.get(next.instanceId)!.volumeMm3*20;
                 }
                 const projected=[...bagPlacements,placement,...reservation.placements],reservedVolume=reservation.placements.reduce((sum,p)=>sum+itemById.get(p.instanceId)!.volumeMm3,0);
-                if((container.massLimitGrams!==undefined&&massInContainer(container.id,projected,itemById,container.tareGrams??0)>container.massLimitGrams+EPSILON)
+                if((container.massLimitGrams!==undefined&&massAfter+reservedMassGrams>container.massLimitGrams+EPSILON)
                   ||assessStackLoads(projected,itemById,[container],stackLoadContactCache).some(load=>load.status==='conflict'))penalty+=reservedVolume*20;
                 lookaheadCache.set(key,penalty);
               }
@@ -555,7 +604,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
                 // An isolated probe cannot change the already-checked stack graph.
                 && (!hasStackContact(next,prior,itemById,container)||!assessStackLoads([...prior,next],itemById,[container],stackLoadContactCache).some(load=>load.status==='conflict')));
               if(!possible)lookahead=future.volumeMm3*20;}
-            const score = placementScore(candidateBase, space, container, item, bagPlacements, massAfter, mode)+lookahead;
+            const score = placementScore(placement, space, container, item, highestFragilePlacementZ, massAfter, mode)+lookahead;
             const weightCost = bagCosts.get(container.id), priorCost = best && bagCosts.get(best.container.id);
             // Compare lighter bags only after all placement gates, and never override
             // a known future-shape obstruction. Within a bag retain geometric scoring.
@@ -564,13 +613,18 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             const compareAffinity = best && affinity!==best.affinity;
             const compareWeight = best && container.id !== best.container.id && lookahead === 0 && best.lookahead === 0
               && weightCost !== undefined && priorCost !== undefined && Math.abs(weightCost - priorCost) > 1e-12;
-            if (!best || (compareAffinity ? affinity : compareWeight ? weightCost! < priorCost! : score < best.candidate.score)) {
-              placement.layer=1+bagPlacements.reduce((maxLayer, placed) => placed.compartmentId===space.compartmentId && placed.z + placed.height <= position.z + EPSILON ? Math.max(maxLayer, placed.layer) : maxLayer, 0);
-              best = { placement, container, lookahead, affinity, candidate: { ...candidateBase, rotation: orientation.rotation, score, dimensions: orientation } };
+            if (!best || (compareAffinity ? affinity : compareWeight ? weightCost! < priorCost! : score < best.score)) {
+              best = { placement, container, score, lookahead, affinity };
             }
           }
         }
       }
+    }
+
+    if(best){
+      const bestPlacements=placementsByContainer.get(best.container.id)??[];
+      best.placement.layer=1+bestPlacements.reduce((maxLayer,placed)=>placed.compartmentId===best.placement.compartmentId
+        &&placed.z+placed.height<=best.placement.z+EPSILON?Math.max(maxLayer,placed.layer):maxLayer,0);
     }
 
     if (!best) {
@@ -621,19 +675,20 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
 
 /** Small beam of simultaneous reservations used by repair attempts. These positions
  * influence scoring only; the final plan still checks each real insertion separately. */
-function reservePendingShapes(pending: PlanItem[], prior: Placement[], bag: Container, items: Map<string,PlanItem>, mode: OptimizationMode, depth: number, rules: SeparationRule[], usableHeight: number, blockedSpaces: ReturnType<typeof containerBlockedBoxes>) {
-  let beam: { placements: Placement[]; penalty: number; distance: number }[] = [{placements:prior,penalty:0,distance:0}];
+function reservePendingShapes(pending: PlanItem[], prior: Placement[], bag: Container, items: Map<string,PlanItem>, mode: OptimizationMode, depth: number, rules: SeparationRule[], usableHeight: number, blockedSpaces: ReturnType<typeof containerBlockedBoxes>, orientationsFor:(item:PlanItem,bag:Container)=>ReturnType<typeof geometryOrientations>) {
+  let beam: { placements: Placement[]; penalty: number; distance: number; massGrams:number }[] = [{placements:prior,penalty:0,distance:0,massGrams:massInContainer(bag.id,prior,items,bag.tareGrams??0)}];
   const future=[...pending].sort((a,b)=>Number(b.required)-Number(a.required)||b.volumeMm3-a.volumeMm3).slice(0,depth);
   for (const item of future) {
     const next: typeof beam = [];
     for (const state of beam) {
       next.push({...state,penalty:state.penalty+item.volumeMm3*20});
-      if(bag.massLimitGrams!==undefined&&massInContainer(bag.id,state.placements,items,bag.tareGrams??0)+(item.upperMassGrams??0)>bag.massLimitGrams+EPSILON)continue;
-      for (const orientation of geometryOrientations(item,bag)) {
+      const itemMassGrams=item.upperMassGrams??0;
+      if(bag.massLimitGrams!==undefined&&state.massGrams+itemMassGrams>bag.massLimitGrams+EPSILON)continue;
+      for (const orientation of orientationsFor(item,bag)) {
         if(!fitsOpening(orientation,bag))continue;
         // Corners preserve alternatives at both ends. A bounded contact sample
         // adds positions between previously reserved shapes.
-        const positions=[...cornerPositions(initialSpace(bag,usableHeight),orientation),...contactPositions(bag,orientation,item,state.placements,items,initialSpace(bag,usableHeight),blockedSpaces).positions.slice(0,8)];
+        const positions=[...cornerPositions(initialSpace(bag,usableHeight),orientation),...contactPositions(bag,orientation,item,state.placements,items,initialSpace(bag,usableHeight),blockedSpaces,undefined,8).positions];
         const seen=new Set<string>();
         for (const position of positions) {
           const key=JSON.stringify([position.x,position.y,position.z]);if(seen.has(key))continue;seen.add(key);
@@ -642,7 +697,7 @@ function reservePendingShapes(pending: PlanItem[], prior: Placement[], bag: Cont
             ||!hasPackingAndTravelSupport(placement,state.placements,items,mode==='fragile_protection'?1:.65,bag)
             ||!hasVerticalEntry(placement,state.placements,items,bag,blockedSpaces)
             ||assessStackLoads([...state.placements,placement],items,[bag]).some(load=>load.status==='conflict'))continue;
-          next.push({placements:[...state.placements,placement],penalty:state.penalty,distance:state.distance+position.z*4+position.y+position.x});
+          next.push({placements:[...state.placements,placement],penalty:state.penalty,distance:state.distance+position.z*4+position.y+position.x,massGrams:state.massGrams+itemMassGrams});
         }
       }
     }
@@ -674,7 +729,7 @@ function placementScore(
   space: FreeSpace,
   container: Container,
   item: PlanItem,
-  placed: Placement[],
+  highestFragilePlacementZ: number,
   massAfter: number,
   mode: OptimizationMode,
 ) {
@@ -698,7 +753,7 @@ function placementScore(
     return base + splits * item.volumeMm3 * 0.08;
   }
   const weightedRisk = massRatio * massRatio * item.volumeMm3 * 0.22;
-  const fragileAbove = item.fragile && placed.some((placement) => placement.containerId === container.id && placement.z > candidate.z + candidate.height);
+  const fragileAbove = item.fragile && highestFragilePlacementZ > candidate.z + candidate.height;
   return base + Math.max(0, candidate.z) * item.volumeMm3 * 0.02 + weightedRisk + (fragileAbove ? item.volumeMm3 * 0.4 : 0);
 }
 
@@ -709,6 +764,7 @@ function massInContainer(containerId: string, placements: Placement[], items: Ma
 
 function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVolumes = false): FreeSpace[] {
   const next: FreeSpace[] = [];
+  const previousSpaces = new Set(spaces);
   const usedRight=used.x+used.length,usedBack=used.y+used.width,usedTop=used.z+used.height;
   for (const space of spaces) {
     const right=space.x+space.length;
@@ -767,6 +823,10 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
   const candidatesByVolume=cacheCandidateVolumes?[...ordered].sort((left,right)=>right.volume!-left.volume!||left.index-right.index):ordered;
   const keep=new Array<boolean>(unique.length).fill(true);
   for(const inner of ordered){
+    // The input list is already maximal: packingRegions produces disjoint
+    // regions, and every prior split removes contained spaces. Splitting can
+    // only create smaller regions, so only those new regions can be redundant.
+    if(previousSpaces.has(inner.space))continue;
     // EPSILON containment allows at most 2*EPSILON less extent per axis.
     const minimumContainingVolume=Math.max(0,inner.space.length-2*EPSILON)*Math.max(0,inner.space.width-2*EPSILON)*Math.max(0,inner.space.height-2*EPSILON);
     let scan=candidatesByVolume;

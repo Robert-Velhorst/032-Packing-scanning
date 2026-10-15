@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PlannerWorkerClient, type PlannerWorkerRequest, type PlannerWorkerResponse } from './optimizer-worker-client';
+import { PlannerWorkerClient, PLANNER_WORKER_MIN_ITEMS, shouldUsePlannerWorker, type PlannerWorkerRequest, type PlannerWorkerResponse } from './optimizer-worker-client';
 import type { PackingPlan, Trip } from './types';
 
 class FakeWorker {
@@ -21,6 +21,23 @@ const request = (requestId: number): PlannerWorkerRequest => ({
 afterEach(() => vi.useRealTimers());
 
 describe('PlannerWorkerClient', () => {
+  it('keeps small plans on the main thread and hands medium or complex plans to the worker', () => {
+    expect(shouldUsePlannerWorker(PLANNER_WORKER_MIN_ITEMS - 1, false)).toBe(false);
+    expect(shouldUsePlannerWorker(PLANNER_WORKER_MIN_ITEMS, false)).toBe(true);
+    expect(shouldUsePlannerWorker(1, true)).toBe(true);
+  });
+
+  it('passes batched comparison modes through the worker response', async () => {
+    const worker = new FakeWorker();
+    const client = new PlannerWorkerClient(() => worker as unknown as Worker);
+    const plans = [{ mode: 'balanced' }, { mode: 'easy_access' }] as PackingPlan[];
+    const pending = client.calculate({ ...request(3), modes: ['balanced', 'easy_access'] });
+    expect(worker.postMessage).toHaveBeenCalledWith(expect.objectContaining({ modes: ['balanced', 'easy_access'] }));
+    worker.respond({ requestId: 3, plans });
+    await expect(pending).resolves.toEqual({ requestId: 3, plans });
+    client.dispose();
+  });
+
   it('reuses an idle worker and releases it after the idle timeout', async () => {
     vi.useFakeTimers();
     const worker = new FakeWorker();

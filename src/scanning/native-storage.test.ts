@@ -1,7 +1,8 @@
 import {beforeEach,describe,expect,it,vi} from 'vitest';
 const fixture=vi.hoisted(()=>({bridge:{getRetentionCapabilities:vi.fn(),pruneExpiredSources:vi.fn(),getStorageState:vi.fn(),openWorkspaceStorage:vi.fn(),deleteCapture:vi.fn(),clearCaptures:vi.fn(),touchStorage:vi.fn(),getCapabilities:vi.fn(),scanObject:vi.fn()},native:true,platform:'android'}));
 vi.mock('@capacitor/core',()=>({Capacitor:{isNativePlatform:()=>fixture.native,getPlatform:()=>fixture.platform,isPluginAvailable:()=>true},registerPlugin:()=>fixture.bridge}));
-import {captureClient,getCaptureStorageState,openCaptureWorkspace,getScanRetentionCapabilities} from './native';
+import {captureClient,getScanRetentionCapabilities} from './native';
+import {getCaptureStorageState,openCaptureWorkspace} from './native-storage';
 const old='11111111-1111-4111-8111-111111111111',next='22222222-2222-4222-8222-222222222222';
 beforeEach(()=>{vi.resetAllMocks();fixture.native=true;fixture.platform='android';fixture.bridge.deleteCapture.mockResolvedValue({deleted:true});fixture.bridge.clearCaptures.mockResolvedValue({deleted:1});fixture.bridge.getCapabilities.mockResolvedValue({supported:true,platform:'android'});});
 describe('native workspace boundary',()=>{

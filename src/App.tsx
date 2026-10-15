@@ -24,14 +24,13 @@ import {
 } from 'lucide-react';
 import type { ItemDraft } from './components/ItemCapture';
 import type { InventoryFormatters } from './components/InventoryPages';
-import { useScannerCapabilities } from './scanning/useScannerCapabilities';
 import { LocalPhoto } from './components/LocalPhoto';
 import type { TripSuggestion } from './trip-assistant';
 import {  markPackingItemUnavailable, rejectPackingPlacement, setPackingItemComplete } from './packing-progress';
 import { measurementInput } from './measurement-input';
 import {workspaceStorage} from './storage';
-import { createInitialData } from './seed';
-import { PlannerWorkerClient } from './optimizer-worker-client';
+import { createEmptyData } from './empty-data';
+import { PlannerWorkerClient, shouldUsePlannerWorker } from './optimizer-worker-client';
 import type { AppData, CarrierRule, Container, Evidence, ItemPriority, LibraryItem, OptimizationMode, PackEntry, PackingPlan, Placement, Trip, TripActivity, UnitSystem } from './types';
 
 type Page = 'workspace' | 'items' | 'bags' | 'carrier-rules' | 'settings' | 'steps' | 'sequence';
@@ -80,7 +79,6 @@ function PackingApp() {
   const device=useDeviceWorkspace();
   const {clearScanCaptures,deleteScanCapture}=device.capture;
   const {clearLocalData,deletePhoto,exportPhotos,getPhoto,importPhoto,loadAppData,prunePhotos,removeUnreferencedPhotos,saveAppData,savePhoto}=useMemo(()=>workspaceStorage(device.session),[device.session]);
-  const scanCapabilities = useScannerCapabilities();
   const [data, setData] = useState<AppData>();
   const [savedData,setSavedData]=useState<AppData>();
   const [page, setPage] = useState<Page>('workspace');
@@ -101,6 +99,15 @@ function PackingApp() {
     () => new Worker(new URL('./optimizer.worker.ts', import.meta.url), { type: 'module', name: 'packing-plan' }),
   );
   useEffect(() => () => plannerWorker.current?.dispose(), []);
+  const requestPlanComparison = useCallback((trip: Trip, items: LibraryItem[], containers: Container[], modes: OptimizationMode[]) => {
+    const requestId = ++planRequest.current;
+    const promise = plannerWorker.current!.calculate({ requestId, trip, items, containers, modes }).then(response => {
+      if (response.error) throw new Error(response.error);
+      if (!response.plans || response.plans.length !== modes.length) throw new Error('Plan comparisons could not be prepared.');
+      return response.plans;
+    });
+    return { requestId, promise, cancel: () => plannerWorker.current?.cancel(requestId) };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -169,8 +176,9 @@ function PackingApp() {
       if (active) setPlan(buildPlan(activeTrip, planItems, planContainers));
     });
     const instanceCount = activeTrip.entries.reduce((count, entry) => count + Math.max(1, entry.quantity), 0);
-    const needsWorker = instanceCount >= 20 || planItems.some(item => item.packingShape)
+    const hasComplexGeometry = planItems.some(item => item.packingShape)
       || planContainers.some(container => container.packingInterior || container.compartments?.length);
+    const needsWorker = shouldUsePlannerWorker(instanceCount, hasComplexGeometry);
     if (!needsWorker) {
       void buildOnMainThread().catch((error: unknown) => {
         if (active) setPlanError(error instanceof Error ? error.message : 'The packing plan could not be prepared.');
@@ -195,7 +203,7 @@ function PackingApp() {
   }, [data?.settings.automaticPhotoDeletionDays]);
 
   const confirmRemovedSources=useCallback((reply:ScanRetentionReply)=>setData(current=>current?recordRemovedScanSources(current,reply):current),[]);
-  const scanRetention=useRawScanRetention({data,savedData,capture:device.capture,deferred:!!capture||!!device.pendingPhoto||!!device.pendingBackup||device.fileBusy,onRemoved:confirmRemovedSources});
+  const scanRetention=useRawScanRetention({data,savedData,capture:device.capture,deferred:!!capture||!!device.pendingPhoto||!!device.pendingBackup||device.fileBusy,checkAvailability:page==='settings'||data?.settings.automaticScanDeletionDays!=null,onRemoved:confirmRemovedSources});
 
   const updateData = (updater: (current: AppData) => AppData) => setData((current) => current ? updater(current) : current);
   const updateTrip = (updater: (trip: Trip) => Trip) => updateData((current) => ({
@@ -256,7 +264,7 @@ function PackingApp() {
       const suggestion=!existing?capture.suggestion:undefined;
       const suggestedEntry:PackEntry|undefined=suggestion&&activeTrip?{id:newId(),itemId:id,travellerId:activeTrip.travellers[0]?.id??'',quantity:suggestion.quantity,priority:suggestion.priority,accessPriority:suggestion.accessPriority,required:suggestion.priority==='required'}:undefined;
       const next:AppData={...data,libraryItems:existing?data.libraryItems.map(record=>record.id===id?item:record):[item,...data.libraryItems],trips:suggestedEntry?data.trips.map(trip=>trip.id===data.activeTripId?{...trip,entries:[...trip.entries,suggestedEntry],updatedAt:new Date().toISOString()}:trip):data.trips};
-      await saveAppData(next);stagedPhoto=undefined;setData(next);
+      await saveAppData(next);stagedPhoto=undefined;setData(next);setSavedData(next);setSyncStatus('saved');setSyncError('');
       let cleanupFailed=false;
       if(previousPhoto&&previousPhoto!==photoId)try{await deletePhoto(previousPhoto);}catch{cleanupFailed=true;}
       if(existing?.scan&&existing.scan.id!==item.scan?.id)try{await deleteScanCapture(existing.scan.id);}catch{cleanupFailed=true;}
@@ -450,6 +458,7 @@ function PackingApp() {
       await saveAppData(restored);
       committed = true;
       setData(restored);
+      setSavedData(restored);setSyncStatus('saved');setSyncError('');
       const referencedPhotoIds = new Set(restored.libraryItems.flatMap((item) => item.photoId ? [item.photoId] : []));
       await removeUnreferencedPhotos(referencedPhotoIds);
       let scanCleanupFailed = false;
@@ -467,9 +476,9 @@ function PackingApp() {
     let scanCleanupFailed = false;
     try { await clearScanCaptures(); } catch { scanCleanupFailed = true; }
     await clearLocalData();
-    const empty = createInitialData(); empty.trips = []; empty.containers = []; empty.libraryItems = []; empty.activeTripId = '';
+    const empty = createEmptyData();
     await saveAppData(empty);
-    setData(empty); setEditingPhotoUrl(undefined); setNotice(scanCleanupFailed ? 'Packing data was deleted, but some native scan files could not be removed from this device.' : 'All local packing data and saved scans have been deleted.'); setPage('workspace');
+    setData(empty);setSavedData(empty);setSyncStatus('saved');setSyncError('');setEditingPhotoUrl(undefined);setNotice(scanCleanupFailed ? 'Packing data was deleted, but some native scan files could not be removed from this device.' : 'All local packing data and saved scans have been deleted.'); setPage('workspace');
   };
   const openSharedPackFromSettings = (snapshot: SharedPackSnapshot, baseline?: SharedPackBaseline, witness?: SharedCopyWitness) => {
     void import('./shared-packs').then(({ openSharedPack }) => updateData(current => openSharedPack(current, snapshot, newId(), baseline, witness))).catch(() => setNotice('The shared pack could not be opened. Reopen Settings and try again.'));
@@ -503,6 +512,7 @@ function PackingApp() {
         {activeTrip && !plan && page !== 'items' && page !== 'bags' && page !== 'settings' && <div className="secondary-page" role="status">{planError || 'Preparing your packing plan…'}</div>}
         {page === 'workspace' && activeTrip && plan && <Workspace
           trip={activeTrip} data={data} containers={activeContainers} selectedContainer={selectedContainer} plan={plan} canvasView={canvasView} layer={layer} getPhoto={getPhoto} unit={data.unitSystem}
+          requestPlanComparison={requestPlanComparison}
           onSeparationRules={rules=>updateTrip(trip=>({...trip,separationRules:rules}))}
           onWeather={weather=>updateTrip(trip=>({...trip,weather}))}
           onPrintSequence={() => setPage('sequence')}
@@ -519,14 +529,15 @@ function PackingApp() {
 
     <nav className="mobile-nav" aria-label="Mobile navigation"><button className={page === 'workspace' || page === 'steps' ? 'selected' : ''} onClick={() => setPage('workspace')}><ClipboardList size={19}/><span>Plan</span></button><button className={page === 'items' ? 'selected' : ''} onClick={() => setPage('items')}><Package size={19}/><span>Items</span></button><button className={page === 'bags' ? 'selected' : ''} onClick={() => setPage('bags')}><Backpack size={19}/><span>Bags</span></button><button className={page === 'carrier-rules' ? 'selected' : ''} onClick={() => setPage('carrier-rules')}><BookOpen size={19}/><span>Rules</span></button><button className={page === 'settings' ? 'selected' : ''} onClick={() => setPage('settings')}><Settings size={19}/><span>Settings</span></button></nav>
 
-    {capture?.kind === 'item' && <Suspense fallback={<div className="modal-backdrop"><div className="modal" role="status">Opening item editor…</div></div>}><ItemCapture key={capture.item?.id ?? capture.suggestion?.id ?? 'new-item'} initial={capture.item} suggestedItem={capture.suggestion} unit={capture.resumed?.draft.unit??data.unitSystem} resumed={capture.resumed?.draft} resumedPhoto={capture.resumed?.photo} sourceTripId={activeTrip?.id} suggestion={capture.suggestion} scanSupported={scanCapabilities.supported} recognitionSupported={scanCapabilities.supported&&scanCapabilities.platform==='android'&&scanCapabilities.recognitionSupported===true} scanUnavailableReason={scanCapabilities.reason} existingPhotoUrl={editingPhotoUrl} onClose={()=>void closeItemEditor()} onPhotoStaged={()=>setCapture(null)} onSave={saveItem}/></Suspense>}
-    {capture?.kind === 'bag' && <Suspense fallback={<div role="status">Opening bag editor…</div>}><BagCapture key={capture.bag?.id ?? 'new-bag'} initial={capture.bag} unit={data.unitSystem} travellers={activeTrip?.travellers ?? []} scanSupported={scanCapabilities.supported} scanUnavailableReason={scanCapabilities.reason} onClose={() => setCapture(null)} onSave={saveBag} helpers={{evidence,mmToDisplay,displayToMm,lengthInput,massInput,dimLabel,sourceLabel}} Modal={Modal}/></Suspense>}
+    {capture?.kind === 'item' && <Suspense fallback={<div className="modal-backdrop"><div className="modal" role="status">Opening item editor…</div></div>}><ItemCapture key={capture.item?.id ?? capture.suggestion?.id ?? 'new-item'} initial={capture.item} suggestedItem={capture.suggestion} unit={capture.resumed?.draft.unit??data.unitSystem} resumed={capture.resumed?.draft} resumedPhoto={capture.resumed?.photo} sourceTripId={activeTrip?.id} suggestion={capture.suggestion} existingPhotoUrl={editingPhotoUrl} onClose={()=>void closeItemEditor()} onPhotoStaged={()=>setCapture(null)} onSave={saveItem}/></Suspense>}
+    {capture?.kind === 'bag' && <Suspense fallback={<div role="status">Opening bag editor…</div>}><BagCapture key={capture.bag?.id ?? 'new-bag'} initial={capture.bag} unit={data.unitSystem} travellers={activeTrip?.travellers ?? []} onClose={() => setCapture(null)} onSave={saveBag} helpers={{evidence,mmToDisplay,displayToMm,lengthInput,massInput,dimLabel,sourceLabel}} Modal={Modal}/></Suspense>}
     {capture?.kind === 'trip' && <Suspense fallback={<div className="modal-backdrop"><div className="modal" role="status">Opening pack editor…</div></div>}><TripCapture initial={capture.trip} onClose={() => setCapture(null)} onSave={createTrip} onDelete={capture.trip && !capture.trip.sample ? () => void deleteTrip(capture.trip!.id) : undefined} Modal={Modal}/></Suspense>}
     {capture?.kind === 'carrier-rule' && activeTrip && <Suspense fallback={<div className="modal-backdrop"><div className="modal" role="status">Opening carrier record…</div></div>}><CarrierRuleCapture key={capture.rule?.id ?? capture.draft?.fare ?? 'new-carrier-rule'} initial={capture.rule ?? capture.draft} bags={activeContainers} unit={data.unitSystem} onClose={() => setCapture(null)} onSave={saveCarrierRule} helpers={{lengthInput,massInput,dimLabel}} Modal={Modal}/></Suspense>}
   </div>;
 }
 
 interface WorkspaceProps {
+  requestPlanComparison:(trip:Trip,items:LibraryItem[],containers:Container[],modes:OptimizationMode[])=>{requestId:number;promise:Promise<PackingPlan[]>;cancel:()=>void};
   onWeather:(weather:SavedWeather|undefined)=>void;
   onSeparationRules:(rules:SeparationRule[])=>void;
   onReviewItem:(item:LibraryItem)=>void; onReviewBag:(bag:Container)=>void; onReviewMissing:()=>void;
@@ -667,7 +678,7 @@ function Workspace(props: WorkspaceProps) {
     <StackLoadNotes plan={plan} items={data.libraryItems} unit={unit} containerId={selectedContainer?.id}/>
     <SeparationRules trip={trip} items={data.libraryItems} unit={unit} onChange={props.onSeparationRules}/>
     <SeparationNotes trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit}/>
-    <section ref={planReviewRef} className="plan-review"><div className="review-heading"><div><span className="panel-kicker">PLAN CHECK</span><h2>Fit and trade-offs</h2></div><span className="review-caption">Deterministic geometric placement · generated on this device</span></div>{planReviewRequested ? <Suspense fallback={<p className="candidate-uncertainty" role="status">Opening approach comparisons…</p>}><PlanReview trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit} modeCopy={modeCopy} onSelect={props.onMode}/></Suspense> : <p className="candidate-uncertainty" role="status" aria-live="polite">Approach comparisons will be prepared when you reach this section.</p>}
+    <section ref={planReviewRef} className="plan-review"><div className="review-heading"><div><span className="panel-kicker">PLAN CHECK</span><h2>Fit and trade-offs</h2></div><span className="review-caption">Deterministic geometric placement · generated on this device</span></div>{planReviewRequested ? <Suspense fallback={<p className="candidate-uncertainty" role="status">Opening approach comparisons…</p>}><PlanReview trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit} modeCopy={modeCopy} onSelect={props.onMode} requestPlanComparison={props.requestPlanComparison}/></Suspense> : <p className="candidate-uncertainty" role="status" aria-live="polite">Approach comparisons will be prepared when you reach this section.</p>}
       {plan.excluded.filter((entry) => entry.reason !== 'Marked unavailable for this plan.').length > 0 && <div className="excluded-list"><strong>Needs a decision</strong>{plan.excluded.filter((entry) => entry.reason !== 'Marked unavailable for this plan.').map((entry) => <div key={entry.instanceId}><AlertTriangle size={15}/><span><strong>{entry.name}{entry.required ? ' · required' : ''}</strong><small>{entry.reason}</small></span>{trip.lockedPlacements.filter(saved => saved.instanceId === entry.instanceId).map(saved => <button className="button button-secondary" key={saved.instanceId} onClick={() => completed.has(saved.instanceId) ? props.onToggleComplete(saved.instanceId,false) : props.onToggleLock(saved)}>{completed.has(saved.instanceId) ? `Undo packed for ${entry.name}` : `Unlock ${entry.name}`}</button>)}<button className="text-button" onClick={() => props.onUnavailable(entry.instanceId)}>Remove from plan</button></div>)}</div>}
     </section>
     <div className="plan-trust-note"><Lock size={15}/><span>Locked placements are preserved during replanning. A geometric match is a suggestion, not a guarantee the bag will close.</span></div>
