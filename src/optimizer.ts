@@ -253,9 +253,10 @@ function searchInsertionOrders(orders: PlanItem[][], containers: Container[], lo
   }
   for (const order of orders) {
     evaluate(order);
-    // Complete plans have the same score in these modes, so alternate insertion
+    // Complete plans have the same score in these cases, so alternate insertion
     // orders cannot improve the selected result once every item is placed.
-    if ((mode === 'maximum_capacity' || mode === 'fragile_protection') && bestResult?.excluded.length === 0) break;
+    if ((mode === 'maximum_capacity' || mode === 'fragile_protection' || (mode === 'balanced' && containers.length === 1))
+      && bestResult?.excluded.length === 0) break;
   }
   const complete = () => foundComplete;
   while (frontier.length && seen.size < 24 && !complete()) {
