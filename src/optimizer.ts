@@ -31,6 +31,8 @@ const spaceVolume = (box: FreeSpace) => box.length * box.width * box.height;
 const EPSILON = 0.01;
 const SUPPORT_INDEX_THRESHOLD=64;
 const SHAPED_SUPPORT_INDEX_THRESHOLD=8;
+// Bound the Cartesian product of shape-aware contact positions per orientation.
+const SHAPE_CONTACT_POSITION_LIMIT=5_000;
 
 export function buildPlan(trip: Trip, library: LibraryItem[], allContainers: Container[], mode: OptimizationMode = trip.mode): PackingPlan {
   const referencedItemIds = new Set(trip.entries.map(entry => entry.itemId));
@@ -508,7 +510,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
         const {compartment}=context;
         for (const orientation of context.orientations) {
           if (orientation.length > space.length + EPSILON || orientation.width > space.width + EPSILON || orientation.height > space.height + EPSILON) continue;
-          const contacts=space.shapeSearch?contactPositions(container,orientation,item,shapeContactObstacles?[]:[...bagPlacements,...anchors],itemById,space,blockedSpaces.get(container.id),shapeContactObstacles):undefined;
+          const contacts=space.shapeSearch?contactPositions(container,orientation,item,shapeContactObstacles?[]:[...bagPlacements,...anchors],itemById,space,blockedSpaces.get(container.id),shapeContactObstacles,SHAPE_CONTACT_POSITION_LIMIT):undefined;
           if(contacts?.limited)searchLimited=true;
           const basePositions=contacts?.positions??cornerPositions(space, orientation);
           const positions = rules.length
