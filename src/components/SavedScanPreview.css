@@ -5,14 +5,9 @@
 .saved-scan-preview > .button, .saved-scan-preview > .text-button { min-height:48px; max-width:100%; }
 .scan-cloud-surface { height:260px; position:relative; border-radius:8px; overflow:hidden; background:#f7faf7; touch-action:none; }
 .scan-cloud-surface canvas { display:block; width:100%; height:100%; }
-.scan-cloud-controls { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; }
-.scan-cloud-controls button { min-height:48px; padding:10px 12px; border:1px solid #bacbbc; border-radius:8px; background:#fff; color:#25392d; font:inherit; font-size:13px; cursor:pointer; }
-.scan-cloud-controls button:disabled { opacity:.55; cursor:default; }
-.scan-cloud-controls button:focus-visible, .saved-scan-preview summary:focus-visible { outline:3px solid #17684e; outline-offset:3px; }
+.saved-scan-preview summary:focus-visible { outline:3px solid #17684e; outline-offset:3px; }
 .saved-scan-preview summary { min-height:48px; padding:12px 0; cursor:pointer; font-size:13px; font-weight:600; }
 .scan-cloud-top { display:block; width:100%; max-height:220px; }
 @media(max-width:620px) {
   .saved-scan-preview { padding:12px; }
-  .scan-cloud-controls { display:grid; grid-template-columns:1fr 1fr; }
-  .scan-cloud-controls button:last-child { grid-column:1/-1; }
 }
