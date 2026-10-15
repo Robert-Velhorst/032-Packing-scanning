@@ -13,6 +13,8 @@ const shapeCount = Number(value('shapes', '0'));
 const bagCount = Number(value('bags', '1'));
 const optimizerRef = value('optimizer-ref', '');
 const bagWeightsRef = value('bag-weights-ref', '');
+const retrievalRef = value('retrieval-ref', '');
+const retrievalChecks = value('retrieval-checks', 'false') === 'true';
 const mode = value('mode', '');
 if (mode && !['balanced', 'maximum_capacity', 'easy_access', 'fragile_protection'].includes(mode)) {
   throw new Error('Use --mode=balanced,maximum_capacity,easy_access, or fragile_protection.');
@@ -98,6 +100,14 @@ if (bagWeightsRef) benchmarkOverrides.push({
     return execFileSync('git', ['show', `${bagWeightsRef}:src/bag-weights.ts`], { encoding: 'utf8' });
   },
 });
+if (retrievalRef) benchmarkOverrides.push({
+  name: 'retrieval-benchmark-source',
+  enforce: 'pre',
+  transform(_source, id) {
+    if (!id.replaceAll('\\', '/').endsWith('/src/retrieval.ts')) return null;
+    return execFileSync('git', ['show', `${retrievalRef}:src/retrieval.ts`], { encoding: 'utf8' });
+  },
+});
 const vite = await createServer({
   plugins: benchmarkOverrides,
   optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error',
@@ -105,6 +115,7 @@ const vite = await createServer({
 try {
   const { createInitialData } = await vite.ssrLoadModule('/src/seed.ts');
   const { buildPlan } = await vite.ssrLoadModule('/src/optimizer.ts');
+  const { assessRetrieval } = await vite.ssrLoadModule('/src/retrieval.ts');
   const seed = createInitialData();
   const fixture = (count) => {
     if (shapeCount > count) throw new Error(`Cannot benchmark ${shapeCount} shapes in a ${count}-item plan.`);
@@ -169,6 +180,10 @@ try {
     const expectedFingerprint = fingerprint(warmup);
     const samples = [];
     const cpuSamples = [];
+    const retrievalItems = retrievalChecks ? new Map(warmup.placements.map(placement => [placement.instanceId,
+      input.items.find(item => item.id === placement.itemId)]).filter((entry) => entry[1])) : undefined;
+    const expectedRetrieval = retrievalChecks ? JSON.stringify(assessRetrieval(warmup.placements, input.bags, retrievalItems)) : '';
+    const retrievalSamples = [];
     for (let run = 0; run < runs; run += 1) {
       const cpuStart = process.cpuUsage();
       const start = performance.now();
@@ -179,11 +194,19 @@ try {
       if (plan.placements.length !== count) throw new Error(`Run ${run + 1} placed ${plan.placements.length} of ${count} items.`);
       if (fingerprint(plan) !== expectedFingerprint) throw new Error(`Run ${run + 1} changed the warm-up placements.`);
       assertRectangularPlacementsDoNotOverlap(plan);
+      if (retrievalChecks) {
+        const retrievalStart = performance.now();
+        const review = assessRetrieval(warmup.placements, input.bags, retrievalItems);
+        retrievalSamples.push((performance.now() - retrievalStart) / 1000);
+        if (JSON.stringify(review) !== expectedRetrieval) throw new Error(`Run ${run + 1} changed retrieval review results.`);
+      }
     }
     const sorted = [...samples].sort((left, right) => left - right);
     const sortedCpu = [...cpuSamples].sort((left, right) => left - right);
+    const sortedRetrieval = [...retrievalSamples].sort((left, right) => left - right);
     results.push({ itemCount: count, medianSeconds: sorted[Math.floor(sorted.length / 2)], samplesSeconds: samples,
       medianCpuSeconds: sortedCpu[Math.floor(sortedCpu.length / 2)], samplesCpuSeconds: cpuSamples,
+      ...(retrievalChecks ? { retrievalMedianSeconds: sortedRetrieval[Math.floor(sortedRetrieval.length / 2)], retrievalSamplesSeconds: retrievalSamples } : {}),
       placed: count, placementFingerprint: expectedFingerprint });
   }
   console.log(JSON.stringify({
@@ -194,6 +217,7 @@ try {
     mode: mode || seed.trips[0].mode,
     optimizerRef: optimizerRef || 'working tree',
     bagWeightsRef: bagWeightsRef || 'working tree',
+    retrievalRef: retrievalRef || 'working tree',
     node: process.version,
     shapeCount,
     warmupRunsPerSize: 1,
