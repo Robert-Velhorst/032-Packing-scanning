@@ -13,6 +13,7 @@ const shapeCount = Number(value('shapes', '0'));
 const bagCount = Number(value('bags', '1'));
 const optimizerRef = value('optimizer-ref', '');
 const stackLoadRef = value('stack-load-ref', '');
+const packingGeometryRef = value('packing-geometry-ref', '');
 const bagWeightsRef = value('bag-weights-ref', '');
 const retrievalRef = value('retrieval-ref', '');
 const retrievalChecks = value('retrieval-checks', 'false') === 'true';
@@ -99,6 +100,14 @@ if (stackLoadRef) benchmarkOverrides.push({
   transform(_source, id) {
     if (!id.replaceAll('\\', '/').endsWith('/src/stack-load.ts')) return null;
     return execFileSync('git', ['show', `${stackLoadRef}:src/stack-load.ts`], { encoding: 'utf8' });
+  },
+});
+if (packingGeometryRef) benchmarkOverrides.push({
+  name: 'packing-geometry-benchmark-source',
+  enforce: 'pre',
+  transform(_source, id) {
+    if (!id.replaceAll('\\', '/').endsWith('/src/packing-geometry.ts')) return null;
+    return execFileSync('git', ['show', `${packingGeometryRef}:src/packing-geometry.ts`], { encoding: 'utf8' });
   },
 });
 if (bagWeightsRef) benchmarkOverrides.push({
@@ -226,6 +235,7 @@ try {
     mode: mode || seed.trips[0].mode,
     optimizerRef: optimizerRef || 'working tree',
     stackLoadRef: stackLoadRef || 'working tree',
+    packingGeometryRef: packingGeometryRef || 'working tree',
     bagWeightsRef: bagWeightsRef || 'working tree',
     retrievalRef: retrievalRef || 'working tree',
     node: process.version,

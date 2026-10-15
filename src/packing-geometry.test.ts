@@ -27,6 +27,11 @@ describe('adopted occupied-cell planning',()=>{
   expect(cached).toEqual(full);
   const capped=contactPositions(bag,orientation,candidate,[obstacle],items,undefined,undefined,undefined,8);
   expect(full.positions.length).toBeGreaterThan(8);expect(capped.positions).toEqual(full.positions.slice(0,8));expect(capped.limited).toBe(true);
+  const obstacleBoxes=placementBoxes(obstacle,shapeItem),clear=(position:{x:number;y:number;z:number})=>!geometryIntersects(placement('candidate',{...position,...orientation}),obstacle,items);
+  const prefiltered=contactPositions(bag,orientation,candidate,[],items,undefined,[],obstacleBoxes,20000,obstacleBoxes);
+  expect(prefiltered.positions).toEqual(full.positions.filter(clear));
+  const prefilteredCapped=contactPositions(bag,orientation,candidate,[],items,undefined,[],obstacleBoxes,8,obstacleBoxes);
+  expect(prefilteredCapped.positions).toEqual(full.positions.slice(0,8).filter(clear));expect(prefilteredCapped.limited).toBe(true);
  });
  it('indexes rectangular support planes without losing epsilon or shaped support candidates',()=>{
   const shaped=shape(),support=placement('U',{height:60}),upper=placement('upper',{z:60.005,height:10}),decoys=Array.from({length:64},(_,index)=>placement(`decoy-${index}`,{z:10+index*.4,height:5,width:20}));

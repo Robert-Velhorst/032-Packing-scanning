@@ -524,7 +524,8 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
         const {compartment}=context;
         for (const orientation of context.orientations) {
           if (orientation.length > space.length + EPSILON || orientation.width > space.width + EPSILON || orientation.height > space.height + EPSILON) continue;
-          const contacts=space.shapeSearch?contactPositions(container,orientation,item,shapeContactObstacles?[]:[...bagPlacements,...anchors],itemById,space,blockedSpaces.get(container.id),shapeContactObstacles,SHAPE_CONTACT_POSITION_LIMIT):undefined;
+          const contactCollisionObstacles=space.shapeSearch?verticalEntryObstacles?.get(container.id):undefined;
+          const contacts=space.shapeSearch?contactPositions(container,orientation,item,shapeContactObstacles?[]:[...bagPlacements,...anchors],itemById,space,blockedSpaces.get(container.id),shapeContactObstacles,SHAPE_CONTACT_POSITION_LIMIT,contactCollisionObstacles):undefined;
           if(contacts?.limited)searchLimited=true;
           const basePositions=contacts?.positions??cornerPositions(space, orientation);
           const positions = rules.length
@@ -562,7 +563,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             // geometry check for shape, interior, compartment, and separation
             // searches, where candidate positions can intentionally bypass
             // those rectangular free-space boundaries.
-            if((useShapeSequence||rules.length>0)&&bagPlacements.some(p=>geometryIntersects(placement,p,itemById)))continue;
+            if((useShapeSequence||rules.length>0)&&!contactCollisionObstacles&&bagPlacements.some(p=>geometryIntersects(placement,p,itemById)))continue;
             if(!(supportIndex?hasPackingAndTravelSupport(placement,bagPlacements,itemById,mode==='fragile_protection'?1:.65,container,supportIndex):hasPackingAndTravelSupport(placement,bagPlacements,itemById,mode==='fragile_protection'?1:.65,container)))continue;
             if(hasShapes&&!hasVerticalEntry(placement,bagPlacements,itemById,container,blockedSpaces.get(container.id),verticalEntryObstacles?.get(container.id)))continue;
             const separationError = rules.length?placementSeparationError(placement,[...placements,...savedMassPositions],rules,itemById):undefined;
