@@ -1,4 +1,5 @@
 import { openDB, type IDBPDatabase } from 'idb';
+import { createInitialData } from './seed';
 import type { AppData } from './types';
 import { isCarrierCatalog } from './carrier-catalog';
 import type {ProtectedSession} from './protected-storage';
@@ -36,7 +37,6 @@ export async function loadAppData(): Promise<AppData> {
   const db = await database();
   const stored = await db.get('state', STATE_KEY);
   if (!stored) {
-    const { createInitialData } = await import('./seed');
     const initial = createInitialData();
     await db.put('state', initial, STATE_KEY);
     return initial;
