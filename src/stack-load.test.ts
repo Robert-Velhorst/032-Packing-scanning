@@ -51,8 +51,24 @@ describe('static stacking bounds', () => {
 
     expect(cache.shouldCache(placements, { axis: 2, sign: 1 })).toBe(true);
     expect(assessStackLoads(placements, items, [], cache)).toEqual(assessStackLoads(placements, items));
+    const incremental = new StackLoadContactCache(items);
+    incremental.register(placements[0]);
+    expect(assessStackLoads(placements, items, [], incremental)).toEqual(assessStackLoads(placements, items));
+    incremental.register(placements[1]);
+    expect(assessStackLoads(placements, items, [], incremental)).toEqual(assessStackLoads(placements, items));
     expect(assessStackLoads(placements, items).find(check => check.instanceId === 'base#1')).toMatchObject({ status: 'conflict', aboveInstanceIds: ['upper#1'] });
     expect(assessStackLoads([...placements].reverse(), items).find(check => check.instanceId === 'base#1')).toMatchObject({ status: 'conflict', aboveInstanceIds: ['upper#1'] });
+  });
+
+  it('checks only a proposed placement against the retained stack graph', () => {
+    const items=planItems([item('base',1000,{maxTopLoadGrams:350,topLoadEvidence:evidence}),item('middle',150),item('top',201)]);
+    const prior=[placement('base',0),placement('middle',10)],candidate=placement('top',20),cache=new StackLoadContactCache(items);
+    for(const saved of prior)cache.register(saved);
+    expect(cache.wouldCreateStackConflict(candidate,prior,[])).toBe(true);
+    expect(assessStackLoads([...prior,candidate],items).some(load=>load.status==='conflict')).toBe(true);
+    items.get('top#1')!.upperMassGrams=200;
+    expect(cache.wouldCreateStackConflict(candidate,prior,[])).toBe(false);
+    expect(assessStackLoads([...prior,candidate],items).some(load=>load.status==='conflict')).toBe(false);
   });
 
   it('carries cumulative upper weight through three layers, excluding own weight', () => {

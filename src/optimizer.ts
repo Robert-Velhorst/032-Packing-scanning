@@ -12,7 +12,7 @@ import { assessStackLoads, hasStackContact, StackLoadContactCache, topLoadError 
 import { packingItem, packingFormKey } from './packing-forms';
 import { isValidRejectedPlacement, samePlacementGeometry } from './packing-progress';
 import { containerBlockedBoxes, containerSpaceError, usableContainerHeight, usableContainerVolume } from './container-space';
-import { interiorKey, interiorSupportError } from './packing-interior';
+import { interiorKey, interiorSupportError, interiorTravelUp } from './packing-interior';
 import { contactPositions, fitsGeometrySpaceInValidatedContainer, geometryIntersects, geometryOrientations, hasGeometrySupport, hasPackingAndTravelSupport, hasVerticalEntry, orientationForRotation, packingShapeError, placementBoxes, RectangularSupportIndex, shapeDimensions, shapeKey, shapeVolume, type GeometryBox } from './packing-geometry';
 
 interface FreeSpace {
@@ -478,6 +478,8 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
       if (blockedBagIds.has(container.id)||containerError(container)||interiorSupportError(container.packingInterior)) continue;
       const massAfter = (massByContainer.get(container.id) ?? container.tareGrams ?? 0) + (item.upperMassGrams ?? 0);
       if (container.massLimitGrams !== undefined && massAfter > container.massLimitGrams + EPSILON) continue;
+      const travelUp=container.packingInterior?interiorTravelUp(container.packingInterior):undefined;
+      const incrementalStackCheck=shapeItems.length>0||!!travelUp&&(travelUp.axis!==2||travelUp.sign!==1);
       let futureOrientationsById: Map<string, ReturnType<typeof geometryOrientations>> | undefined;
       const futureShapes=container.compartments?[]:shapeItems.filter(i=>{
         if(i.instanceId===item.instanceId||placedIds.has(i.instanceId)||!eligibleForBag(i,container)
@@ -567,10 +569,11 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             if(separationError){separationFailure=separationError;continue;}
             if (rejected.some((failed) => samePlacementGeometry(failed, placement))) continue;
             const needsStackCheck = useShapeSequence || stackSensitiveIds.has(item.instanceId) || hasStackSensitivePlacement;
-            const conflicts = needsStackCheck && hasStackContact(placement, bagPlacements, itemById, container)
-              ? assessStackLoads([...bagPlacements, placement], itemById, [container],stackLoadContactCache).filter(load => load.status === 'conflict')
-              : [];
-            if (conflicts.length) {
+            const stackConflict=needsStackCheck&&hasStackContact(placement,bagPlacements,itemById,container)
+              &&(incrementalStackCheck?stackLoadContactCache.wouldCreateStackConflict(placement,bagPlacements,[container])
+                :assessStackLoads([...bagPlacements,placement],itemById,[container],stackLoadContactCache).some(load=>load.status==='conflict'));
+            if (stackConflict) {
+              const conflicts=assessStackLoads([...bagPlacements, placement], itemById, [container],stackLoadContactCache).filter(load => load.status === 'conflict');
               loadFailure = conflicts.map(load => `${load.orientation==='travel'?'Travel orientation - ':''}${itemById.get(load.instanceId)?.name ?? 'Item'}: ${load.reason}`).join(' ');
               continue;
             }

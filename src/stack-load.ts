@@ -4,11 +4,15 @@ import { interiorTravelUp } from './packing-interior.ts';
 
 const CONTACT_EPSILON = 0.01;
 type LoadItem = Pick<LibraryItem, 'fragile' | 'maxTopLoadGrams' | 'topLoadEvidence'>;
+type ContactGraph = {above:Map<Placement,Set<Placement>>;below:Map<Placement,Set<Placement>>};
 
 /** Reuses immutable placement-pair geometry during one plan calculation. */
 export class StackLoadContactCache {
   private readonly contacts = new WeakMap<Placement, WeakMap<Placement, Map<number, number>>>();
   private readonly committed = new WeakSet<Placement>();
+  private readonly registered:Placement[]=[];
+  private readonly frames=new Map<number,GravityUp>();
+  private readonly graphs=new Map<number,ContactGraph>();
   private readonly items: Map<string, PlanItem>;
 
   constructor(items: Map<string, PlanItem>) {
@@ -16,7 +20,21 @@ export class StackLoadContactCache {
   }
 
   register(placement: Placement) {
+    if(this.committed.has(placement))return;
+    for(const [key,graph] of this.graphs){
+      const up=this.frames.get(key)!;
+      graph.above.set(placement,new Set());graph.below.set(placement,new Set());
+      for(const other of this.registered){
+        const aboveArea=geometryContactArea(placement,other,this.items,up);
+        this.rememberContact(placement,other,up,aboveArea);
+        if(aboveArea>0){graph.above.get(other)!.add(placement);graph.below.get(placement)!.add(other);}
+        const belowArea=geometryContactArea(other,placement,this.items,up);
+        this.rememberContact(other,placement,up,belowArea);
+        if(belowArea>0){graph.above.get(placement)!.add(other);graph.below.get(other)!.add(placement);}
+      }
+    }
     this.committed.add(placement);
+    this.registered.push(placement);
   }
 
   shouldCache(placements: Placement[], up: GravityUp): boolean {
@@ -40,6 +58,89 @@ export class StackLoadContactCache {
     const area = geometryContactArea(upper, lower, this.items, up);
     byFrame.set(key, area);
     return area;
+  }
+
+  /** Reuse committed contacts; only proposed placements need pairwise geometry checks. */
+  contactGraph(placements:Placement[],up:GravityUp):Map<Placement,Set<Placement>>{
+    const graph=this.ensureGraph(up),included=new Set(placements);
+    const direct=new Map<Placement,Set<Placement>>();
+    for(const placement of placements)direct.set(placement,new Set([...(graph.above.get(placement)??[])].filter(other=>included.has(other))));
+    for(let index=0;index<placements.length;index++)for(let otherIndex=index+1;otherIndex<placements.length;otherIndex++){
+      const left=placements[index],right=placements[otherIndex];
+      if(this.committed.has(left)&&this.committed.has(right))continue;
+      const leftAbove=geometryContactArea(left,right,this.items,up);
+      if(leftAbove>0)direct.get(right)!.add(left);
+      const rightAbove=geometryContactArea(right,left,this.items,up);
+      if(rightAbove>0)direct.get(left)!.add(right);
+    }
+    return direct;
+  }
+
+  wouldCreateStackConflict(candidate:Placement,placements:Placement[],containers:Container[]):boolean{
+    const frames:GravityUp[]=[{axis:2,sign:1}];
+    for(const bag of containers){if(bag.id!==candidate.containerId||!bag.packingInterior)continue;const up=interiorTravelUp(bag.packingInterior);if(up.axis!==2||up.sign!==1)frames.push(up);}
+    return frames.some(up=>this.wouldConflictInFrame(candidate,placements,up));
+  }
+
+  private wouldConflictInFrame(candidate:Placement,placements:Placement[],up:GravityUp):boolean{
+    const graph=this.ensureGraph(up),aboveNeighbors:Placement[]=[],belowNeighbors:Placement[]=[];
+    for(const other of placements){
+      if(geometryContactArea(other,candidate,this.items,up)>0)aboveNeighbors.push(other);
+      if(geometryContactArea(candidate,other,this.items,up)>0)belowNeighbors.push(other);
+    }
+    if(!aboveNeighbors.length&&!belowNeighbors.length)return false;
+    const reachable=(starts:Placement[],edges:Map<Placement,Set<Placement>>)=>{
+      const seen=new Set<Placement>(),pending=[...starts];
+      for(let index=0;index<pending.length;index++){const current=pending[index];if(seen.has(current))continue;seen.add(current);pending.push(...(edges.get(current)??[]));}
+      return seen;
+    };
+    const lowerSet=new Set(belowNeighbors);
+    for(const upper of aboveNeighbors)for(const node of reachable([upper],graph.above))if(lowerSet.has(node))return true;
+    const aboveCandidate=reachable(aboveNeighbors,graph.above),affectedBelow=reachable(belowNeighbors,graph.below);
+    const loadConflict=(placement:Placement,additional:Placement[]=[]):boolean=>{
+      const item=this.items.get(placement.instanceId);
+      if(!item)return true;
+      const ids=new Set([...reachable([placement],graph.above),...additional].filter(entry=>entry!==placement).map(entry=>entry.instanceId));
+      if(!ids.size)return false;
+      if(item.fragile)return true;
+      const limit=item.maxTopLoadGrams;
+      if(limit===undefined)return false;
+      let upperLoadGrams=0,unknownMassCount=0;
+      for(const id of ids){const mass=this.items.get(id)?.upperMassGrams;if(mass===undefined||!Number.isFinite(mass)||mass<=0)unknownMassCount++;else upperLoadGrams+=mass;}
+      return unknownMassCount>0||upperLoadGrams>limit;
+    };
+    if(loadConflict(candidate,[...aboveCandidate]))return true;
+    const propagated=[candidate,...aboveCandidate];
+    for(const lower of affectedBelow){
+      const existingAbove=reachable([lower],graph.above);
+      const additions=propagated.filter(entry=>!existingAbove.has(entry));
+      if(loadConflict(lower,additions))return true;
+    }
+    return false;
+  }
+
+  private ensureGraph(up:GravityUp):ContactGraph{
+    const key=up.axis*2+Number(up.sign<0),prior=this.graphs.get(key);
+    if(prior)return prior;
+    this.frames.set(key,up);
+    const graph:ContactGraph={above:new Map(this.registered.map(placement=>[placement,new Set<Placement>()])),below:new Map(this.registered.map(placement=>[placement,new Set<Placement>()]))};
+    for(let index=0;index<this.registered.length;index++)for(let otherIndex=index+1;otherIndex<this.registered.length;otherIndex++){
+      const left=this.registered[index],right=this.registered[otherIndex];
+      const leftAbove=this.contactArea(left,right,up);
+      if(leftAbove>0){graph.above.get(right)!.add(left);graph.below.get(left)!.add(right);}
+      const rightAbove=this.contactArea(right,left,up);
+      if(rightAbove>0){graph.above.get(left)!.add(right);graph.below.get(right)!.add(left);}
+    }
+    this.graphs.set(key,graph);
+    return graph;
+  }
+
+  private rememberContact(upper:Placement,lower:Placement,up:GravityUp,area:number){
+    let byLower=this.contacts.get(upper);
+    if(!byLower){byLower=new WeakMap();this.contacts.set(upper,byLower);}
+    let byFrame=byLower.get(lower);
+    if(!byFrame){byFrame=new Map();byLower.set(lower,byFrame);}
+    byFrame.set(up.axis*2+Number(up.sign<0),area);
   }
 }
 
@@ -105,7 +206,9 @@ function assessFrameLoads(placements:Placement[],items:Map<string,PlanItem>,up:G
     for(const lower of placements){const bucket=Math.floor((lower.z+lower.height)/CONTACT_EPSILON),key=plane(lower,bucket),samePlane=below.get(key)??[];samePlane.push(lower);below.set(key,samePlane);}
     for(const upper of placements){const bucket=Math.floor(upper.z/CONTACT_EPSILON);for(let offset=-2;offset<=2;offset++)for(const lower of below.get(plane(upper,bucket+offset))??[])
       if(geometryContactArea(upper,lower,items,up)>0)direct.get(lower.instanceId)!.add(upper.instanceId);}
-  }else for(const upper of placements)for(const lower of placements)if((cache?cache.contactArea(upper,lower,up):geometryContactArea(upper,lower,items,up))>0)direct.get(lower.instanceId)!.add(upper.instanceId);
+  }else if(cache){
+    for(const [lower,uppers] of cache.contactGraph(placements,up))for(const upper of uppers)direct.get(lower.instanceId)!.add(upper.instanceId);
+  }else for(const upper of placements)for(const lower of placements)if(geometryContactArea(upper,lower,items,up)>0)direct.get(lower.instanceId)!.add(upper.instanceId);
   for(const p of placements){const reached=above.get(p.instanceId)!,pending=[...direct.get(p.instanceId)!];for(let i=0;i<pending.length;i++){
     const id=pending[i];if(id===p.instanceId){cyclic.add(id);continue;}if(reached.has(id))continue;reached.add(id);pending.push(...direct.get(id)!);
   }}
