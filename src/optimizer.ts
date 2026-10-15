@@ -519,7 +519,12 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
               ...(item.packingForm?{packingFormId:item.packingForm.id,packingFormKey:packingFormKey(item.packingForm)}:{}),
               ...(container.packingInterior?{interiorKey:interiorKey(container.packingInterior)}:{}),
             };
-            if(!fitsGeometrySpaceInValidatedContainer(placement,container,item,blockedSpaces.get(container.id)))continue;
+            // Plain rectangular candidates come only from free regions already
+            // clipped to the bag and split around any blocked geometry. When
+            // there is no shape sequence or blocked geometry, this check repeats
+            // those same bounds for every corner candidate.
+            if((useShapeSequence||(blockedSpaces.get(container.id)?.length??0)>0)
+              &&!fitsGeometrySpaceInValidatedContainer(placement,container,item,blockedSpaces.get(container.id)))continue;
             // Ordinary rectangular candidates come from free regions that have
             // already been split around every placed box. Keep the exact
             // geometry check for shape, interior, compartment, and separation
