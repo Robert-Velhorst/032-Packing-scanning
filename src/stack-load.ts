@@ -85,6 +85,7 @@ export class StackLoadContactCache {
   private wouldConflictInFrame(candidate:Placement,placements:Placement[],up:GravityUp):boolean{
     const graph=this.ensureGraph(up),aboveNeighbors:Placement[]=[],belowNeighbors:Placement[]=[];
     for(const other of placements){
+      if(!mayShareContactBounds(candidate,other))continue;
       if(geometryContactArea(other,candidate,this.items,up)>0)aboveNeighbors.push(other);
       if(geometryContactArea(candidate,other,this.items,up)>0)belowNeighbors.push(other);
     }
