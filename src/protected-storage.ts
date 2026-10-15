@@ -35,7 +35,13 @@ function decodedPhoto(buffer:ArrayBuffer){
   if(typeof header.id!=='string'||typeof header.createdAt!=='string'||typeof header.type!=='string')throw new Error('The encrypted photo is invalid.');
   return {id:header.id,createdAt:header.createdAt,blob:new Blob([buffer.slice(4+size)],{type:header.type})};
 }
-export async function listWorkspaces():Promise<WorkspaceDescriptor[]>{return (await database()).getAll('workspaces');}
+export async function listWorkspaces():Promise<WorkspaceDescriptor[]>{
+  const factory=globalThis.indexedDB;
+  if(typeof factory?.databases==='function'){
+    try{if(!(await factory.databases()).some(info=>info.name===PROTECTED_DATABASE))return [];}catch{/* Fall back to the standard open path if database enumeration is unavailable. */}
+  }
+  return (await database()).getAll('workspaces');
+}
 export function emptyWorkspace(data:AppData):AppData{return {...structuredClone(data),trips:[],libraryItems:[],containers:[],activeTripId:''};}
 export function workspaceCopy(data:AppData):AppData{const copy=structuredClone(data);for(const item of copy.libraryItems)delete item.scan;for(const bag of copy.containers)delete bag.scan;return copy;}
 
