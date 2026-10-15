@@ -10,7 +10,9 @@ const value = (name, fallback) => {
 const counts = value('counts', '50,100,250').split(',').map(Number);
 const runs = Number(value('runs', '3'));
 const shapeCount = Number(value('shapes', '0'));
+const bagCount = Number(value('bags', '1'));
 const optimizerRef = value('optimizer-ref', '');
+const bagWeightsRef = value('bag-weights-ref', '');
 const mode = value('mode', '');
 if (mode && !['balanced', 'maximum_capacity', 'easy_access', 'fragile_protection'].includes(mode)) {
   throw new Error('Use --mode=balanced,maximum_capacity,easy_access, or fragile_protection.');
@@ -37,6 +39,7 @@ if (!counts.length || counts.some((count) => !Number.isInteger(count) || count <
 }
 if (!Number.isInteger(runs) || runs < 1 || runs > 10) throw new Error('Use --runs= with a count from 1 to 10.');
 if (!Number.isInteger(shapeCount) || shapeCount < 0 || shapeCount > 500) throw new Error('Use --shapes= with a count from 0 to 500.');
+if (!Number.isInteger(bagCount) || bagCount < 1 || bagCount > 10) throw new Error('Use --bags= with a count from 1 to 10.');
 
 function benchmarkShape() {
   const grid = { x: 12, y: 10, z: 6 };
@@ -78,15 +81,25 @@ function benchmarkShape() {
   };
 }
 
+const benchmarkOverrides = [];
+if (optimizerRef) benchmarkOverrides.push({
+  name: 'optimizer-benchmark-source',
+  enforce: 'pre',
+  transform(_source, id) {
+    if (!id.replaceAll('\\', '/').endsWith('/src/optimizer.ts')) return null;
+    return execFileSync('git', ['show', `${optimizerRef}:src/optimizer.ts`], { encoding: 'utf8' });
+  },
+});
+if (bagWeightsRef) benchmarkOverrides.push({
+  name: 'bag-weights-benchmark-source',
+  enforce: 'pre',
+  transform(_source, id) {
+    if (!id.replaceAll('\\', '/').endsWith('/src/bag-weights.ts')) return null;
+    return execFileSync('git', ['show', `${bagWeightsRef}:src/bag-weights.ts`], { encoding: 'utf8' });
+  },
+});
 const vite = await createServer({
-  plugins: optimizerRef ? [{
-    name: 'optimizer-benchmark-source',
-    enforce: 'pre',
-    transform(_source, id) {
-      if (!id.replaceAll('\\', '/').endsWith('/src/optimizer.ts')) return null;
-      return execFileSync('git', ['show', `${optimizerRef}:src/optimizer.ts`], { encoding: 'utf8' });
-    },
-  }] : [],
+  plugins: benchmarkOverrides,
   optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error',
 });
 try {
@@ -95,6 +108,7 @@ try {
   const seed = createInitialData();
   const fixture = (count) => {
     if (shapeCount > count) throw new Error(`Cannot benchmark ${shapeCount} shapes in a ${count}-item plan.`);
+    const containerIds = Array.from({ length: bagCount }, (_, index) => index === 0 ? 'benchmark-bag' : `benchmark-bag-${index + 1}`);
     const shapeIndices = new Set(Array.from({ length: shapeCount }, (_, index) => Math.floor(index * count / shapeCount)));
     const shaped = shapeCount ? benchmarkShape() : undefined;
     const items = Array.from({ length: count }, (_, index) => {
@@ -119,7 +133,7 @@ try {
       ...structuredClone(seed.trips[0]),
       sample: false,
       ...(mode ? { mode } : {}),
-      containerIds: ['benchmark-bag'],
+      containerIds,
       entries: items.map((item, index) => ({
         id: `benchmark-entry-${index}`,
         itemId: item.id,
@@ -133,15 +147,15 @@ try {
       unavailableInstanceIds: [],
       lockedPlacements: [],
     };
-    const bag = {
+    const bags = containerIds.map(id => ({
       ...structuredClone(seed.containers[0]),
-      id: 'benchmark-bag',
+      id,
       inside: { length: 1000, width: 800, height: 500 },
       opening: { length: 1000, width: 800 },
       massLimitGrams: 100000,
       travellerIds: ['traveller-you'],
-    };
-    return { trip, items, bags: [bag] };
+    }));
+    return { trip, items, bags };
   };
 
   const results = [];
@@ -173,12 +187,13 @@ try {
       placed: count, placementFingerprint: expectedFingerprint });
   }
   console.log(JSON.stringify({
-    fixture: shapeCount ? `varied rectangles with ${shapeCount} synthetic voxel U-shapes in a 1000x800x500 mm bag`
-      : 'varied rectangular items in a 1000x800x500 mm bag',
+    fixture: shapeCount ? `varied rectangles with ${shapeCount} synthetic voxel U-shapes in ${bagCount} 1000x800x500 mm bags`
+      : `varied rectangular items in ${bagCount} 1000x800x500 mm bags`,
     dimensions: shapeCount ? '120x100x60 mm voxel U-shapes mixed with 48-200 x 36-162 x 18-120 mm rectangles'
       : '48-200 x 36-162 x 18-120 mm, deterministic per item index',
     mode: mode || seed.trips[0].mode,
     optimizerRef: optimizerRef || 'working tree',
+    bagWeightsRef: bagWeightsRef || 'working tree',
     node: process.version,
     shapeCount,
     warmupRunsPerSize: 1,
