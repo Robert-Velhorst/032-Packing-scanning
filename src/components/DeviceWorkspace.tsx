@@ -3,14 +3,15 @@ import {Capacitor} from '@capacitor/core';
 import {accountRequest,type PackingAccountState,type PackingAccountProfile} from '../account-client';
 import {createWorkspace,emptyWorkspace,listWorkspaces,unlockWorkspace,type AttachWorkspace,type ProtectedSession,type WorkspaceDescriptor} from '../protected-storage';
 import {captureClient} from '../scanning/lazy-capture-client';
-import type {CaptureClient,CaptureStorageState} from '../scanning/native';
+import type {CaptureClient} from '../scanning/native';
+import type {CaptureStorageState} from '../scanning/native-storage';
 import {workspaceStorage} from '../storage';
 import type {AppData} from '../types';
 import type {BackupSelection} from '../native-files';
 import type {ItemPhotoSelection} from '../native-item-photo';
 import type {ItemEditorDraft} from '../item-photo-draft';
 
-const loadNativeCapture=()=>import('../scanning/native');
+const loadNativeCapture=()=>import('../scanning/native-storage');
 
 interface DeviceControls {
   session?:ProtectedSession;
