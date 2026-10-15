@@ -12,6 +12,7 @@ const runs = Number(value('runs', '3'));
 const shapeCount = Number(value('shapes', '0'));
 const bagCount = Number(value('bags', '1'));
 const optimizerRef = value('optimizer-ref', '');
+const stackLoadRef = value('stack-load-ref', '');
 const bagWeightsRef = value('bag-weights-ref', '');
 const retrievalRef = value('retrieval-ref', '');
 const retrievalChecks = value('retrieval-checks', 'false') === 'true';
@@ -90,6 +91,14 @@ if (optimizerRef) benchmarkOverrides.push({
   transform(_source, id) {
     if (!id.replaceAll('\\', '/').endsWith('/src/optimizer.ts')) return null;
     return execFileSync('git', ['show', `${optimizerRef}:src/optimizer.ts`], { encoding: 'utf8' });
+  },
+});
+if (stackLoadRef) benchmarkOverrides.push({
+  name: 'stack-load-benchmark-source',
+  enforce: 'pre',
+  transform(_source, id) {
+    if (!id.replaceAll('\\', '/').endsWith('/src/stack-load.ts')) return null;
+    return execFileSync('git', ['show', `${stackLoadRef}:src/stack-load.ts`], { encoding: 'utf8' });
   },
 });
 if (bagWeightsRef) benchmarkOverrides.push({
@@ -216,6 +225,7 @@ try {
       : '48-200 x 36-162 x 18-120 mm, deterministic per item index',
     mode: mode || seed.trips[0].mode,
     optimizerRef: optimizerRef || 'working tree',
+    stackLoadRef: stackLoadRef || 'working tree',
     bagWeightsRef: bagWeightsRef || 'working tree',
     retrievalRef: retrievalRef || 'working tree',
     node: process.version,
