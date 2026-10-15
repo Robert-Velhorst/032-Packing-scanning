@@ -3,15 +3,16 @@ import type { AppData } from '../types';
 import type { ScanRetentionDays, ScanRetentionReply } from '../scan-retention';
 import { getScanRetentionCapabilities, type CaptureClient } from './native';
 
-export function useRawScanRetention({ data, savedData, capture, deferred, onRemoved }: { data?: AppData; savedData?: AppData; capture: CaptureClient; deferred: boolean; onRemoved: (reply: ScanRetentionReply) => void }) {
+export function useRawScanRetention({ data, savedData, capture, deferred, checkAvailability, onRemoved }: { data?: AppData; savedData?: AppData; capture: CaptureClient; deferred: boolean; checkAvailability: boolean; onRemoved: (reply: ScanRetentionReply) => void }) {
   const [supported, setSupported] = useState(false), [status, setStatus] = useState('Checking raw scan cleanup availability…');
   const cursor = useRef<string | null>(null), running = useRef(false), lastPolicy = useRef<number | null>(null);
   const days = data?.settings.automaticScanDeletionDays ?? null, saved = !!data && data === savedData;
   useEffect(() => {
+    if (!checkAvailability) return;
     let active = true;
     getScanRetentionCapabilities().then(value => { if (active) { setSupported(value); setStatus(value ? 'Original scans are kept until you choose a deletion policy.' : 'Automatic raw scan cleanup is available on supported Android installations. This device cannot remove their native source files.'); } }).catch(() => { if (active) setStatus('Raw scan cleanup availability could not be checked. Sources are retained; reopen this workspace to retry.'); });
     return () => { active = false; };
-  }, [capture]);
+  }, [capture, checkAvailability]);
   useEffect(() => {
     if (days !== lastPolicy.current) { cursor.current = null; lastPolicy.current = days; }
     if (!supported) return;

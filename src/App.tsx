@@ -194,7 +194,7 @@ function PackingApp() {
   }, [data?.settings.automaticPhotoDeletionDays]);
 
   const confirmRemovedSources=useCallback((reply:ScanRetentionReply)=>setData(current=>current?recordRemovedScanSources(current,reply):current),[]);
-  const scanRetention=useRawScanRetention({data,savedData,capture:device.capture,deferred:!!capture||!!device.pendingPhoto||!!device.pendingBackup||device.fileBusy,onRemoved:confirmRemovedSources});
+  const scanRetention=useRawScanRetention({data,savedData,capture:device.capture,deferred:!!capture||!!device.pendingPhoto||!!device.pendingBackup||device.fileBusy,checkAvailability:page==='settings'||data?.settings.automaticScanDeletionDays!=null,onRemoved:confirmRemovedSources});
 
   const updateData = (updater: (current: AppData) => AppData) => setData((current) => current ? updater(current) : current);
   const updateTrip = (updater: (trip: Trip) => Trip) => updateData((current) => ({
