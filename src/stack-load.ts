@@ -65,12 +65,21 @@ export function supportArea(upper: Placement, lower: Placement): number {
 
 /** An isolated placement cannot change the validated stack graph. */
 export function hasStackContact(placement: Placement, placed: Placement[], items: Map<string, PlanItem>, container?: Container): boolean {
-  if (placed.some(other => geometryContactArea(placement, other, items) > 0 || geometryContactArea(other, placement, items) > 0)) return true;
+  if (placed.some(other => mayShareContactBounds(placement, other)
+    && (geometryContactArea(placement, other, items) > 0 || geometryContactArea(other, placement, items) > 0))) return true;
   if (!container?.packingInterior) return false;
   const up = interiorTravelUp(container.packingInterior);
   if (up.axis === 2 && up.sign === 1) return false;
-  return placed.some(other => other.containerId === container.id
+  return placed.some(other => mayShareContactBounds(placement, other) && other.containerId === container.id
     && (geometryContactArea(placement, other, items, up) > 0 || geometryContactArea(other, placement, items, up) > 0));
+}
+
+/** Reject separated bounds before building or comparing detailed shape faces. */
+function mayShareContactBounds(left: Placement, right: Placement): boolean {
+  return left.containerId === right.containerId && left.compartmentId === right.compartmentId
+    && left.x + left.length >= right.x - CONTACT_EPSILON && right.x + right.length >= left.x - CONTACT_EPSILON
+    && left.y + left.width >= right.y - CONTACT_EPSILON && right.y + right.width >= left.y - CONTACT_EPSILON
+    && left.z + left.height >= right.z - CONTACT_EPSILON && right.z + right.height >= left.z - CONTACT_EPSILON;
 }
 
 /** Conservative static bound: do not assume that a bridge shares its weight evenly. */
