@@ -25,9 +25,18 @@ describe('adopted occupied-cell planning',()=>{
   const shaped=shape(),small=item('small'),arch=item('U',shaped.fittedDimensionsMm,shaped),items=new Map([[small.id+'#1',small],[arch.id+'#1',arch]]);
   const obstacles=[{x:75,y:0,z:10,length:10,width:100,height:20},{x:35,y:15,z:30,length:10,width:10,height:20}],sorted=[...obstacles].sort((a,b)=>a.x-b.x);
   for(const candidate of [placement('small',{x:30,y:10,z:0,length:40,width:40,height:20}),placement('U')]){
-   const ordinary=hasVerticalEntry(candidate,[],items,bag,[],obstacles),indexed=hasVerticalEntry(candidate,[],items,bag,[],sorted,true);
+   const ordinary=hasVerticalEntry(candidate,[],items,bag,[],obstacles),indexed=hasVerticalEntry(candidate,[],items,bag,[],sorted,true,10);
    expect(indexed).toBe(ordinary);
   }
+ });
+ it('skips x-sorted entry obstacles beyond the maximum obstacle reach',()=>{
+  const small=item('small'),items=new Map([[small.id+'#1',small]]),obstacles=[
+   {x:0,y:0,z:10,length:20,width:100,height:30},
+   {x:140,y:0,z:10,length:20,width:100,height:30},
+   {x:220,y:0,z:10,length:20,width:100,height:30},
+  ],sorted=[...obstacles].sort((a,b)=>a.x-b.x),candidate=placement('small',{x:150,y:10,z:0,length:40,width:40,height:20});
+  expect(hasVerticalEntry(candidate,[],items,bag,[],sorted,true,20)).toBe(hasVerticalEntry(candidate,[],items,bag,[],obstacles));
+  expect(hasVerticalEntry(candidate,[],items,bag,[],sorted,true,20)).toBe(false);
  });
  it('reuses precomputed obstacle boxes without changing shape contact candidates',()=>{
   const shaped=shape(),obstacle=placement('U'),shapeItem=item('U',shaped.fittedDimensionsMm,shaped),candidate=item('candidate',{length:40,width:30,height:20}),items=new Map<string,LibraryItem>([[obstacle.instanceId,shapeItem],[candidate.id+'#1',candidate]]),orientation=geometryOrientations(candidate,bag)[0];

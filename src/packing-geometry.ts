@@ -319,20 +319,26 @@ export function hasPackingAndTravelSupport(p:Placement,placed:Placement[],items:
   const floor=up.sign===1?origin:-(origin+(compartment??bag.inside)[axes[up.axis]]);
   return hasGeometrySupport(p,placed,items,fraction,up,floor);
 }
+function firstPotentialObstacle(obstacles:readonly GeometryBox[],x:number,maxObstacleLength:number|undefined,sortedByX:boolean):number{
+  if(!sortedByX||maxObstacleLength===undefined)return 0;
+  const threshold=x-maxObstacleLength-EPS;let low=0,high=obstacles.length;
+  while(low<high){const middle=(low+high)>>>1;if(obstacles[middle].x<threshold)low=middle+1;else high=middle;}
+  return low;
+}
 /** Fixed orientation, straight downward entry: recesses must remain reachable from above. */
-export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,bag:Container,blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[],obstaclesSortedByX=false):boolean {
+export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,bag:Container,blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[],obstaclesSortedByX=false,maxObstacleLength?:number):boolean {
   const top=bag.inside.height;
   const obstacles=cachedObstacles??[...blockedSpaces,...placed.filter(other=>other.containerId===p.containerId).flatMap(other=>placementBoxes(other,items.get(other.instanceId)))];
   // Keep both rectangular and shaped candidate sweeps allocation-free.
   const shape=items.get(p.instanceId)?.packingShape;
   if(!shape){
     const sweepTop=p.z+Math.max(p.height,top-p.z+p.height),right=p.x+p.length,back=p.y+p.width;
-    for(const o of obstacles){if(obstaclesSortedByX&&o.x>=right-EPS)break;if(p.x<o.x+o.length-EPS&&right>o.x+EPS&&p.y<o.y+o.width-EPS&&back>o.y+EPS&&p.z<o.z+o.height-EPS&&sweepTop>o.z+EPS)return false;}
+    for(let i=firstPotentialObstacle(obstacles,p.x,maxObstacleLength,obstaclesSortedByX);i<obstacles.length;i++){const o=obstacles[i];if(obstaclesSortedByX&&o.x>=right-EPS)break;if(p.x<o.x+o.length-EPS&&right>o.x+EPS&&p.y<o.y+o.width-EPS&&back>o.y+EPS&&p.z<o.z+o.height-EPS&&sweepTop>o.z+EPS)return false;}
     return true;
   }
   for(const b of localGeometry(shape,p.rotation??0).boxes){
     const x=p.x+b.x,y=p.y+b.y,z=p.z+b.z,right=x+b.length,back=y+b.width,sweepTop=z+Math.max(b.height,top-z+p.height);
-    for(const o of obstacles){if(obstaclesSortedByX&&o.x>=right-EPS)break;if(x<o.x+o.length-EPS&&right>o.x+EPS&&y<o.y+o.width-EPS&&back>o.y+EPS&&z<o.z+o.height-EPS&&sweepTop>o.z+EPS)return false;}
+    for(let i=firstPotentialObstacle(obstacles,x,maxObstacleLength,obstaclesSortedByX);i<obstacles.length;i++){const o=obstacles[i];if(obstaclesSortedByX&&o.x>=right-EPS)break;if(x<o.x+o.length-EPS&&right>o.x+EPS&&y<o.y+o.width-EPS&&back>o.y+EPS&&z<o.z+o.height-EPS&&sweepTop>o.z+EPS)return false;}
   }
   return true;
 }
