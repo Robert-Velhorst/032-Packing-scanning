@@ -564,7 +564,9 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             // clipped to the bag and split around any blocked geometry. When
             // there is no shape sequence or blocked geometry, this check repeats
             // those same bounds for every corner candidate.
-            if((useShapeSequence||(blockedSpaces.get(container.id)?.length??0)>0)
+            // Shape-search contacts are already clamped to their usable region
+            // and exact-filtered against the cached blocked and placed boxes.
+            if(!space.shapeSearch&&(useShapeSequence||(blockedSpaces.get(container.id)?.length??0)>0)
               &&!fitsGeometrySpaceInValidatedContainer(placement,container,item,blockedSpaces.get(container.id)))continue;
             // Ordinary candidates remain inside free regions already split
             // around every occupied geometry box. Shape-search positions are
