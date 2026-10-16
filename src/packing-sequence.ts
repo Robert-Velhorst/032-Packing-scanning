@@ -38,21 +38,39 @@ export function packingStepPreview(ordered: Placement[], index: number, complete
 export interface PackingStepRelationIndex {
   names: Map<string,string>;
   byInstance: Map<string,LibraryItem>;
+  byContainer: Map<string,Map<string|undefined,{plainByTopPlane:Map<number,Placement[]>;shaped:Placement[]}>>;
+  placementOrder: Map<string,number>;
 }
 
 /** Prepares item/form geometry lookups once for all instructions in a plan. */
 export function createPackingStepRelationIndex(ordered: Placement[], items: LibraryItem[]): PackingStepRelationIndex {
-  const records=new Map(items.map(item=>[item.id,item])),byInstance=new Map<string,LibraryItem>();
-  for(const placement of ordered){const item=packingItemForPlacement(records.get(placement.itemId),placement);if(item)byInstance.set(placement.instanceId,item);}
-  return {names:new Map(items.map(item=>[item.id,item.name])),byInstance};
+  const records=new Map(items.map(item=>[item.id,item])),byInstance=new Map<string,LibraryItem>(),byContainer=new Map<string,Map<string|undefined,{plainByTopPlane:Map<number,Placement[]>;shaped:Placement[] }>>(),placementOrder=new Map<string,number>();
+  for(const [order,placement] of ordered.entries()){
+    const item=packingItemForPlacement(records.get(placement.itemId),placement);if(item)byInstance.set(placement.instanceId,item);
+    let compartments=byContainer.get(placement.containerId);if(!compartments){compartments=new Map();byContainer.set(placement.containerId,compartments);}
+    let candidates=compartments.get(placement.compartmentId);if(!candidates){candidates={plainByTopPlane:new Map(),shaped:[]};compartments.set(placement.compartmentId,candidates);}
+    if(item?.packingShape)candidates.shaped.push(placement);
+    else {const plane=Math.floor((placement.z+placement.height)/.01),placements=candidates.plainByTopPlane.get(plane)??[];placements.push(placement);candidates.plainByTopPlane.set(plane,placements);}
+    placementOrder.set(placement.instanceId,order);
+  }
+  return {names:new Map(items.map(item=>[item.id,item.name])),byInstance,byContainer,placementOrder};
 }
 
 export function packingStepRelation(current: Placement, ordered: Placement[], items: LibraryItem[], bag?:Container,index?:PackingStepRelationIndex): string {
   const compartment=bag?compartmentFor(bag,current.compartmentId):undefined;
   if(compartment&&Math.abs(current.z-compartment.z)<.01)return `Place on the floor of “${compartment.name}”. Positions use the bag’s inside corner, not the compartment corner. Check its top opening and actual support.`;
   if (current.z === 0) return 'Place on the bag floor, using the inside corner shown as the reference.';
-  const {names,byInstance}=index??createPackingStepRelationIndex(ordered,items);
-  const underneath = ordered.filter((step) => step.instanceId !== current.instanceId && step.containerId === current.containerId
+  const relationIndex=index??createPackingStepRelationIndex(ordered,items),{names,byInstance}=relationIndex;
+  const group=relationIndex.byContainer.get(current.containerId)?.get(current.compartmentId);
+  const candidates:Placement[]=[];
+  if(group){
+    const plane=Math.floor(current.z/.01);
+    for(let adjacent=plane-1;adjacent<=plane+1;adjacent++)candidates.push(...(group.plainByTopPlane.get(adjacent)??[]));
+    candidates.push(...group.shaped.filter(step=>current.z>step.z+.01&&current.z<=step.z+step.height+.01));
+    candidates.sort((a,b)=>(relationIndex.placementOrder.get(a.instanceId)??0)-(relationIndex.placementOrder.get(b.instanceId)??0));
+  } else candidates.push(...ordered);
+  const underneath = candidates.filter((step) => step.instanceId !== current.instanceId
+    && current.z > step.z + .01 && current.z <= step.z + step.height + .01
     && geometrySupportArea(current,step,byInstance)>0);
   const supportNames = [...new Set(underneath.map((step) => names.get(step.itemId) ?? 'earlier item'))];
   return supportNames.length ? 'Above the planned position of ' + supportNames.join(', ') + '. Check the actual support before placing it.'
