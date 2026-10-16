@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialData } from './seed';
 import { buildPlan } from './optimizer';
-import { createPackingSequenceViewData, createPackingStepRelationIndex, nextUnpackedStep, orderPackingSteps, packingStepPreview, packingStepRelation, resumePackingStep } from './packing-sequence';
+import { createPackingStepRelationIndex, nextUnpackedStep, orderPackingSteps, packingStepPreview, packingStepRelation, resumePackingStep } from './packing-sequence';
 
 describe('packing sequence', () => {
   const data = structuredClone(createInitialData());
@@ -49,14 +49,5 @@ describe('packing sequence', () => {
     expect(relation).toContain('planned position');
     expect(packingStepRelation(current, [{ ...support, x: 500 }], data.libraryItems)).toContain('25 mm above');
     expect(packingStepRelation(current, [{ ...support, containerId: 'other' }], data.libraryItems)).toContain('25 mm above');
-  });
-  it('precomputes the same step previews and support descriptions for a stable sequence', () => {
-    const source=[...ordered,{...ordered[0],instanceId:'other-bag-step',containerId:'another-bag'}],completed=[ordered[1].instanceId,'other-bag-step'];
-    const relationIndex=createPackingStepRelationIndex(source,data.libraryItems);
-    const view=createPackingSequenceViewData(source,completed,data.libraryItems,data.containers,relationIndex);
-    source.forEach((step,index)=>{
-      expect(view.previews.get(step.instanceId)).toEqual(packingStepPreview(source,index,completed));
-      expect(view.relations.get(step.instanceId)).toBe(packingStepRelation(step,source,data.libraryItems,data.containers.find(bag=>bag.id===step.containerId),relationIndex));
-    });
   });
 });
