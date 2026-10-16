@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import type { Container, LibraryItem, PackingPlan } from '../types';
 import { ContainerSpaceNotes } from './ContainerSpaceNotes';
 import { PackingDiagram } from './PackingDiagram';
@@ -13,7 +13,7 @@ interface Props {
   placementLabels?: Record<string, string>;
 }
 
-export function PackCanvas({ container, plan, items, selectedInstanceId, view, layer, placementLabels }: Props) {
+export const PackCanvas = memo(function PackCanvas({ container, plan, items, selectedInstanceId, view, layer, placementLabels }: Props) {
   if (view === '3d') {
     return <ThreePackFrame container={container} plan={plan} items={items} selectedInstanceId={selectedInstanceId} placementLabels={placementLabels}/>;
   }
@@ -31,7 +31,7 @@ export function PackCanvas({ container, plan, items, selectedInstanceId, view, l
     numbers={numbers}
     items={items}
   />;
-}
+});
 
 function ThreePackFrame({ container, plan, items, selectedInstanceId, placementLabels }: Omit<Props, 'view' | 'layer'>) {
   const frameRef = useRef<HTMLIFrameElement>(null);
