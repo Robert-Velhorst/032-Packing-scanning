@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { MAX_SEPARATION_RULES, reviewSeparation, separationDescription, separationRuleError } from '../item-separation';
 import type { Container, LibraryItem, PackingPlan, SeparationRule, Trip, UnitSystem } from '../types';
 
-export function SeparationNotes({trip,items,bags,plan,unit}: {trip:Trip;items:LibraryItem[];bags:Container[];plan:PackingPlan;unit:UnitSystem}){
+type SeparationNotesProps = {trip:Trip;items:LibraryItem[];bags:Container[];plan:PackingPlan;unit:UnitSystem};
+
+export const SeparationNotes=memo(function SeparationNotes({trip,items,bags,plan,unit}: SeparationNotesProps){
   if(!trip.separationRules?.length)return null;
   const review=reviewSeparation(trip,items,bags,plan);
   if(review.error)return <section className="separation-notes" aria-label="Separation checks"><h3>Separation checks</h3><p role="alert">{review.error}</p><p>Planning is paused. Correct the rule records; saved packed positions remain unchanged.</p></section>;
@@ -15,9 +17,14 @@ export function SeparationNotes({trip,items,bags,plan,unit}: {trip:Trip;items:Li
       {reason&&<p>{reason}</p>}{rule.note&&<p>{rule.note}</p>}
     </li>)}</ul>
   </section>;
-}
+},(previous,next)=>previous.trip.entries===next.trip.entries
+  &&previous.trip.separationRules===next.trip.separationRules
+  &&previous.trip.lockedPlacements===next.trip.lockedPlacements
+  &&previous.items===next.items&&previous.bags===next.bags&&previous.plan===next.plan&&previous.unit===next.unit);
 
-export function SeparationRules({trip,items,unit,onChange}:{trip:Trip;items:LibraryItem[];unit:UnitSystem;onChange:(rules:SeparationRule[])=>void}){
+type SeparationRulesProps = {trip:Trip;items:LibraryItem[];unit:UnitSystem;onChange:(rules:SeparationRule[])=>void};
+
+export const SeparationRules=memo(function SeparationRules({trip,items,unit,onChange}:SeparationRulesProps){
   const [editing,setEditing]=useState<SeparationRule|null|undefined>(),[first,setFirst]=useState(''),[second,setSecond]=useState(''),[kind,setKind]=useState<SeparationRule['kind']>('different_bags'),[gap,setGap]=useState(''),[note,setNote]=useState(''),[error,setError]=useState('');
   const rules=trip.separationRules??[],factor=unit==='metric'?1:25.4;
   const label=(id:string)=>{const entry=trip.entries.find(e=>e.id===id);return `${items.find(i=>i.id===entry?.itemId)?.name??'Missing item'} · ${trip.travellers.find(t=>t.id===entry?.travellerId)?.name??'Traveller'} · ${entry?.quantity??0} copies · checklist row ${trip.entries.findIndex(e=>e.id===id)+1}`;};
@@ -45,4 +52,7 @@ export function SeparationRules({trip,items,unit,onChange}:{trip:Trip;items:Libr
       <div className="separation-actions"><button type="submit" className="button button-primary">Save separation rule</button><button type="button" className="button button-secondary" onClick={()=>setEditing(undefined)}>Cancel</button></div>
     </form>}
   </section>;
-}
+},(previous,next)=>previous.trip.entries===next.trip.entries
+  &&previous.trip.travellers===next.trip.travellers
+  &&previous.trip.separationRules===next.trip.separationRules
+  &&previous.items===next.items&&previous.unit===next.unit&&previous.onChange===next.onChange);
