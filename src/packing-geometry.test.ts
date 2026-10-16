@@ -21,6 +21,14 @@ const bag:Container={id:'bag',name:'bag',kind:'other',inside:{length:120,width:1
 function trip(items:LibraryItem[]):Trip{return {id:'trip',name:'trip',destination:'',packingOnly:true,sample:false,travellers:[{id:'person',name:'person'}],containerIds:['bag'],entries:items.map(i=>({id:i.id,itemId:i.id,travellerId:'person',quantity:1,priority:'required',required:true,accessPriority:1})),mode:'balanced',completedInstanceIds:[],unavailableInstanceIds:[],lockedPlacements:[],carrierRules:[],createdAt:date,updatedAt:date};}
 function placement(id:string,patch:Partial<Placement>={}):Placement{return {instanceId:id+'#1',entryId:id,itemId:id,containerId:'bag',x:0,y:0,z:0,length:120,width:100,height:60,rotation:0,layer:1,...patch};}
 describe('adopted occupied-cell planning',()=>{
+ it('preserves vertical-entry results when cached obstacles are sorted by x',()=>{
+  const shaped=shape(),small=item('small'),arch=item('U',shaped.fittedDimensionsMm,shaped),items=new Map([[small.id+'#1',small],[arch.id+'#1',arch]]);
+  const obstacles=[{x:75,y:0,z:10,length:10,width:100,height:20},{x:35,y:15,z:30,length:10,width:10,height:20}],sorted=[...obstacles].sort((a,b)=>a.x-b.x);
+  for(const candidate of [placement('small',{x:30,y:10,z:0,length:40,width:40,height:20}),placement('U')]){
+   const ordinary=hasVerticalEntry(candidate,[],items,bag,[],obstacles),indexed=hasVerticalEntry(candidate,[],items,bag,[],sorted,true);
+   expect(indexed).toBe(ordinary);
+  }
+ });
  it('reuses precomputed obstacle boxes without changing shape contact candidates',()=>{
   const shaped=shape(),obstacle=placement('U'),shapeItem=item('U',shaped.fittedDimensionsMm,shaped),candidate=item('candidate',{length:40,width:30,height:20}),items=new Map<string,LibraryItem>([[obstacle.instanceId,shapeItem],[candidate.id+'#1',candidate]]),orientation=geometryOrientations(candidate,bag)[0];
   const full=contactPositions(bag,orientation,candidate,[obstacle],items),cached=contactPositions(bag,orientation,candidate,[],items,undefined,[],placementBoxes(obstacle,shapeItem));

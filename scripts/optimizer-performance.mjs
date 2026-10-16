@@ -9,6 +9,7 @@ const value = (name, fallback) => {
 };
 const counts = value('counts', '50,100,250').split(',').map(Number);
 const runs = Number(value('runs', '3'));
+const warmupRunsPerSize = 3;
 const shapeCount = Number(value('shapes', '0'));
 const bagCount = Number(value('bags', '1'));
 const optimizerRef = value('optimizer-ref', '');
@@ -128,13 +129,14 @@ if (retrievalRef) benchmarkOverrides.push({
 });
 const vite = await createServer({
   plugins: benchmarkOverrides,
-  optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true }, appType: 'custom', logLevel: 'error',
+  optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true, watch: null }, appType: 'custom', logLevel: 'error',
 });
 try {
   const { createInitialData } = await vite.ssrLoadModule('/src/seed.ts');
   const { buildPlan } = await vite.ssrLoadModule('/src/optimizer.ts');
   const { assessRetrieval } = await vite.ssrLoadModule('/src/retrieval.ts');
   const seed = createInitialData();
+  await vite.watcher.close();
   const fixture = (count) => {
     if (shapeCount > count) throw new Error(`Cannot benchmark ${shapeCount} shapes in a ${count}-item plan.`);
     const containerIds = Array.from({ length: bagCount }, (_, index) => index === 0 ? 'benchmark-bag' : `benchmark-bag-${index + 1}`);
@@ -196,6 +198,12 @@ try {
     if (warmup.placements.length !== count) throw new Error(`Warm-up placed ${warmup.placements.length} of ${count} items.`);
     assertRectangularPlacementsDoNotOverlap(warmup);
     const expectedFingerprint = fingerprint(warmup);
+    for (let warmupRun = 1; warmupRun < warmupRunsPerSize; warmupRun += 1) {
+      const plan = buildPlan(input.trip, input.items, input.bags);
+      if (plan.placements.length !== count || fingerprint(plan) !== expectedFingerprint) {
+        throw new Error(`Warm-up ${warmupRun + 1} changed the placement result.`);
+      }
+    }
     const samples = [];
     const cpuSamples = [];
     const retrievalItems = retrievalChecks ? new Map(warmup.placements.map(placement => [placement.instanceId,
@@ -239,8 +247,9 @@ try {
     bagWeightsRef: bagWeightsRef || 'working tree',
     retrievalRef: retrievalRef || 'working tree',
     node: process.version,
+    peakRssKiB: process.resourceUsage().maxRSS,
     shapeCount,
-    warmupRunsPerSize: 1,
+    warmupRunsPerSize,
     measuredRuns: runs,
     results,
   }, null, 2));
