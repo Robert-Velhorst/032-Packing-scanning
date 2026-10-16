@@ -1,5 +1,6 @@
 import { performance } from 'node:perf_hooks';
 import { createHash } from 'node:crypto';
+import inspector from 'node:inspector';
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'vite';
 
@@ -18,10 +19,14 @@ const packingGeometryRef = value('packing-geometry-ref', '');
 const bagWeightsRef = value('bag-weights-ref', '');
 const retrievalRef = value('retrieval-ref', '');
 const retrievalChecks = value('retrieval-checks', 'false') === 'true';
+const profile = value('profile', 'false') === 'true';
 const mode = value('mode', '');
 if (mode && !['balanced', 'maximum_capacity', 'easy_access', 'fragile_protection'].includes(mode)) {
   throw new Error('Use --mode=balanced,maximum_capacity,easy_access, or fragile_protection.');
 }
+const inspectorPost = (session, method, params = {}) => new Promise((resolve, reject) => {
+  session.post(method, params, (error, result) => error ? reject(error) : resolve(result));
+});
 const assertRectangularPlacementsDoNotOverlap = (plan) => {
   if (shapeCount > 0) return;
   const placements = plan.placements;
@@ -227,6 +232,33 @@ try {
         if (JSON.stringify(review) !== expectedRetrieval) throw new Error(`Run ${run + 1} changed retrieval review results.`);
       }
     }
+    let profileFunctions;
+    if (profile) {
+      const session = new inspector.Session();
+      session.connect();
+      try {
+        await inspectorPost(session, 'Profiler.enable');
+        await inspectorPost(session, 'Profiler.start');
+        const plan = buildPlan(input.trip, input.items, input.bags);
+        const { profile: cpuProfile } = await inspectorPost(session, 'Profiler.stop');
+        if (plan.placements.length !== count || fingerprint(plan) !== expectedFingerprint) {
+          throw new Error('Profiled run changed the measured placement result.');
+        }
+        profileFunctions = cpuProfile.nodes
+          .filter(node => node.hitCount > 0)
+          .sort((left, right) => right.hitCount - left.hitCount)
+          .slice(0, 25)
+          .map(node => ({
+            function: node.callFrame.functionName || '(anonymous)',
+            file: node.callFrame.url,
+            line: node.callFrame.lineNumber + 1,
+            samples: node.hitCount,
+          }));
+      } finally {
+        await inspectorPost(session, 'Profiler.disable');
+        session.disconnect();
+      }
+    }
     const sorted = [...samples].sort((left, right) => left - right);
     const sortedCpu = [...cpuSamples].sort((left, right) => left - right);
     const sortedRetrieval = [...retrievalSamples].sort((left, right) => left - right);
@@ -234,6 +266,7 @@ try {
       medianCpuSeconds: sortedCpu[Math.floor(sortedCpu.length / 2)], samplesCpuSeconds: cpuSamples,
       ...(retrievalChecks ? { retrievalMedianSeconds: sortedRetrieval[Math.floor(sortedRetrieval.length / 2)], retrievalSamplesSeconds: retrievalSamples } : {}),
       placed: count, placementFingerprint: expectedFingerprint });
+    if (profileFunctions) results.at(-1).profileFunctions = profileFunctions;
   }
   console.log(JSON.stringify({
     fixture: shapeCount ? `varied rectangles with ${shapeCount} synthetic voxel U-shapes in ${bagCount} 1000x800x500 mm bags`

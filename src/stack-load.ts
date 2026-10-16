@@ -1,9 +1,10 @@
-import type { Container, Evidence, LibraryItem, Placement, PlanItem, StackLoadCheck } from './types.ts';
+import type { Container, Placement, PlanItem, StackLoadCheck } from './types.ts';
 import { geometryContactArea, type GravityUp } from './packing-geometry.ts';
 import { interiorTravelUp } from './packing-interior.ts';
+import { topLoadError } from './stack-load-records.ts';
+export { topLoadError } from './stack-load-records.ts';
 
 const CONTACT_EPSILON = 0.01;
-type LoadItem = Pick<LibraryItem, 'fragile' | 'maxTopLoadGrams' | 'topLoadEvidence'>;
 type ContactGraph = {above:Map<Placement,Set<Placement>>;below:Map<Placement,Set<Placement>>};
 
 /** Reuses immutable placement-pair geometry during one plan calculation. */
@@ -143,17 +144,6 @@ export class StackLoadContactCache {
     if(!byFrame){byFrame=new Map();byLower.set(lower,byFrame);}
     byFrame.set(up.axis*2+Number(up.sign<0),area);
   }
-}
-
-export function topLoadError(item: LoadItem): string | undefined {
-  if (item.maxTopLoadGrams === undefined) return item.topLoadEvidence === undefined ? undefined : 'Enter the stacking limit that this source describes.';
-  if (!Number.isFinite(item.maxTopLoadGrams) || item.maxTopLoadGrams < 0 || item.maxTopLoadGrams > 100000)
-    return 'Allowed weight above must be between zero and 100,000 grams.';
-  const evidence: Evidence | undefined = item.topLoadEvidence;
-  if (!evidence || !['measured', 'known', 'estimated', 'user_confirmed', 'provider'].includes(evidence.source)
-    || !Number.isFinite(evidence.confidence) || evidence.confidence < 0 || evidence.confidence > 1
-    || typeof evidence.collectedAt !== 'string' || !Number.isFinite(Date.parse(evidence.collectedAt)))
-    return 'Record how you know the allowed weight above.';
 }
 
 /** Only direct horizontal contact in the same bag. Side contact does not carry load. */

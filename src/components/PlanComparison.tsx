@@ -1,4 +1,4 @@
-import { SeparationNotes } from './SeparationRules';
+import { SeparationNotes } from './SeparationNotes';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BagMassConflictNote } from './BagMassConflictNote';
 import { RetrievalNotes } from './RetrievalNotes';

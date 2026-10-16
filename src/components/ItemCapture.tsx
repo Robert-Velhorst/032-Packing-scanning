@@ -3,7 +3,7 @@ import {RecognitionReview} from './RecognitionReview';
 import type {ItemRecognition} from '../scanning/recognition';
 import { changedPropertyEvidence, handlingEvidenceError } from '../property-evidence';
 import { PropertyEvidenceFields } from './PropertyEvidenceFields';
-import { topLoadError } from '../stack-load';
+import { topLoadError } from '../stack-load-records';
 import { packingFormsError } from '../packing-forms';
 import { PackingFormFields } from './PackingFormFields';
 import { PackingShapeCard } from './PackingShapeCard';

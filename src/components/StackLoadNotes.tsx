@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { packingItemForPlacement } from '../packing-forms';
 import type { LibraryItem, PackingPlan, UnitSystem } from '../types';
 
-export function StackLoadNotes({ plan, items, unit = 'metric', containerId, instanceId }: {
+export const StackLoadNotes = memo(function StackLoadNotes({ plan, items, unit = 'metric', containerId, instanceId }: {
   plan: PackingPlan; items: LibraryItem[]; unit?: UnitSystem; containerId?: string; instanceId?: string;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -39,4 +39,4 @@ export function StackLoadNotes({ plan, items, unit = 'metric', containerId, inst
     </> : rows}
     <small>Full supported weight is counted on every support path in each checked orientation. This does not simulate pressure, impact, cushioning, moving between orientations or arbitrary tilts. Recorded limits must apply to the contacting faces; include wrapping in dimensions and weight and confirm the real support.</small>
   </aside>;
-}
+});

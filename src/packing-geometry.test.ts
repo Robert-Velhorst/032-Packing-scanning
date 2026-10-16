@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest';
 import {buildPlan} from './optimizer';
 import {assessStackLoads} from './stack-load';
 import {orderPackingSteps} from './packing-sequence';
-import {boxesIntersect,contactPositions,geometryContactArea,geometryIntersects,geometryOrientations,geometrySupportArea,hasGeometrySupport,hasVerticalEntry,packingShapeError,placementBoxes,placementSurface,RectangularSupportIndex,shapeDimensions,shapeKey,shapeVolume} from './packing-geometry';
+import {boxesIntersect,contactPositions,geometryContactArea,geometryIntersects,geometryOrientations,geometrySupportArea,hasGeometrySupport,hasVerticalEntry,insertObstaclePrefixMaxRight,obstaclePrefixMaxRight,packingShapeError,placementBoxes,placementSurface,RectangularSupportIndex,shapeDimensions,shapeKey,shapeVolume} from './packing-geometry';
 import type {Container,LibraryItem,PackingShape,Placement,PlanItem,Trip} from './types';
 const date='2026-10-01T00:00:00Z',evidence={source:'estimated' as const,confidence:.5,collectedAt:date};
 function shape(portal=false):PackingShape {
@@ -23,11 +23,28 @@ function placement(id:string,patch:Partial<Placement>={}):Placement{return {inst
 describe('adopted occupied-cell planning',()=>{
  it('preserves vertical-entry results when cached obstacles are sorted by x',()=>{
   const shaped=shape(),small=item('small'),arch=item('U',shaped.fittedDimensionsMm,shaped),items=new Map([[small.id+'#1',small],[arch.id+'#1',arch]]);
-  const obstacles=[{x:75,y:0,z:10,length:10,width:100,height:20},{x:35,y:15,z:30,length:10,width:10,height:20}],sorted=[...obstacles].sort((a,b)=>a.x-b.x);
+  const obstacles=[{x:75,y:0,z:10,length:10,width:100,height:20},{x:35,y:15,z:30,length:10,width:10,height:20}],sorted=[...obstacles].sort((a,b)=>a.x-b.x),prefix=obstaclePrefixMaxRight(sorted);
   for(const candidate of [placement('small',{x:30,y:10,z:0,length:40,width:40,height:20}),placement('U')]){
-   const ordinary=hasVerticalEntry(candidate,[],items,bag,[],obstacles),indexed=hasVerticalEntry(candidate,[],items,bag,[],sorted,true);
-   expect(indexed).toBe(ordinary);
+   const ordinary=hasVerticalEntry(candidate,[],items,bag,[],obstacles),indexed=hasVerticalEntry(candidate,[],items,bag,[],sorted,true,10),prefixIndexed=hasVerticalEntry(candidate,[],items,bag,[],sorted,true,undefined,prefix);
+   expect(indexed).toBe(ordinary);expect(prefixIndexed).toBe(ordinary);
   }
+ });
+ it('skips x-sorted entry obstacles beyond the maximum obstacle reach',()=>{
+  const small=item('small'),items=new Map([[small.id+'#1',small]]),obstacles=[
+   {x:0,y:0,z:10,length:20,width:100,height:30},
+   {x:140,y:0,z:10,length:20,width:100,height:30},
+   {x:220,y:0,z:10,length:20,width:100,height:30},
+  ],sorted=[...obstacles].sort((a,b)=>a.x-b.x),prefix=obstaclePrefixMaxRight(sorted),candidate=placement('small',{x:150,y:10,z:0,length:40,width:40,height:20});
+  expect(hasVerticalEntry(candidate,[],items,bag,[],sorted,true,undefined,prefix)).toBe(hasVerticalEntry(candidate,[],items,bag,[],obstacles));
+  expect(hasVerticalEntry(candidate,[],items,bag,[],sorted,true,undefined,prefix)).toBe(false);
+ });
+ it('inserts new vertical-entry obstacles while keeping sorted bounds and prefix maxima exact',()=>{
+  const existing=[{x:10,y:0,z:0,length:8,width:1,height:1},{x:20,y:0,z:0,length:4,width:1,height:1}],obstacles=[...existing],prefix=obstaclePrefixMaxRight(obstacles);
+  const additions=[{x:5,y:0,z:0,length:30,width:1,height:1},{x:20,y:1,z:0,length:12,width:1,height:1},{x:10,y:2,z:0,length:3,width:1,height:1}];
+  insertObstaclePrefixMaxRight(obstacles,prefix,additions.slice(0,1));insertObstaclePrefixMaxRight(obstacles,prefix,additions.slice(1));
+  const expected=[...existing,...additions].sort((a,b)=>a.x-b.x);
+  expect(obstacles).toEqual(expected);
+  expect(prefix).toEqual(obstaclePrefixMaxRight(expected));
  });
  it('reuses precomputed obstacle boxes without changing shape contact candidates',()=>{
   const shaped=shape(),obstacle=placement('U'),shapeItem=item('U',shaped.fittedDimensionsMm,shaped),candidate=item('candidate',{length:40,width:30,height:20}),items=new Map<string,LibraryItem>([[obstacle.instanceId,shapeItem],[candidate.id+'#1',candidate]]),orientation=geometryOrientations(candidate,bag)[0];
@@ -40,6 +57,9 @@ describe('adopted occupied-cell planning',()=>{
   expect(prefiltered.positions).toEqual(full.positions.filter(clear));
   const prefilteredCapped=contactPositions(bag,orientation,candidate,[],items,undefined,[],obstacleBoxes,8,obstacleBoxes);
   expect(prefilteredCapped.positions).toEqual(full.positions.slice(0,8).filter(clear));expect(prefilteredCapped.limited).toBe(true);
+  const sortedObstacles=[...obstacleBoxes].sort((a,b)=>a.x-b.x),prefix=obstaclePrefixMaxRight(sortedObstacles);
+  const indexed=contactPositions(bag,orientation,candidate,[],items,undefined,[],obstacleBoxes,20000,sortedObstacles,prefix);
+  expect(indexed).toEqual(prefiltered);
  });
  it('indexes rectangular support planes without losing epsilon or shaped support candidates',()=>{
   const shaped=shape(),support=placement('U',{height:60}),upper=placement('upper',{z:60.005,height:10}),decoys=Array.from({length:64},(_,index)=>placement(`decoy-${index}`,{z:10+index*.4,height:5,width:20}));

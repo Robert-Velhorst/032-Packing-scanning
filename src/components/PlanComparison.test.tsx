@@ -10,7 +10,7 @@ const { renderRetrievalNotes, renderSeparationNotes } = vi.hoisted(() => ({
 }));
 
 vi.mock('./RetrievalNotes', () => ({ RetrievalNotes: () => { renderRetrievalNotes(); return null; } }));
-vi.mock('./SeparationRules', () => ({ SeparationNotes: () => { renderSeparationNotes(); return null; } }));
+vi.mock('./SeparationNotes', () => ({ SeparationNotes: () => { renderSeparationNotes(); return null; } }));
 
 import { PlanComparison } from './PlanComparison';
 

@@ -13,7 +13,7 @@ import { packingItem, packingFormKey } from './packing-forms';
 import { isValidRejectedPlacement, samePlacementGeometry } from './packing-progress';
 import { containerBlockedBoxes, containerSpaceError, usableContainerHeight, usableContainerVolume } from './container-space';
 import { interiorKey, interiorSupportError, interiorTravelUp } from './packing-interior';
-import { contactPositions, fitsGeometrySpaceInValidatedContainer, geometryIntersects, geometryOrientations, hasGeometrySupport, hasPackingAndTravelSupport, hasVerticalEntry, orientationForRotation, packingShapeError, placementBoxes, RectangularSupportIndex, shapeDimensions, shapeKey, shapeVolume, type GeometryBox } from './packing-geometry';
+import { contactPositions, fitsGeometrySpaceInValidatedContainer, geometryIntersects, geometryOrientations, hasGeometrySupport, hasPackingAndTravelSupport, hasVerticalEntry, insertObstaclePrefixMaxRight, obstaclePrefixMaxRight, orientationForRotation, packingShapeError, placementBoxes, RectangularSupportIndex, shapeDimensions, shapeKey, shapeVolume, type GeometryBox } from './packing-geometry';
 
 interface FreeSpace {
   compartmentId?: string;
@@ -455,10 +455,12 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
   const supportIndexThreshold=shapeItems.length?SHAPED_SUPPORT_INDEX_THRESHOLD:SUPPORT_INDEX_THRESHOLD;
   const supportIndexes=items.length>=supportIndexThreshold?new Map<string,RectangularSupportIndex>():undefined;
   if(supportIndexes)for(const bag of containers){const current=placementsByContainer.get(bag.id)??[];if(current.length>=supportIndexThreshold)supportIndexes.set(bag.id,new RectangularSupportIndex(itemById,current));}
+  const verticalEntryObstaclePrefixMaxRights=new Map<string,number[]>();
   const verticalEntryObstacles=useShapeSequence?new Map(containers.map(bag=>{
     const obstacles:GeometryBox[]=[...(blockedSpaces.get(bag.id)??[])];
     for(const placed of placementsByContainer.get(bag.id)??[])obstacles.push(...placementBoxes(placed,itemById.get(placed.instanceId)));
     obstacles.sort(obstacleXOrder);
+    verticalEntryObstaclePrefixMaxRights.set(bag.id,obstaclePrefixMaxRight(obstacles));
     return [bag.id,obstacles] as const;
   })):undefined;
 
@@ -531,7 +533,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
         for (const orientation of context.orientations) {
           if (orientation.length > space.length + EPSILON || orientation.width > space.width + EPSILON || orientation.height > space.height + EPSILON) continue;
           const contactCollisionObstacles=space.shapeSearch?verticalEntryObstacles?.get(container.id):undefined;
-          const contacts=space.shapeSearch?contactPositions(container,orientation,item,shapeContactObstacles?[]:[...bagPlacements,...anchors],itemById,space,blockedSpaces.get(container.id),shapeContactObstacles,SHAPE_CONTACT_POSITION_LIMIT,contactCollisionObstacles):undefined;
+          const contacts=space.shapeSearch?contactPositions(container,orientation,item,shapeContactObstacles?[]:[...bagPlacements,...anchors],itemById,space,blockedSpaces.get(container.id),shapeContactObstacles,SHAPE_CONTACT_POSITION_LIMIT,contactCollisionObstacles,verticalEntryObstaclePrefixMaxRights.get(container.id)):undefined;
           if(contacts?.limited)searchLimited=true;
           const basePositions=contacts?.positions??cornerPositions(space, orientation);
           const positions = rules.length
@@ -562,7 +564,9 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             // clipped to the bag and split around any blocked geometry. When
             // there is no shape sequence or blocked geometry, this check repeats
             // those same bounds for every corner candidate.
-            if((useShapeSequence||(blockedSpaces.get(container.id)?.length??0)>0)
+            // Shape-search contacts are already clamped to their usable region
+            // and exact-filtered against the cached blocked and placed boxes.
+            if(!space.shapeSearch&&(useShapeSequence||(blockedSpaces.get(container.id)?.length??0)>0)
               &&!fitsGeometrySpaceInValidatedContainer(placement,container,item,blockedSpaces.get(container.id)))continue;
             // Ordinary candidates remain inside free regions already split
             // around every occupied geometry box. Shape-search positions are
@@ -570,7 +574,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             // bypass those checks and still need the exact geometry gate here.
             if(rules.length>0&&!contactCollisionObstacles&&bagPlacements.some(p=>geometryIntersects(placement,p,itemById)))continue;
             if(!(supportIndex?hasPackingAndTravelSupport(placement,bagPlacements,itemById,mode==='fragile_protection'?1:.65,container,supportIndex):hasPackingAndTravelSupport(placement,bagPlacements,itemById,mode==='fragile_protection'?1:.65,container)))continue;
-            if(hasShapes&&!hasVerticalEntry(placement,bagPlacements,itemById,container,blockedSpaces.get(container.id),verticalEntryObstacles?.get(container.id),true))continue;
+            if(hasShapes&&!hasVerticalEntry(placement,bagPlacements,itemById,container,blockedSpaces.get(container.id),verticalEntryObstacles?.get(container.id),true,undefined,verticalEntryObstaclePrefixMaxRights.get(container.id)))continue;
             const separationError = rules.length?placementSeparationError(placement,[...placements,...savedMassPositions],rules,itemById):undefined;
             if(separationError){separationFailure=separationError;continue;}
             if (rejected.some((failed) => samePlacementGeometry(failed, placement))) continue;
@@ -663,7 +667,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     stackLoadContactCache.register(best.placement);
     placementsByContainer.get(best.container.id)?.push(best.placement);
     const entryObstacles=verticalEntryObstacles?.get(best.container.id);
-    if(entryObstacles){entryObstacles.push(...placementBoxes(best.placement,item));entryObstacles.sort(obstacleXOrder);}
+    if(entryObstacles)insertObstaclePrefixMaxRight(entryObstacles,verticalEntryObstaclePrefixMaxRights.get(best.container.id)!,placementBoxes(best.placement,item));
     const bagPlacements=placementsByContainer.get(best.container.id)!;
     if(supportIndexes?.has(best.container.id))supportIndexes.get(best.container.id)!.add(best.placement);
     else if(supportIndexes&&bagPlacements.length>=supportIndexThreshold)supportIndexes.set(best.container.id,new RectangularSupportIndex(itemById,bagPlacements));
