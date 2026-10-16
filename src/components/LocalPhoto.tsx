@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { observeNearViewport } from '../viewport-observer';
 
 interface Props {
   photoId: string;
@@ -7,31 +8,6 @@ interface Props {
   alt: string;
   fallback?: ReactNode;
   eager?: boolean;
-}
-
-const viewportListeners = new Map<Element, (isNearViewport: boolean) => void>();
-let viewportObserver: IntersectionObserver | undefined;
-
-function observeNearViewport(element: Element, listener: (isNearViewport: boolean) => void) {
-  if (!('IntersectionObserver' in window)) {
-    listener(true);
-    return () => undefined;
-  }
-  if (!viewportObserver) {
-    viewportObserver = new IntersectionObserver((entries) => {
-      for (const entry of entries) viewportListeners.get(entry.target)?.(entry.isIntersecting);
-    }, { rootMargin: '600px 0px' });
-  }
-  viewportListeners.set(element, listener);
-  viewportObserver.observe(element);
-  return () => {
-    viewportListeners.delete(element);
-    viewportObserver?.unobserve(element);
-    if (!viewportListeners.size) {
-      viewportObserver?.disconnect();
-      viewportObserver = undefined;
-    }
-  };
 }
 
 export function LocalPhoto({ photoId, getPhoto, className, alt, fallback, eager = false }: Props) {

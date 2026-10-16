@@ -18,31 +18,7 @@ import { ContainerSpaceNotes } from './ContainerSpaceNotes';
 import { printingAvailable, printPackingSequence } from '../printing';
 import { LocalPhoto } from './LocalPhoto';
 import type { Container, LibraryItem, PackingPlan, Trip } from '../types';
-
-const sequenceViewportListeners = new Map<Element, (isNearViewport: boolean) => void>();
-let sequenceViewportObserver: IntersectionObserver | undefined;
-
-function observeSequenceViewport(element: Element, listener: (isNearViewport: boolean) => void) {
-  if (typeof IntersectionObserver === 'undefined') {
-    listener(true);
-    return () => undefined;
-  }
-  if (!sequenceViewportObserver) {
-    sequenceViewportObserver = new IntersectionObserver((entries) => {
-      for (const entry of entries) sequenceViewportListeners.get(entry.target)?.(entry.isIntersecting);
-    }, { rootMargin: '700px 0px' });
-  }
-  sequenceViewportListeners.set(element, listener);
-  sequenceViewportObserver.observe(element);
-  return () => {
-    sequenceViewportListeners.delete(element);
-    sequenceViewportObserver?.unobserve(element);
-    if (!sequenceViewportListeners.size) {
-      sequenceViewportObserver?.disconnect();
-      sequenceViewportObserver = undefined;
-    }
-  };
-}
+import { observeNearViewport } from '../viewport-observer';
 
 function useSequenceViewport<T extends Element>(eager: boolean) {
   const ref = useRef<T>(null);
@@ -54,7 +30,7 @@ function useSequenceViewport<T extends Element>(eager: boolean) {
       setNearViewport(true);
       return;
     }
-    return observeSequenceViewport(element, setNearViewport);
+    return observeNearViewport(element, setNearViewport, '700px 0px');
   }, [eager]);
   return { ref, shouldRender: eager || nearViewport };
 }
