@@ -324,6 +324,31 @@ export function obstaclePrefixMaxRight(obstacles:readonly GeometryBox[]):number[
   for(const obstacle of obstacles){maxRight=Math.max(maxRight,obstacle.x+obstacle.length);prefix.push(maxRight);}
   return prefix;
 }
+/** Insert new obstacles into an x-sorted list and update only the affected prefix suffix. */
+export function insertObstaclePrefixMaxRight(obstacles:GeometryBox[],prefixMaxRight:number[],additions:readonly GeometryBox[]):void{
+  if(additions.length>1){
+    const sortedAdditions=[...additions].sort((left,right)=>left.x-right.x),merged:GeometryBox[]=[];
+    let existingIndex=0,additionIndex=0,maxRight=Number.NEGATIVE_INFINITY;
+    while(existingIndex<obstacles.length||additionIndex<sortedAdditions.length){
+      const obstacle=additionIndex>=sortedAdditions.length||existingIndex<obstacles.length&&obstacles[existingIndex].x<=sortedAdditions[additionIndex].x
+        ?obstacles[existingIndex++]:sortedAdditions[additionIndex++];
+      merged.push(obstacle);maxRight=Math.max(maxRight,obstacle.x+obstacle.length);prefixMaxRight[merged.length-1]=maxRight;
+    }
+    obstacles.length=0;for(const obstacle of merged)obstacles.push(obstacle);
+    prefixMaxRight.length=merged.length;
+    return;
+  }
+  for(const obstacle of additions){
+    let low=0,high=obstacles.length;
+    while(low<high){const middle=(low+high)>>>1;if(obstacles[middle].x<=obstacle.x)low=middle+1;else high=middle;}
+    obstacles.splice(low,0,obstacle);prefixMaxRight.splice(low,0,0);
+    let maxRight=low?prefixMaxRight[low-1]:Number.NEGATIVE_INFINITY;
+    for(let index=low;index<obstacles.length;index++){
+      maxRight=Math.max(maxRight,obstacles[index].x+obstacles[index].length);
+      prefixMaxRight[index]=maxRight;
+    }
+  }
+}
 function firstPotentialObstacle(obstacles:readonly GeometryBox[],x:number,maxObstacleLength:number|undefined,sortedByX:boolean,prefixMaxRight?:readonly number[]):number{
   if(!sortedByX)return 0;
   let low=0,high=obstacles.length;

@@ -13,7 +13,7 @@ import { packingItem, packingFormKey } from './packing-forms';
 import { isValidRejectedPlacement, samePlacementGeometry } from './packing-progress';
 import { containerBlockedBoxes, containerSpaceError, usableContainerHeight, usableContainerVolume } from './container-space';
 import { interiorKey, interiorSupportError, interiorTravelUp } from './packing-interior';
-import { contactPositions, fitsGeometrySpaceInValidatedContainer, geometryIntersects, geometryOrientations, hasGeometrySupport, hasPackingAndTravelSupport, hasVerticalEntry, obstaclePrefixMaxRight, orientationForRotation, packingShapeError, placementBoxes, RectangularSupportIndex, shapeDimensions, shapeKey, shapeVolume, type GeometryBox } from './packing-geometry';
+import { contactPositions, fitsGeometrySpaceInValidatedContainer, geometryIntersects, geometryOrientations, hasGeometrySupport, hasPackingAndTravelSupport, hasVerticalEntry, insertObstaclePrefixMaxRight, obstaclePrefixMaxRight, orientationForRotation, packingShapeError, placementBoxes, RectangularSupportIndex, shapeDimensions, shapeKey, shapeVolume, type GeometryBox } from './packing-geometry';
 
 interface FreeSpace {
   compartmentId?: string;
@@ -665,7 +665,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     stackLoadContactCache.register(best.placement);
     placementsByContainer.get(best.container.id)?.push(best.placement);
     const entryObstacles=verticalEntryObstacles?.get(best.container.id);
-    if(entryObstacles){entryObstacles.push(...placementBoxes(best.placement,item));entryObstacles.sort(obstacleXOrder);verticalEntryObstaclePrefixMaxRights.set(best.container.id,obstaclePrefixMaxRight(entryObstacles));}
+    if(entryObstacles)insertObstaclePrefixMaxRight(entryObstacles,verticalEntryObstaclePrefixMaxRights.get(best.container.id)!,placementBoxes(best.placement,item));
     const bagPlacements=placementsByContainer.get(best.container.id)!;
     if(supportIndexes?.has(best.container.id))supportIndexes.get(best.container.id)!.add(best.placement);
     else if(supportIndexes&&bagPlacements.length>=supportIndexThreshold)supportIndexes.set(best.container.id,new RectangularSupportIndex(itemById,bagPlacements));
