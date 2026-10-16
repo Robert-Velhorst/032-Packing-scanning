@@ -1,5 +1,5 @@
 import './PackingSequence.css';
-import { SeparationNotes } from './SeparationRules';
+import { SeparationNotes } from './SeparationNotes';
 import { compartmentFor } from '../compartments';
 import { RetrievalNotes } from './RetrievalNotes';
 import { BagWeightNotes } from './BagWeightNotes';

@@ -1,7 +1,7 @@
 import type { SeparationRule } from './types';
 import type { SavedWeather } from './weather';
-import { SeparationRules, SeparationNotes } from './components/SeparationRules';
-import { entryHasSeparation, separationRuleError, MAX_SEPARATION_RULES } from './item-separation';
+import { SeparationRules } from './components/SeparationRules';
+import { entryHasSeparation, separationRuleError, MAX_SEPARATION_RULES } from './separation-rule-records';
 import { checklistInstanceState, type ChecklistInstanceState } from './checklist-state';
 import { OpeningEvidenceNotes } from './components/HandlingPropertyNotes';
 import { useRawScanRetention } from './scanning/useRawScanRetention';
@@ -49,6 +49,7 @@ const PlanReview = lazy(() => import('./components/PlanComparison').then((module
 const WeatherLookup = lazy(() => import('./components/WeatherLookup').then((module) => ({ default: module.WeatherLookup })));
 const TripListAssistant = lazy(() => import('./components/TripListAssistant').then((module) => ({ default: module.TripListAssistant })));
 const PackCanvas = lazy(() => import('./components/PackCanvas').then((module) => ({ default: module.PackCanvas })));
+const SeparationNotes = lazy(() => import('./components/SeparationNotes').then((module) => ({ default: module.SeparationNotes })));
 const LibraryPage = lazy(() => import('./components/InventoryPages').then((module) => ({ default: module.LibraryPage })));
 const BagsPage = lazy(() => import('./components/InventoryPages').then((module) => ({ default: module.BagsPage })));
 
@@ -689,7 +690,7 @@ function Workspace(props: WorkspaceProps) {
     {selectedContainer&&<OpeningEvidenceNotes bag={selectedContainer}/>}
     <StackLoadNotes plan={plan} items={data.libraryItems} unit={unit} containerId={selectedContainer?.id}/>
     <SeparationRules trip={trip} items={data.libraryItems} unit={unit} onChange={changeSeparationRules}/>
-    <SeparationNotes trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit}/>
+    {Array.isArray(trip.separationRules)&&trip.separationRules.length>0&&<Suspense fallback={<p className="candidate-uncertainty" role="status">Loading separation review…</p>}><SeparationNotes trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit}/></Suspense>}
     <section ref={planReviewRef} className="plan-review"><div className="review-heading"><div><span className="panel-kicker">PLAN CHECK</span><h2>Fit and trade-offs</h2></div><span className="review-caption">Deterministic geometric placement · generated on this device</span></div>{planReviewRequested ? <Suspense fallback={<p className="candidate-uncertainty" role="status">Opening approach comparisons…</p>}><PlanReview trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit} modeCopy={modeCopy} onSelect={props.onMode} requestPlanComparison={props.requestPlanComparison}/></Suspense> : <p className="candidate-uncertainty" role="status" aria-live="polite">Approach comparisons will be prepared when you reach this section.</p>}
       {plan.excluded.filter((entry) => entry.reason !== 'Marked unavailable for this plan.').length > 0 && <div className="excluded-list"><strong>Needs a decision</strong>{plan.excluded.filter((entry) => entry.reason !== 'Marked unavailable for this plan.').map((entry) => <div key={entry.instanceId}><AlertTriangle size={15}/><span><strong>{entry.name}{entry.required ? ' · required' : ''}</strong><small>{entry.reason}</small></span>{trip.lockedPlacements.filter(saved => saved.instanceId === entry.instanceId).map(saved => <button className="button button-secondary" key={saved.instanceId} onClick={() => completed.has(saved.instanceId) ? props.onToggleComplete(saved.instanceId,false) : props.onToggleLock(saved)}>{completed.has(saved.instanceId) ? `Undo packed for ${entry.name}` : `Unlock ${entry.name}`}</button>)}<button className="text-button" onClick={() => props.onUnavailable(entry.instanceId)}>Remove from plan</button></div>)}</div>}
     </section>
