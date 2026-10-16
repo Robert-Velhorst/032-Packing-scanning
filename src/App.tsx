@@ -1,6 +1,5 @@
 import type { SeparationRule } from './types';
 import type { SavedWeather } from './weather';
-import { SeparationRules } from './components/SeparationRules';
 import { entryHasSeparation, separationRuleError, MAX_SEPARATION_RULES } from './separation-rule-records';
 import { checklistInstanceState, type ChecklistInstanceState } from './checklist-state';
 import { OpeningEvidenceNotes } from './components/HandlingPropertyNotes';
@@ -31,6 +30,7 @@ import { measurementInput } from './measurement-input';
 import {workspaceStorage} from './storage';
 import { createEmptyData } from './empty-data';
 import { PlannerWorkerClient, shouldUsePlannerWorker } from './optimizer-worker-client';
+import { observeNearViewport } from './viewport-observer';
 import type { AppData, CarrierRule, Container, Evidence, ItemPriority, LibraryItem, OptimizationMode, PackEntry, PackingPlan, Placement, Trip, TripActivity, UnitSystem } from './types';
 
 type Page = 'workspace' | 'items' | 'bags' | 'carrier-rules' | 'settings' | 'steps' | 'sequence';
@@ -50,6 +50,7 @@ const WeatherLookup = lazy(() => import('./components/WeatherLookup').then((modu
 const TripListAssistant = lazy(() => import('./components/TripListAssistant').then((module) => ({ default: module.TripListAssistant })));
 const PackCanvas = lazy(() => import('./components/PackCanvas').then((module) => ({ default: module.PackCanvas })));
 const SeparationNotes = lazy(() => import('./components/SeparationNotes').then((module) => ({ default: module.SeparationNotes })));
+const SeparationRules = lazy(() => import('./components/SeparationRules').then((module) => ({ default: module.SeparationRules })));
 const LibraryPage = lazy(() => import('./components/InventoryPages').then((module) => ({ default: module.LibraryPage })));
 const BagsPage = lazy(() => import('./components/InventoryPages').then((module) => ({ default: module.BagsPage })));
 
@@ -568,7 +569,9 @@ function Workspace(props: WorkspaceProps) {
   }), []);
   const changeSeparationRules = useMemo(() => (rules: SeparationRule[]) => latestProps.current.onSeparationRules(rules), []);
   const planReviewRef = useRef<HTMLElement>(null);
+  const separationRulesRef = useRef<HTMLDivElement>(null);
   const visualStageRef = useRef<HTMLDivElement>(null);
+  const [separationRulesRequested, setSeparationRulesRequested] = useState(false);
   const [planReviewRequested, setPlanReviewRequested] = useState(false);
   const [canvasRequested, setCanvasRequested] = useState(false);
   const [evidenceReviewOpen, setEvidenceReviewOpen] = useState(false);
@@ -605,6 +608,14 @@ function Workspace(props: WorkspaceProps) {
   const volumePercent = boxVolume && selectedSummary ? Math.min(100, selectedSummary.volumeUsedMm3 / boxVolume * 100) : 0;
   const canvasPadding = selectedContainer ? Math.max(selectedContainer.inside.length, selectedContainer.inside.width) * 0.06 : 0;
   const canvasPlaceholder = selectedContainer && <div className="packing-diagram-with-notes"><div className="packing-diagram-deferred" aria-hidden="true" style={{ aspectRatio: `${selectedContainer.inside.length + canvasPadding * 2} / ${selectedContainer.inside.width + canvasPadding * 2}` }}/><ContainerSpaceNotes bag={selectedContainer}/></div>;
+
+  useEffect(() => {
+    const section = separationRulesRef.current;
+    if (!section || separationRulesRequested) return;
+    return observeNearViewport(section, isNearViewport => {
+      if (isNearViewport) setSeparationRulesRequested(true);
+    });
+  }, [separationRulesRequested]);
 
   useEffect(() => {
     const section = planReviewRef.current;
@@ -689,7 +700,9 @@ function Workspace(props: WorkspaceProps) {
     </details>
     {selectedContainer&&<OpeningEvidenceNotes bag={selectedContainer}/>}
     <StackLoadNotes plan={plan} items={data.libraryItems} unit={unit} containerId={selectedContainer?.id}/>
-    <SeparationRules trip={trip} items={data.libraryItems} unit={unit} onChange={changeSeparationRules}/>
+    <div ref={separationRulesRef}>{separationRulesRequested
+      ? <Suspense fallback={<p className="candidate-uncertainty" role="status">Opening separation rules…</p>}><SeparationRules trip={trip} items={data.libraryItems} unit={unit} onChange={changeSeparationRules}/></Suspense>
+      : <div className="separation-rules-deferred" aria-hidden="true"/>}</div>
     {Array.isArray(trip.separationRules)&&trip.separationRules.length>0&&<Suspense fallback={<p className="candidate-uncertainty" role="status">Loading separation review…</p>}><SeparationNotes trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit}/></Suspense>}
     <section ref={planReviewRef} className="plan-review"><div className="review-heading"><div><span className="panel-kicker">PLAN CHECK</span><h2>Fit and trade-offs</h2></div><span className="review-caption">Deterministic geometric placement · generated on this device</span></div>{planReviewRequested ? <Suspense fallback={<p className="candidate-uncertainty" role="status">Opening approach comparisons…</p>}><PlanReview trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit} modeCopy={modeCopy} onSelect={props.onMode} requestPlanComparison={props.requestPlanComparison}/></Suspense> : <p className="candidate-uncertainty" role="status" aria-live="polite">Approach comparisons will be prepared when you reach this section.</p>}
       {plan.excluded.filter((entry) => entry.reason !== 'Marked unavailable for this plan.').length > 0 && <div className="excluded-list"><strong>Needs a decision</strong>{plan.excluded.filter((entry) => entry.reason !== 'Marked unavailable for this plan.').map((entry) => <div key={entry.instanceId}><AlertTriangle size={15}/><span><strong>{entry.name}{entry.required ? ' · required' : ''}</strong><small>{entry.reason}</small></span>{trip.lockedPlacements.filter(saved => saved.instanceId === entry.instanceId).map(saved => <button className="button button-secondary" key={saved.instanceId} onClick={() => completed.has(saved.instanceId) ? props.onToggleComplete(saved.instanceId,false) : props.onToggleLock(saved)}>{completed.has(saved.instanceId) ? `Undo packed for ${entry.name}` : `Unlock ${entry.name}`}</button>)}<button className="text-button" onClick={() => props.onUnavailable(entry.instanceId)}>Remove from plan</button></div>)}</div>}
