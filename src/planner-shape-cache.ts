@@ -1,5 +1,6 @@
 import type { Evidence, LibraryItem, PackingShape } from './types';
 
+const MAX_REUSABLE_SHAPE_CELLS=100_000;
 const sameDimensions=(left:{length:number;width:number;height:number},right:{length:number;width:number;height:number})=>
   left.length===right.length&&left.width===right.width&&left.height===right.height;
 const sameEvidence=(left:Evidence,right:Evidence)=>
@@ -26,11 +27,15 @@ function sameShape(left:PackingShape,right:PackingShape):boolean {
 /** Reuse only structurally equivalent adopted geometry; keep cache size tied to the current plan. */
 export function reconcilePackingShapes(items:LibraryItem[],previous:Map<string,PackingShape>):Map<string,PackingShape> {
   const current=new Map<string,PackingShape>();
+  let retainedCells=0;
   for(const item of items){
     const shape=item.packingShape;if(!shape)continue;
+    const occupiedCells=shape.solid?.occupiedCells;
+    if(!Array.isArray(occupiedCells)||occupiedCells.length>MAX_REUSABLE_SHAPE_CELLS-retainedCells)continue;
     const prior=previous.get(item.id),reusable=prior&&sameShape(prior,shape)?prior:shape;
     item.packingShape=reusable;
     current.set(item.id,reusable);
+    retainedCells+=occupiedCells.length;
   }
   return current;
 }

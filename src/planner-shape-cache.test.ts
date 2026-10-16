@@ -29,4 +29,10 @@ describe('planner worker shape cache',()=>{
     const current=[item('arch',reviewed)],next=reconcilePackingShapes(current,cache);
     expect(current[0].packingShape).toBe(reviewed);expect([...next.keys()]).toEqual(['arch']);
   });
+
+  it('bounds retained geometry by occupied-cell count',()=>{
+    const first=shape(),second=shape();first.solid.occupiedCells=Array.from({length:60_000},(_,index)=>index);second.solid.occupiedCells=Array.from({length:50_001},(_,index)=>index);
+    const current=[item('first',first),item('second',second)],cache=reconcilePackingShapes(current,new Map());
+    expect([...cache.keys()]).toEqual(['first']);
+  });
 });
