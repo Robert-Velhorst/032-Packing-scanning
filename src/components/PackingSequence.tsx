@@ -12,7 +12,7 @@ import { uprightInstruction } from '../upright';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { WeatherNotes } from './WeatherLookup';
 import { ArrowLeft, Printer } from 'lucide-react';
-import { createPackingStepRelationIndex, orderPackingSteps, packingStepPreview, packingStepRelation } from '../packing-sequence';
+import { createPackingStepRelationIndex, createPackingSequenceViewData, orderPackingSteps } from '../packing-sequence';
 import { PackingDiagram } from './PackingDiagram';
 import { ContainerSpaceNotes } from './ContainerSpaceNotes';
 import { printingAvailable, printPackingSequence } from '../printing';
@@ -32,6 +32,7 @@ export function PackingSequence({ trip, plan, containers, items, getPhoto, onExi
   const numbers = useMemo(() => Object.fromEntries(ordered.map((step, index) => [step.instanceId, String(index + 1)])), [ordered]);
   const completed = useMemo(() => new Set(trip.completedInstanceIds), [trip.completedInstanceIds]);
   const sequenceIds = useMemo(() => new Set(ordered.map((step) => step.instanceId)), [ordered]);
+  const viewData = useMemo(() => createPackingSequenceViewData(ordered,trip.completedInstanceIds,items,containers,relationIndex), [ordered,trip.completedInstanceIds,items,containers,relationIndex]);
   const outsidePackedCount = useMemo(() => completed.size - [...completed].filter((id) => sequenceIds.has(id)).length, [completed,sequenceIds]);
   const completedInSequence = useMemo(() => ordered.filter(step=>completed.has(step.instanceId)).length, [ordered,completed]);
   useEffect(() => { heading.current?.focus(); }, []);
@@ -61,7 +62,7 @@ export function PackingSequence({ trip, plan, containers, items, getPhoto, onExi
       if (!item || !bag) return null;
       const travellerId=entryById.get(step.entryId)?.travellerId;
       return <li key={step.instanceId} className="sequence-card"><div className="sequence-step-heading"><strong className="sequence-number">{index + 1}</strong>{item.photoId && <LocalPhoto eager photoId={item.photoId} getPhoto={getPhoto} className="sequence-photo" alt={item.name}/>}<div><h2>{item.name}</h2><p>{bag.name}{step.compartmentId&&` · ${compartmentFor(bag,step.compartmentId)?.name??'Missing compartment'}`} · {travellerById.get(travellerId??'')?.name ?? 'Traveller'} · {completed.has(step.instanceId) ? 'Confirmed packed' : 'Not confirmed packed'}</p></div></div>
-        <div className="sequence-instruction"><PackingDiagram bag={bag} placements={packingStepPreview(ordered, index, trip.completedInstanceIds,completed)} currentId={step.instanceId} numbers={numbers} notes={false} items={items} itemIndex={itemById}/><div><PackingFormNotes form={item.packingForms?.find(form=>form.id===step.packingFormId)}/><p>{packingStepRelation(step, ordered, items, bag, relationIndex)}</p><p><strong>Position:</strong> {Math.round(step.x)} × {Math.round(step.y)} × {Math.round(step.z)} mm from the inside corner.</p><p><strong>Orientation:</strong> length × width × height {Math.round(step.length)} × {Math.round(step.width)} × {Math.round(step.height)} mm.</p><p><strong>Size evidence:</strong> {item.dimensionEvidence.source.replace('_', ' ')} · {Math.round(item.dimensionEvidence.confidence * 100)}% recorded confidence.</p><HandlingPropertyNotes item={item} expanded/><StackLoadNotes plan={plan} items={items} instanceId={step.instanceId}/>{item.fragile && <p>Fragile: do not rest anything on this item. Add cushioning and include its dimensions and weight; impact protection is not simulated.</p>}{item.keepUpright && <p>{uprightInstruction(item,bag)}</p>}<p className="paper-check">□ Physically checked and packed</p></div></div>
+        <div className="sequence-instruction"><PackingDiagram bag={bag} placements={viewData.previews.get(step.instanceId)??[]} currentId={step.instanceId} numbers={numbers} notes={false} items={items} itemIndex={itemById}/><div><PackingFormNotes form={item.packingForms?.find(form=>form.id===step.packingFormId)}/><p>{viewData.relations.get(step.instanceId)}</p><p><strong>Position:</strong> {Math.round(step.x)} × {Math.round(step.y)} × {Math.round(step.z)} mm from the inside corner.</p><p><strong>Orientation:</strong> length × width × height {Math.round(step.length)} × {Math.round(step.width)} × {Math.round(step.height)} mm.</p><p><strong>Size evidence:</strong> {item.dimensionEvidence.source.replace('_', ' ')} · {Math.round(item.dimensionEvidence.confidence * 100)}% recorded confidence.</p><HandlingPropertyNotes item={item} expanded/><StackLoadNotes plan={plan} items={items} instanceId={step.instanceId}/>{item.fragile && <p>Fragile: do not rest anything on this item. Add cushioning and include its dimensions and weight; impact protection is not simulated.</p>}{item.keepUpright && <p>{uprightInstruction(item,bag)}</p>}<p className="paper-check">□ Physically checked and packed</p></div></div>
       </li>;
     })}</ol>
     {!!plan.excluded.length && <section className="sequence-review"><h2>Items outside this sequence</h2>{plan.excluded.map((entry) => <p key={entry.instanceId}><strong>{entry.name}{entry.required ? ' · required' : ''}</strong> — {entry.reason}</p>)}</section>}

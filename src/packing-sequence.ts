@@ -47,6 +47,22 @@ export function createPackingStepRelationIndex(ordered: Placement[], items: Libr
   return {names:new Map(items.map(item=>[item.id,item.name])),byInstance};
 }
 
+export interface PackingSequenceViewData {
+  previews: Map<string,Placement[]>;
+  relations: Map<string,string>;
+}
+
+/** Build the expensive per-step diagrams and support copy once per sequence state. */
+export function createPackingSequenceViewData(ordered: Placement[], completed: string[], items: LibraryItem[], containers: Container[], relationIndex=createPackingStepRelationIndex(ordered,items)): PackingSequenceViewData {
+  const completedSet=new Set(completed),containerById=new Map(containers.map(container=>[container.id,container]));
+  const previews=new Map<string,Placement[]>(),relations=new Map<string,string>();
+  ordered.forEach((step,index)=>{
+    previews.set(step.instanceId,packingStepPreview(ordered,index,completed,completedSet));
+    relations.set(step.instanceId,packingStepRelation(step,ordered,items,containerById.get(step.containerId),relationIndex));
+  });
+  return {previews,relations};
+}
+
 export function packingStepRelation(current: Placement, ordered: Placement[], items: LibraryItem[], bag?:Container,index?:PackingStepRelationIndex): string {
   const compartment=bag?compartmentFor(bag,current.compartmentId):undefined;
   if(compartment&&Math.abs(current.z-compartment.z)<.01)return `Place on the floor of “${compartment.name}”. Positions use the bag’s inside corner, not the compartment corner. Check its top opening and actual support.`;
