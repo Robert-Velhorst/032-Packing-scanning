@@ -2,6 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { createInitialData } from './seed';
 import { buildPlan } from './optimizer';
 import { createPackingStepRelationIndex, nextUnpackedStep, orderPackingSteps, packingStepPreview, packingStepRelation, resumePackingStep } from './packing-sequence';
+import type { PackingShape } from './types';
+
+const solidShape = (): PackingShape => {
+  const date='2026-10-01T00:00:00Z',grid={x:12,y:10,z:6},occupiedCells:number[]=[],directions=[[-1,0,0],[1,0,0],[0,-1,0],[0,1,0],[0,0,-1],[0,0,1]];
+  const inside=(x:number,y:number,z:number)=>x>=0&&x<grid.x&&y>=0&&y<grid.y&&z>=0&&z<grid.z;
+  let observedCellCount=0,surfaceFaceCount=0;
+  for(let z=0;z<grid.z;z++)for(let y=0;y<grid.y;y++)for(let x=0;x<grid.x;x++)if(inside(x,y,z)){
+    occupiedCells.push(x+grid.x*(y+grid.y*z));
+    const exposed=directions.filter(([dx,dy,dz])=>!inside(x+dx!,y+dy!,z+dz!)).length;
+    surfaceFaceCount+=exposed;if(exposed)observedCellCount++;
+  }
+  const dimensionsMm={length:120,width:100,height:60};
+  return {adoptedAt:date,sourceEnvelopeMm:dimensionsMm,fittedDimensionsMm:dimensionsMm,solid:{id:'00000000-0000-4000-8000-000000000001',target:'item',format:'voxel_solid_v1',units:'millimetres',sourceHash:'a'.repeat(64),sourcePointCount:3000,method:'observed_voxel_shell_fill_v1',resolutionMm:10,grid,dimensionsMm,occupiedCells,observedCellCount,enclosedCellCount:occupiedCells.length-observedCellCount,surfaceFaceCount,warnings:[]}};
+};
 
 describe('packing sequence', () => {
   const data = structuredClone(createInitialData());
@@ -49,5 +63,14 @@ describe('packing sequence', () => {
     expect(relation).toContain('planned position');
     expect(packingStepRelation(current, [{ ...support, x: 500 }], data.libraryItems)).toContain('25 mm above');
     expect(packingStepRelation(current, [{ ...support, containerId: 'other' }], data.libraryItems)).toContain('25 mm above');
+  });
+  it('keeps shaped supports in the indexed relation candidates', () => {
+    const shape=solidShape(),support={...ordered[0],instanceId:'shaped#1',entryId:'shaped',itemId:'shaped',x:0,y:0,z:0,length:120,width:100,height:60};
+    const item={...data.libraryItems[0],id:'shaped',name:'Shaped support',dimensions:shape.fittedDimensionsMm,packingShape:shape};
+    const current={...ordered[1],instanceId:'upper#1',entryId:'upper',itemId:'upper',x:50,y:0,z:60,length:20,width:20,height:10};
+    const placements=[support,current],items=[...data.libraryItems,item],index=createPackingStepRelationIndex(placements,items);
+    const expected=packingStepRelation(current,placements,items),indexed=packingStepRelation(current,placements,items,undefined,index);
+    expect(indexed).toBe(expected);
+    expect(indexed).toContain('Shaped support');
   });
 });
