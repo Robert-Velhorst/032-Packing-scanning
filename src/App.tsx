@@ -2,7 +2,7 @@ import type { SeparationRule } from './types';
 import type { SavedWeather } from './weather';
 import { SeparationRules, SeparationNotes } from './components/SeparationRules';
 import { entryHasSeparation, separationRuleError, MAX_SEPARATION_RULES } from './item-separation';
-import { checklistInstanceState } from './checklist-state';
+import { checklistInstanceState, type ChecklistInstanceState } from './checklist-state';
 import { OpeningEvidenceNotes } from './components/HandlingPropertyNotes';
 import { useRawScanRetention } from './scanning/useRawScanRetention';
 import { recordRemovedScanSources,type ScanRetentionReply } from './scan-retention';
@@ -16,7 +16,7 @@ import { uprightInstruction, uprightTag } from './upright';
 import { StackLoadNotes } from './components/StackLoadNotes';
 import { packingFormsForSelection,packingItem,separablePackingEntryIds,separatePackingCopy,changePackingQuantity } from './packing-forms';
 import { ContainerSpaceNotes } from './components/ContainerSpaceNotes';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AlertTriangle, Backpack, BookOpen, Check, ChevronDown, CircleHelp,
   ClipboardList, Lock, MapPin, MoreHorizontal, Package, PackageCheck, Plus,
@@ -546,8 +546,25 @@ interface WorkspaceProps {
   onView: (view:'3d'|'top'|'layers') => void; onLayer: (layer:number) => void; onSelectContainer:(id:string)=>void; onMode:(mode:OptimizationMode)=>void; onAddItem:()=>void; onAddSuggestion:(suggestion:TripSuggestion,item?:LibraryItem)=>void; onAddBag:()=>void; onAddTrip:()=>void; onRemoveEntry:(id:string)=>void; onToggleComplete:(id:string,complete:boolean)=>void; onToggleLock:(placement:Placement)=>void; onUnavailable:(id:string)=>void; onStartSteps:()=>void; onEditTrip:()=>void; onPriority:(entryId:string,priority:ItemPriority)=>void; onAccess:(entryId:string,priority:number)=>void; onTraveller:(entryId:string,travellerId:string)=>void; onAssignment:(entryId:string,containerId:string,compartmentId?:string)=>void; onPackingForm:(entryId:string,packingFormId:string)=>void; onSeparateCopy:(entryId:string)=>void; onQuantity:(entryId:string,quantity:number)=>void;
 }
 
+type ChecklistRowActions = Pick<WorkspaceProps, 'onToggleComplete'|'onQuantity'|'onPriority'|'onAccess'|'onTraveller'|'onAssignment'|'onPackingForm'|'onSeparateCopy'|'onUnavailable'|'onRemoveEntry'>;
+
 function Workspace(props: WorkspaceProps) {
   const { trip, data, containers, selectedContainer, plan, canvasView, layer, getPhoto, unit } = props;
+  // Stable row actions let unchanged checklist entries skip React reconciliation.
+  const latestProps = useRef(props);
+  latestProps.current = props;
+  const checklistActions = useMemo<ChecklistRowActions>(() => ({
+    onToggleComplete:(id,complete)=>latestProps.current.onToggleComplete(id,complete),
+    onQuantity:(id,quantity)=>latestProps.current.onQuantity(id,quantity),
+    onPriority:(id,priority)=>latestProps.current.onPriority(id,priority),
+    onAccess:(id,priority)=>latestProps.current.onAccess(id,priority),
+    onTraveller:(id,travellerId)=>latestProps.current.onTraveller(id,travellerId),
+    onAssignment:(id,containerId,compartmentId)=>latestProps.current.onAssignment(id,containerId,compartmentId),
+    onPackingForm:(id,formId)=>latestProps.current.onPackingForm(id,formId),
+    onSeparateCopy:id=>latestProps.current.onSeparateCopy(id),
+    onUnavailable:id=>latestProps.current.onUnavailable(id),
+    onRemoveEntry:id=>latestProps.current.onRemoveEntry(id),
+  }), []);
   const planReviewRef = useRef<HTMLElement>(null);
   const visualStageRef = useRef<HTMLDivElement>(null);
   const [planReviewRequested, setPlanReviewRequested] = useState(false);
@@ -636,13 +653,7 @@ function Workspace(props: WorkspaceProps) {
           const item = entryItems.get(entry.id) ?? itemById.get(entry.itemId)!;
           const packingForms = packingFormsByItem.get(entry.itemId) ?? [];
           const { itemDone, notPlaced, unavailable, packable, undo } = checklistInstanceState(entry.id, entry.quantity, completed, unavailableIds, placedIds);
-          return <article className={`packing-item ${itemDone === entry.quantity ? 'packed' : ''}`} key={entry.id}>
-            <button className={`item-check ${undo ? 'checked' : ''}`} disabled={!undo && packable.length === 0} aria-label={undo ? `Mark ${item.name} unpacked` : `Mark ${item.name} packed`} onClick={() => (undo ? instanceIds(entry) : packable).forEach((id) => props.onToggleComplete(id, !undo))}>{undo && <Check size={14}/>}</button>
-            {item.photoId ? <LocalPhoto photoId={item.photoId} getPhoto={getPhoto} className="workspace-photo" alt="" fallback={<div className={`item-monogram ${item.category}`}><span>{item.name.slice(0,1).toUpperCase()}</span></div>}/> : <div className={`item-monogram ${item.category}`}><span>{item.name.slice(0,1).toUpperCase()}</span></div>}
-            <div className="packing-item-copy"><div className="packing-item-title"><strong>{item.name}</strong>{entry.quantity > 1 && <span>×{entry.quantity}</span>}</div><div className="packing-item-meta"><span>{mmToDisplay(item.dimensions.length,unit)} × {mmToDisplay(item.dimensions.width,unit)} × {mmToDisplay(item.dimensions.height,unit)} {dimLabel(unit)}</span><span className={`evidence-pill ${item.dimensionEvidence.source}`} title={item.dimensionEvidence.note ?? `${evidenceLabel(item.dimensionEvidence)} confidence`}>{evidenceLabel(item.dimensionEvidence)}</span>{item.massGrams !== undefined&&<span>{item.massEvidence?.source==='estimated'?'~':''}{gramToDisplay(item.massGrams,unit)} {item.massEvidence ? sourceLabel(item.massEvidence.source).toLowerCase() : 'weight'}</span>}</div><div className="entry-quantity-control"><button type="button" aria-label={`Remove one unpacked copy of ${item.name}`} disabled={!separableEntries.has(entry.id)} onClick={()=>props.onQuantity(entry.id,entry.quantity-1)}>−</button><span>{entry.quantity} {entry.quantity===1?'copy':'copies'}</span><button type="button" aria-label={`Add copy of ${item.name}`} disabled={entry.quantity>=99} onClick={()=>props.onQuantity(entry.id,entry.quantity+1)}>+</button></div><div className="entry-controls"><label title="A required item stays prominent when the plan cannot fit it"><input type="checkbox" checked={entry.required} onChange={(event)=>props.onPriority(entry.id,event.target.checked?'required':'preferred')}/>Required</label><label title="Prefer an accessible position nearer the top"><input type="checkbox" checked={entry.accessPriority>=4} onChange={(event)=>props.onAccess(entry.id,event.target.checked?5:2)}/>Reach first</label>{trip.travellers.length>1&&<select aria-label={`Who is ${item.name} for?`} value={entry.travellerId} onChange={(event)=>props.onTraveller(entry.id,event.target.value)}>{trip.travellers.map((person)=><option key={person.id} value={person.id}>{person.name}</option>)}</select>}</div><EntryBagAssignment entry={entry} name={item.name} bags={containers} onChange={(bagId,compartmentId)=>props.onAssignment(entry.id,bagId,compartmentId)}/>{entry.quantity>1&&!(packingForms.length||entry.packingFormId)&&<button type="button" className="text-button separate-packing-copy" disabled={!separableEntries.has(entry.id)} onClick={()=>props.onSeparateCopy(entry.id)}>Separate one unpacked copy</button>}{(packingForms.length||entry.packingFormId)&&<div className="entry-packing-form"><label><span>Packing form for {item.name}</span><select aria-label={`Packing form for ${item.name}`} value={entry.packingFormId??''} onChange={event=>props.onPackingForm(entry.id,event.target.value)}><option value="">Original item</option>{entry.packingFormId&&!packingForms.some(form=>form.id===entry.packingFormId)&&<option value={entry.packingFormId}>Missing form · review selection</option>}{packingForms.map(form=><option key={form.id} value={form.id}>{form.name} ({form.kind})</option>)}</select></label><small>Uses this form for all {entry.quantity} in this entry. Changing it keeps packed positions saved and can pause this bag.</small>{entry.quantity>1&&<button type="button" className="text-button separate-packing-copy" disabled={!separableEntries.has(entry.id)} onClick={()=>props.onSeparateCopy(entry.id)} title="Separate the last copy only while it has no packed, locked, unavailable or failed-placement record. Earlier copies keep their saved IDs.">Separate one unpacked copy</button>}</div>}{itemDone > 0 && itemDone < entry.quantity && <small>{itemDone} of {entry.quantity} packed</small>}{notPlaced && <small className="fit-warning">Not placed in this plan</small>}</div>
-            {unavailable.length > 0 && <div className="unavailable-item"><span>{unavailable.length} of {entry.quantity} unavailable for this pack.</span>{unavailable.map(({id,index}) => <button key={id} className="button button-secondary" onClick={() => props.onUnavailable(id)}>Restore {item.name}{entry.quantity > 1 ? ' · item ' + (index + 1) : ''}</button>)}</div>}
-            <button className="quiet-icon" title={`Remove ${item.name} from this pack`} onClick={() => props.onRemoveEntry(entry.id)}><Trash2 size={15}/></button>
-          </article>;
+          return <PackingChecklistEntry key={entry.id} entry={entry} item={item} packingForms={packingForms} state={{itemDone,notPlaced,unavailable,packable,undo}} canSeparate={separableEntries.has(entry.id)} containers={containers} travellers={trip.travellers} getPhoto={getPhoto} unit={unit} actions={checklistActions}/>;
         })}</div> : <div className="list-empty"><div className="empty-icon"><Package size={22}/></div><strong>Your list is ready for items</strong><span>Add belongings from your library or create your first item.</span><button className="button button-secondary" onClick={props.onAddItem}><Plus size={15}/> Add from my items</button></div>}
         <button className="add-from-library" onClick={props.onAddItem}><Plus size={16}/> Choose from your item library</button>
         <div className="checklist-footnote"><ShieldCheck size={15}/><span>Required items stay visible when they do not fit. Nothing is silently removed.</span></div>
@@ -684,6 +695,36 @@ function Workspace(props: WorkspaceProps) {
     <div className="plan-trust-note"><Lock size={15}/><span>Locked placements are preserved during replanning. A geometric match is a suggestion, not a guarantee the bag will close.</span></div>
   </main>;
 }
+
+interface PackingChecklistEntryProps {
+  entry:PackEntry; item:LibraryItem; packingForms:ReturnType<typeof packingFormsForSelection>; state:ChecklistInstanceState; canSeparate:boolean;
+  containers:Container[]; travellers:Trip['travellers']; getPhoto:(id:string)=>Promise<Blob|undefined>; unit:UnitSystem; actions:ChecklistRowActions;
+}
+
+function sameStringArray(left:string[],right:string[]){return left===right||(left.length===right.length&&left.every((value,index)=>value===right[index]));}
+function sameUnavailable(left:ChecklistInstanceState['unavailable'],right:ChecklistInstanceState['unavailable']){
+  return left===right||(left.length===right.length&&left.every((value,index)=>value.id===right[index].id&&value.index===right[index].index));
+}
+
+const PackingChecklistEntry=memo(function PackingChecklistEntry({entry,item,packingForms,state,canSeparate,containers,travellers,getPhoto,unit,actions}:PackingChecklistEntryProps){
+  const {itemDone,notPlaced,unavailable,packable,undo}=state;
+  return <article className={`packing-item ${itemDone===entry.quantity?'packed':''}`}>
+    <button className={`item-check ${undo?'checked':''}`} disabled={!undo&&packable.length===0} aria-label={undo?`Mark ${item.name} unpacked`:`Mark ${item.name} packed`} onClick={()=> (undo?instanceIds(entry):packable).forEach(id=>actions.onToggleComplete(id,!undo))}>{undo&&<Check size={14}/>}</button>
+    {item.photoId?<LocalPhoto photoId={item.photoId} getPhoto={getPhoto} className="workspace-photo" alt="" fallback={<div className={`item-monogram ${item.category}`}><span>{item.name.slice(0,1).toUpperCase()}</span></div>}/>:<div className={`item-monogram ${item.category}`}><span>{item.name.slice(0,1).toUpperCase()}</span></div>}
+    <div className="packing-item-copy">
+      <div className="packing-item-title"><strong>{item.name}</strong>{entry.quantity>1&&<span>×{entry.quantity}</span>}</div>
+      <div className="packing-item-meta"><span>{mmToDisplay(item.dimensions.length,unit)} × {mmToDisplay(item.dimensions.width,unit)} × {mmToDisplay(item.dimensions.height,unit)} {dimLabel(unit)}</span><span className={`evidence-pill ${item.dimensionEvidence.source}`} title={item.dimensionEvidence.note??`${evidenceLabel(item.dimensionEvidence)} confidence`}>{evidenceLabel(item.dimensionEvidence)}</span>{item.massGrams!==undefined&&<span>{item.massEvidence?.source==='estimated'?'~':''}{gramToDisplay(item.massGrams,unit)} {item.massEvidence?sourceLabel(item.massEvidence.source).toLowerCase():'weight'}</span>}</div>
+      <div className="entry-quantity-control"><button type="button" aria-label={`Remove one unpacked copy of ${item.name}`} disabled={!canSeparate} onClick={()=>actions.onQuantity(entry.id,entry.quantity-1)}>−</button><span>{entry.quantity} {entry.quantity===1?'copy':'copies'}</span><button type="button" aria-label={`Add copy of ${item.name}`} disabled={entry.quantity>=99} onClick={()=>actions.onQuantity(entry.id,entry.quantity+1)}>+</button></div>
+      <div className="entry-controls"><label title="A required item stays prominent when the plan cannot fit it"><input type="checkbox" checked={entry.required} onChange={event=>actions.onPriority(entry.id,event.target.checked?'required':'preferred')}/>Required</label><label title="Prefer an accessible position nearer the top"><input type="checkbox" checked={entry.accessPriority>=4} onChange={event=>actions.onAccess(entry.id,event.target.checked?5:2)}/>Reach first</label>{travellers.length>1&&<select aria-label={`Who is ${item.name} for?`} value={entry.travellerId} onChange={event=>actions.onTraveller(entry.id,event.target.value)}>{travellers.map(person=><option key={person.id} value={person.id}>{person.name}</option>)}</select>}</div>
+      <EntryBagAssignment entry={entry} name={item.name} bags={containers} onChange={(bagId,compartmentId)=>actions.onAssignment(entry.id,bagId,compartmentId)}/>
+      {entry.quantity>1&&!(packingForms.length||entry.packingFormId)&&<button type="button" className="text-button separate-packing-copy" disabled={!canSeparate} onClick={()=>actions.onSeparateCopy(entry.id)}>Separate one unpacked copy</button>}
+      {(packingForms.length||entry.packingFormId)&&<div className="entry-packing-form"><label><span>Packing form for {item.name}</span><select aria-label={`Packing form for ${item.name}`} value={entry.packingFormId??''} onChange={event=>actions.onPackingForm(entry.id,event.target.value)}><option value="">Original item</option>{entry.packingFormId&&!packingForms.some(form=>form.id===entry.packingFormId)&&<option value={entry.packingFormId}>Missing form · review selection</option>}{packingForms.map(form=><option key={form.id} value={form.id}>{form.name} ({form.kind})</option>)}</select></label><small>Uses this form for all {entry.quantity} in this entry. Changing it keeps packed positions saved and can pause this bag.</small>{entry.quantity>1&&<button type="button" className="text-button separate-packing-copy" disabled={!canSeparate} onClick={()=>actions.onSeparateCopy(entry.id)} title="Separate the last copy only while it has no packed, locked, unavailable or failed-placement record. Earlier copies keep their saved IDs.">Separate one unpacked copy</button>}</div>}
+      {itemDone>0&&itemDone<entry.quantity&&<small>{itemDone} of {entry.quantity} packed</small>}{notPlaced&&<small className="fit-warning">Not placed in this plan</small>}
+    </div>
+    {unavailable.length>0&&<div className="unavailable-item"><span>{unavailable.length} of {entry.quantity} unavailable for this pack.</span>{unavailable.map(({id,index})=><button key={id} className="button button-secondary" onClick={()=>actions.onUnavailable(id)}>Restore {item.name}{entry.quantity>1?' · item '+(index+1):''}</button>)}</div>}
+    <button className="quiet-icon" title={`Remove ${item.name} from this pack`} onClick={()=>actions.onRemoveEntry(entry.id)}><Trash2 size={15}/></button>
+  </article>;
+},(previous,next)=>previous.entry===next.entry&&previous.item===next.item&&previous.packingForms===next.packingForms&&previous.canSeparate===next.canSeparate&&previous.containers===next.containers&&previous.travellers===next.travellers&&previous.getPhoto===next.getPhoto&&previous.unit===next.unit&&previous.actions===next.actions&&previous.state.itemDone===next.state.itemDone&&previous.state.notPlaced===next.state.notPlaced&&previous.state.undo===next.state.undo&&sameStringArray(previous.state.packable,next.state.packable)&&sameUnavailable(previous.state.unavailable,next.state.unavailable));
 
 function EmptyState({ onNew, onSettings }: { onNew:()=>void; onSettings:()=>void }) {
   return <main className="empty-home"><div className="empty-home-art"><div className="empty-case"><span/><span/><span/></div><div className="empty-tag">READY WHEN YOU ARE</div></div><p className="eyebrow">A LITTLE MORE ROOM TO THINK</p><h1>Make space for<br/>what matters.</h1><p>Your packing plans and item library stay on this device. Start with a bag, add a few things, and see a considered way to pack.</p><button className="button button-primary" onClick={onNew}><Plus size={17}/> Create a pack</button><button className="text-button" onClick={onSettings}>Restore a backup</button></main>;
