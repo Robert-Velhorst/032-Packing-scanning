@@ -380,8 +380,10 @@ export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string
   return true;
 }
 
-export function contactPositions(bag:Container,orientation:DimensionsMm&{rotation:number},item:ShapeItem,placed:Placement[],items:Map<string,ShapeItem>,region:GeometryBox={x:0,y:0,z:0,...bag.inside,height:usableContainerHeight(bag)},blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[],maxPositions=20000,collisionObstacles?:readonly GeometryBox[]) {
+export function contactPositions(bag:Container,orientation:DimensionsMm&{rotation:number},item:ShapeItem,placed:Placement[],items:Map<string,ShapeItem>,region:GeometryBox={x:0,y:0,z:0,...bag.inside,height:usableContainerHeight(bag)},blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[],maxPositions=20000,collisionObstacles?:readonly GeometryBox[],collisionObstaclePrefixMaxRight?:readonly number[]) {
   const local=placementBoxes({x:0,y:0,z:0,...orientation},item),obstacles=cachedObstacles??[...placed.flatMap(p=>placementBoxes(p,items.get(p.instanceId))),...blockedSpaces];
+  let indexedCollisionObstacles=collisionObstacles,indexedCollisionPrefix=collisionObstaclePrefixMaxRight;
+  if(collisionObstacles&&!indexedCollisionPrefix){indexedCollisionObstacles=[...collisionObstacles].sort((a,b)=>a.x-b.x);indexedCollisionPrefix=obstaclePrefixMaxRight(indexedCollisionObstacles);}
   const values=[new Set([region.x,region.x+region.length-orientation.length]),new Set([region.y,region.y+region.width-orientation.width]),new Set([region.z])],mins=['x','y','z'] as const;
   for(const b of obstacles)for(const c of local)for(let axis=0;axis<3;axis++){
     values[axis].add(b[mins[axis]]+b[axes[axis]]-c[mins[axis]]);
@@ -394,7 +396,18 @@ export function contactPositions(bag:Container,orientation:DimensionsMm&{rotatio
     if(examined>=maxPositions){limited=true;break outer;}
     examined++;
     // Reject overlaps before allocating positions; count rejected coordinates against the same search cap.
-    if(collisionObstacles?.some(obstacle=>local.some(box=>translatedBoxesIntersect(box,x,y,z,obstacle,0,0,0))))continue;
+    if(indexedCollisionObstacles){
+      let collision=false;
+      for(const box of local){
+        const left=x+box.x,right=left+box.length;
+        for(let obstacleIndex=firstPotentialObstacle(indexedCollisionObstacles,left,undefined,true,indexedCollisionPrefix);obstacleIndex<indexedCollisionObstacles.length;obstacleIndex++){
+          const obstacle=indexedCollisionObstacles[obstacleIndex];if(obstacle.x>=right-EPS)break;
+          if(translatedBoxesIntersect(box,x,y,z,obstacle,0,0,0)){collision=true;break;}
+        }
+        if(collision)break;
+      }
+      if(collision)continue;
+    }
     positions.push({x,y,z});
   }
   return {positions,limited};

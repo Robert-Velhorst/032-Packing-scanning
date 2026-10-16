@@ -57,6 +57,9 @@ describe('adopted occupied-cell planning',()=>{
   expect(prefiltered.positions).toEqual(full.positions.filter(clear));
   const prefilteredCapped=contactPositions(bag,orientation,candidate,[],items,undefined,[],obstacleBoxes,8,obstacleBoxes);
   expect(prefilteredCapped.positions).toEqual(full.positions.slice(0,8).filter(clear));expect(prefilteredCapped.limited).toBe(true);
+  const sortedObstacles=[...obstacleBoxes].sort((a,b)=>a.x-b.x),prefix=obstaclePrefixMaxRight(sortedObstacles);
+  const indexed=contactPositions(bag,orientation,candidate,[],items,undefined,[],obstacleBoxes,20000,sortedObstacles,prefix);
+  expect(indexed).toEqual(prefiltered);
  });
  it('indexes rectangular support planes without losing epsilon or shaped support candidates',()=>{
   const shaped=shape(),support=placement('U',{height:60}),upper=placement('upper',{z:60.005,height:10}),decoys=Array.from({length:64},(_,index)=>placement(`decoy-${index}`,{z:10+index*.4,height:5,width:20}));
