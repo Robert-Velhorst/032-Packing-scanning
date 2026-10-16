@@ -20,6 +20,8 @@ const bagWeightsRef = value('bag-weights-ref', '');
 const retrievalRef = value('retrieval-ref', '');
 const retrievalChecks = value('retrieval-checks', 'false') === 'true';
 const profile = value('profile', 'false') === 'true';
+const cloneWorkerInput = value('clone-worker-input', 'false') === 'true';
+const workerShapeCache = value('worker-shape-cache', 'false') === 'true';
 const mode = value('mode', '');
 if (mode && !['balanced', 'maximum_capacity', 'easy_access', 'fragile_protection'].includes(mode)) {
   throw new Error('Use --mode=balanced,maximum_capacity,easy_access, or fragile_protection.');
@@ -139,6 +141,7 @@ const vite = await createServer({
 try {
   const { createInitialData } = await vite.ssrLoadModule('/src/seed.ts');
   const { buildPlan } = await vite.ssrLoadModule('/src/optimizer.ts');
+  const { reconcilePackingShapes } = await vite.ssrLoadModule('/src/planner-shape-cache.ts');
   const { assessRetrieval } = await vite.ssrLoadModule('/src/retrieval.ts');
   const seed = createInitialData();
   await vite.watcher.close();
@@ -197,14 +200,20 @@ try {
   const results = [];
   for (const count of counts) {
     const input = fixture(count);
+    let reusableShapes = new Map();
+    const planRequest = () => {
+      const request = cloneWorkerInput ? structuredClone(input) : input;
+      if (workerShapeCache) reusableShapes = reconcilePackingShapes(request.items, reusableShapes);
+      return buildPlan(request.trip, request.items, request.bags);
+    };
     const fingerprint = (plan) => createHash('sha256').update(JSON.stringify(plan.placements.map(({ instanceId, containerId, compartmentId, x, y, z, length, width, height, rotation, layer, insertionOrder, shapeKey }) =>
       ({ instanceId, containerId, compartmentId, x, y, z, length, width, height, rotation, layer, insertionOrder, shapeKey })))).digest('hex');
-    const warmup = buildPlan(input.trip, input.items, input.bags);
+    const warmup = planRequest();
     if (warmup.placements.length !== count) throw new Error(`Warm-up placed ${warmup.placements.length} of ${count} items.`);
     assertRectangularPlacementsDoNotOverlap(warmup);
     const expectedFingerprint = fingerprint(warmup);
     for (let warmupRun = 1; warmupRun < warmupRunsPerSize; warmupRun += 1) {
-      const plan = buildPlan(input.trip, input.items, input.bags);
+      const plan = planRequest();
       if (plan.placements.length !== count || fingerprint(plan) !== expectedFingerprint) {
         throw new Error(`Warm-up ${warmupRun + 1} changed the placement result.`);
       }
@@ -218,7 +227,7 @@ try {
     for (let run = 0; run < runs; run += 1) {
       const cpuStart = process.cpuUsage();
       const start = performance.now();
-      const plan = buildPlan(input.trip, input.items, input.bags);
+      const plan = planRequest();
       samples.push((performance.now() - start) / 1000);
       const cpu = process.cpuUsage(cpuStart);
       cpuSamples.push((cpu.user + cpu.system) / 1_000_000);
@@ -239,7 +248,7 @@ try {
       try {
         await inspectorPost(session, 'Profiler.enable');
         await inspectorPost(session, 'Profiler.start');
-        const plan = buildPlan(input.trip, input.items, input.bags);
+        const plan = planRequest();
         const { profile: cpuProfile } = await inspectorPost(session, 'Profiler.stop');
         if (plan.placements.length !== count || fingerprint(plan) !== expectedFingerprint) {
           throw new Error('Profiled run changed the measured placement result.');
@@ -282,6 +291,8 @@ try {
     node: process.version,
     peakRssKiB: process.resourceUsage().maxRSS,
     shapeCount,
+    cloneWorkerInput,
+    workerShapeCache,
     warmupRunsPerSize,
     measuredRuns: runs,
     results,
