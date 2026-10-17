@@ -1,4 +1,4 @@
-const CACHE = 'packing-shell-v4';
+const CACHE = 'packing-shell-v5';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
 
 function isOfflineAsset(pathname) {
@@ -17,6 +17,17 @@ self.addEventListener('install', (event) => {
       const bundles = [...html.matchAll(/(?:src|href)=["']([^"']+\.(?:js|css))(?:\?[^"']*)?["']/g)]
         .map((match) => match[1]);
       await cache.addAll([...new Set(bundles)]);
+      const moduleBundles = new Set();
+      const moduleAsset = /["'](\/?(?:assets|three\/assets)\/[A-Za-z0-9._-]+\.js)["']/g;
+      for (const bundle of new Set(bundles.filter((path) => path.endsWith('.js')))) {
+        const script = await cache.match(new URL(bundle, self.location.origin).href);
+        if (!script) continue;
+        const source = await script.text();
+        for (const match of source.matchAll(moduleAsset)) {
+          moduleBundles.add(new URL(`/${match[1].replace(/^\/+/, '')}`, self.location.origin).pathname);
+        }
+      }
+      if (moduleBundles.size) await cache.addAll([...moduleBundles]);
     }
     await self.skipWaiting();
   })());
