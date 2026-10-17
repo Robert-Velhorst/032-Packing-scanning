@@ -275,3 +275,4 @@
 .library-item-card{content-visibility:auto;contain-intrinsic-size:auto 152px}@media(max-width:620px){.library-item-card{contain-intrinsic-size:auto 184px}}
 .packing-item{content-visibility:auto;contain-intrinsic-size:auto 260px}
 @media print{.packing-item{content-visibility:visible;contain-intrinsic-size:none}}
+.library-load-more{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:16px 4px;border-bottom:1px solid var(--line);color:var(--muted);font-size:12px}

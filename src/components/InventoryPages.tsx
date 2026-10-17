@@ -1,4 +1,4 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { AlertTriangle, Backpack, Package, Plus, Ruler, Search, ShieldCheck, Trash2, X } from 'lucide-react';
 import { packingFormsForSelection } from '../packing-forms';
 import { uprightInstruction, uprightTag } from '../upright';
@@ -17,7 +17,13 @@ export type InventoryFormatters = {
   uprightTag: typeof uprightTag;
 };
 
+const LIBRARY_PAGE_SIZE = 100;
+
 export const LibraryPage = memo(function LibraryPage({ items, itemCount, trips, activeTrip, search, setSearch, getPhoto, unit, onAdd, onEdit, onDelete, onAddEntry, formatters }: { items:LibraryItem[]; itemCount:number; trips:Trip[]; activeTrip?:Trip; search:string; setSearch:(value:string)=>void; getPhoto:(id:string)=>Promise<Blob|undefined>; unit:UnitSystem; onAdd:()=>void; onEdit:(item:LibraryItem)=>void; onDelete:(item:LibraryItem)=>void; onAddEntry:(item:LibraryItem)=>void; formatters:InventoryFormatters }) {
+  const [expandedSearch, setExpandedSearch] = useState(search);
+  const [expandedCount, setExpandedCount] = useState(LIBRARY_PAGE_SIZE);
+  const visibleCount = Math.min(items.length, expandedSearch === search ? expandedCount : LIBRARY_PAGE_SIZE);
+  const visibleItems = visibleCount === items.length ? items : items.slice(0, visibleCount);
   const activeItemIds = useMemo(() => new Set(activeTrip?.entries.map((entry) => entry.itemId) ?? []), [activeTrip?.entries]);
   const usedItemIds = useMemo(() => {
     const ids = new Set<string>();
@@ -26,12 +32,13 @@ export const LibraryPage = memo(function LibraryPage({ items, itemCount, trips, 
   }, [trips]);
   return <main className="secondary-page"><div className="page-heading"><div><p className="eyebrow">REUSABLE INVENTORY</p><h1>My items</h1><p className="page-subtitle">Keep a record of the things you pack often. Photos and measurements stay on this device.</p></div><button className="button button-primary" onClick={onAdd}><Plus size={16}/> Add item</button></div>
     <div className="library-tools"><label className="search-box"><Search size={17}/><input placeholder="Search your items" value={search} onChange={(event) => setSearch(event.target.value)}/>{search && <button className="icon-button" onClick={() => setSearch('')}><X size={15}/></button>}</label><span>{itemCount} saved {itemCount === 1 ? 'item' : 'items'}</span></div>
-    {!items.length ? <div className="library-empty"><div className="empty-icon"><Package size={22}/></div><h2>{search ? 'No matching items' : 'Your item library is empty'}</h2><p>{search ? 'Try another name or category.' : 'Add an item with dimensions to reuse it across your packing lists.'}</p>{!search && <button className="button button-primary" onClick={onAdd}><Plus size={16}/> Add your first item</button>}</div> : <div className="library-list">{items.map((item) => {
+    {!items.length ? <div className="library-empty"><div className="empty-icon"><Package size={22}/></div><h2>{search ? 'No matching items' : 'Your item library is empty'}</h2><p>{search ? 'Try another name or category.' : 'Add an item with dimensions to reuse it across your packing lists.'}</p>{!search && <button className="button button-primary" onClick={onAdd}><Plus size={16}/> Add your first item</button>}</div> : <div className="library-list">{visibleItems.map((item) => {
       const inPack = activeItemIds.has(item.id);
       const usedInAnyTrip = usedItemIds.has(item.id);
       const packingFormCount = packingFormsForSelection(item).length;
       return <article className="library-item-card" key={item.id}><div className="library-item-visual">{item.photoId ? <LocalPhoto photoId={item.photoId} getPhoto={getPhoto} className="library-photo" alt="" fallback={<div className={`item-monogram large ${item.category}`}>{item.name.slice(0,1).toUpperCase()}</div>}/> : <div className={`item-monogram large ${item.category}`}>{item.name.slice(0,1).toUpperCase()}</div>}</div><div className="library-item-info"><div className="library-title-row"><h2>{item.name}</h2><span className={`evidence-pill ${item.dimensionEvidence.source}`} title={item.dimensionEvidence.note ?? `${formatters.evidenceLabel(item.dimensionEvidence)} confidence`}>{formatters.evidenceLabel(item.dimensionEvidence)} size</span></div><p>{item.category.replace('_',' ')}<span>·</span>{formatters.mmToDisplay(item.dimensions.length,unit)} × {formatters.mmToDisplay(item.dimensions.width,unit)} × {formatters.mmToDisplay(item.dimensions.height,unit)} {formatters.dimLabel(unit)}<span>·</span>{item.massGrams !== undefined ? `${item.massEvidence?.source==='estimated'?'~':''}${formatters.gramToDisplay(item.massGrams,unit)}${item.massEvidence ? ` · ${formatters.evidenceLabel(item.massEvidence)} weight` : ''}` : 'Weight unknown'}</p>{(item.dimensionEvidence.note || item.massEvidence?.note) && <small>{item.dimensionEvidence.note ?? item.massEvidence?.note}</small>}<div className="library-tags">{item.fragile && <span>Fragile · no stacking</span>}{item.maxTopLoadGrams !== undefined && <span>Above limit {formatters.gramToDisplay(item.maxTopLoadGrams,unit)}</span>}{item.keepUpright && <span title={formatters.uprightInstruction(item)}>{formatters.uprightTag(item)}</span>}<span>{item.flexibility.replace('_',' ')}</span>{packingFormCount>0&&<span>{packingFormCount} packing forms</span>}{usedInAnyTrip && <span>Used in a pack</span>}</div><HandlingPropertyNotes item={item}/></div><div className="library-item-actions"><button className="button button-secondary" onClick={() => onAddEntry(item)} disabled={!activeTrip || inPack}><Plus size={15}/>{inPack ? 'In this pack' : 'Add to pack'}</button><button className="quiet-icon" title={`Edit ${item.name}`} onClick={() => onEdit(item)}><Ruler size={16}/></button><button className="quiet-icon delete-icon" title={`Delete ${item.name}`} onClick={() => onDelete(item)}><Trash2 size={16}/></button></div></article>;
     })}</div>}
+    {items.length > visibleCount && <div className="library-load-more"><span>Showing {visibleCount} of {items.length} matches</span><button className="button button-secondary" onClick={() => { const nextCount = Math.min(items.length, visibleCount + LIBRARY_PAGE_SIZE); setExpandedSearch(search); setExpandedCount(nextCount); }}>Show next {Math.min(LIBRARY_PAGE_SIZE, items.length - visibleCount)} items</button></div>}
     <div className="privacy-callout"><ShieldCheck size={17}/><span><strong>Local by design.</strong> Reference photos are stored in this browser and included in backups you download.</span></div>
   </main>;
 });
