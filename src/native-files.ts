@@ -1,6 +1,6 @@
 import {Capacitor,registerPlugin} from '@capacitor/core';
+import {MAX_BACKUP_BYTES} from './backup-limits';
 
-export const MAX_BACKUP_BYTES=80*1024*1024;
 export interface BackupSelection {ticket:string;target:string;}
 interface FilesPlugin {
   pickBackup(options:{lease:string}):Promise<{selected:boolean;ticket?:string;target?:string}>;

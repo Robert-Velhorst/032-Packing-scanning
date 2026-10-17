@@ -1,4 +1,4 @@
-const CACHE = 'packing-shell-v6';
+const CACHE = 'packing-shell-v7';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg', '/three/three-view.html'];
 
 function isOfflineAsset(pathname) {
@@ -11,10 +11,9 @@ self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
     await cache.addAll(SHELL);
-    const documents = await Promise.all(['/index.html', '/three/three-view.html']
-      .map((path) => cache.match(path)));
-    if (documents.some(Boolean)) {
-      const documentPaths = ['/index.html', '/three/three-view.html'];
+    const documents = [await cache.match('/index.html')];
+    if (documents[0]) {
+      const documentPaths = ['/index.html'];
       const bundles = new Map();
       for (let index = 0; index < documents.length; index += 1) {
         const document = documents[index];
@@ -96,10 +95,10 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith(caches.match(request).then((cached) => {
     if (cached) return cached;
-    return fetch(request).then((response) => {
+    return fetch(request).then(async (response) => {
       if (response.ok && response.type === 'basic') {
         const copy = response.clone();
-        caches.open(CACHE).then((cache) => cache.put(request, copy));
+        await caches.open(CACHE).then((cache) => cache.put(request, copy));
       }
       return response;
     });

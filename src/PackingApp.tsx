@@ -28,9 +28,11 @@ import type { TripSuggestion } from './trip-assistant';
 import {  markPackingItemUnavailable, rejectPackingPlacement, setPackingItemComplete } from './packing-progress';
 import { measurementInput } from './measurement-input';
 import {workspaceStorage} from './storage';
+import {MAX_BACKUP_BYTES} from './backup-limits';
 import { createEmptyData } from './empty-data';
 import { PlannerWorkerClient, plannerContainersForWorker, plannerItemsForWorker, plannerTripForWorker, shouldUsePlannerWorker } from './optimizer-worker-client';
 import { observeNearViewport } from './viewport-observer';
+import { filterLibraryItems } from './library-search';
 import type { AppData, CarrierRule, Container, Evidence, ItemPriority, LibraryItem, OptimizationMode, PackEntry, PackingPlan, Placement, Trip, TripActivity, UnitSystem } from './types';
 
 type Page = 'workspace' | 'items' | 'bags' | 'carrier-rules' | 'settings' | 'steps' | 'sequence';
@@ -131,12 +133,8 @@ export function PackingApp() {
   }, [data, savedData, saveAppData]);
 
   const activeTrip = data?.trips.find((trip) => trip.id === data.activeTripId) ?? data?.trips[0];
-  const libraryItems = useMemo(() => {
-    if (!data) return [];
-    if (!search) return data.libraryItems;
-    const normalizedSearch = search.toLowerCase();
-    return data.libraryItems.filter((item) => `${item.name} ${item.category}`.toLowerCase().includes(normalizedSearch));
-  }, [data?.libraryItems, search]);
+  const librarySearchCache = useMemo(() => new WeakMap<LibraryItem, string>(), [data?.libraryItems, search.length > 0]);
+  const libraryItems = useMemo(() => data ? filterLibraryItems(data.libraryItems, search, librarySearchCache) : [], [data?.libraryItems, librarySearchCache, search]);
   const editingPhotoId = capture?.kind === 'item' ? capture.item?.photoId : undefined;
   useEffect(() => {
     let active = true;
@@ -411,19 +409,23 @@ export function PackingApp() {
   const exportBackup = async () => {
     if (!data) return;
     try {
-      const backup = { format: 'packing-scanning-backup', schemaVersion: data.schemaVersion, exportedAt: new Date().toISOString(), app: data, photos: await exportPhotos() };
-      const text=JSON.stringify(backup,null,2);
+      const {assembleBackupJson,prepareBackupJson}=await import('./backup');
+      const parts=prepareBackupJson(data,new Date().toISOString());
+      const photoBudget=MAX_BACKUP_BYTES-parts.bytesWithoutPhotos;
+      if(photoBudget<2)throw new Error('This backup is over 80 MB. Remove unneeded photos before exporting.');
+      const photos=await exportPhotos(photoBudget);
+      const text=assembleBackupJson(parts,photos);
       device.checkActive();
       if(device.native){await device.saveBackup(text);return;}
       const blob=new Blob([text],{type:'application/json'});
-      if(blob.size>80*1024*1024)throw new Error('This backup is over 80 MB. Remove unneeded photos before exporting.');
+      if(blob.size>MAX_BACKUP_BYTES)throw new Error('This backup is over 80 MB. Remove unneeded photos before exporting.');
       const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`packing-scanning-${new Date().toISOString().slice(0,10)}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
       setNotice('Backup downloaded. Keep it somewhere private; it may include your item photos.');
     }catch(error){setNotice(error instanceof Error?error.message:'The backup could not be prepared.');}
   };
   const importBackup = async (file?: File): Promise<boolean> => {
     if (!file || !data) return false;
-    if (file.size > 80 * 1024 * 1024) { setNotice('This backup is over 80 MB. Choose a smaller backup file.'); return false; }
+    if (file.size > MAX_BACKUP_BYTES) { setNotice('This backup is over 80 MB. Choose a smaller backup file.'); return false; }
     const stagedPhotoIds: string[] = [];
     let committed = false;
     try {
