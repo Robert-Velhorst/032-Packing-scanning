@@ -61,6 +61,13 @@ describe('adopted occupied-cell planning',()=>{
   const indexed=contactPositions(bag,orientation,candidate,[],items,undefined,[],obstacleBoxes,20000,sortedObstacles,prefix);
   expect(indexed).toEqual(prefiltered);
  });
+ it('deduplicates clamped contact coordinates at a free-region edge',()=>{
+  const candidate=item('candidate',{length:10,width:10,height:10}),orientation=geometryOrientations(candidate,bag)[0],region={x:0,y:0,z:0,length:100,width:100,height:100};
+  const positions=contactPositions(bag,orientation,candidate,[],new Map(),region,[],[{x:9.995,y:20,z:0,length:1,width:10,height:10}]).positions;
+  const keys=positions.map(({x,y,z})=>`${x},${y},${z}`);
+  expect(keys.length).toBe(new Set(keys).size);
+  expect(keys).toContain('0,0,0');
+ });
  it('indexes rectangular support planes without losing epsilon or shaped support candidates',()=>{
   const shaped=shape(),support=placement('U',{height:60}),upper=placement('upper',{z:60.005,height:10}),decoys=Array.from({length:64},(_,index)=>placement(`decoy-${index}`,{z:10+index*.4,height:5,width:20}));
   const placed=[...decoys,support],items=new Map<string,LibraryItem>(placed.map(p=>[p.instanceId,item(p.itemId)]));items.set(support.instanceId,item('U',shaped.fittedDimensionsMm,shaped));

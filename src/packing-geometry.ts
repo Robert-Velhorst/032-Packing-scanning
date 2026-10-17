@@ -121,13 +121,13 @@ export function placementSurface(p:Placement,item:ShapeItem):SolidSurface|undefi
   return {...compiled.surface,verticesMm,volumeMm3:compiled.volume};
 }
 export function boxesIntersect(a:GeometryBox,b:GeometryBox):boolean {
-  return a.x<b.x+b.length-EPS&&a.x+a.length>b.x+EPS&&a.y<b.y+b.width-EPS&&a.y+a.width>b.y+EPS&&a.z<b.z+b.height-EPS&&a.z+a.height>b.z+EPS;
+  return a.z<b.z+b.height-EPS&&a.z+a.height>b.z+EPS&&a.x<b.x+b.length-EPS&&a.x+a.length>b.x+EPS&&a.y<b.y+b.width-EPS&&a.y+a.width>b.y+EPS;
 }
 function translatedBoxesIntersect(a:GeometryBox,ax:number,ay:number,az:number,b:GeometryBox,bx:number,by:number,bz:number):boolean {
   const leftX=ax+a.x,leftY=ay+a.y,leftZ=az+a.z,rightX=bx+b.x,rightY=by+b.y,rightZ=bz+b.z;
-  return leftX<rightX+b.length-EPS&&leftX+a.length>rightX+EPS
-    &&leftY<rightY+b.width-EPS&&leftY+a.width>rightY+EPS
-    &&leftZ<rightZ+b.height-EPS&&leftZ+a.height>rightZ+EPS;
+  return leftZ<rightZ+b.height-EPS&&leftZ+a.height>rightZ+EPS
+    &&leftX<rightX+b.length-EPS&&leftX+a.length>rightX+EPS
+    &&leftY<rightY+b.width-EPS&&leftY+a.width>rightY+EPS;
 }
 export function geometryIntersects(a:Placement,b:Placement,items:Map<string,ShapeItem>):boolean {
   if(!boxesIntersect(a,b))return false;
@@ -364,33 +364,40 @@ function firstPotentialObstacle(obstacles:readonly GeometryBox[],x:number,maxObs
 }
 /** Fixed orientation, straight downward entry: recesses must remain reachable from above. */
 export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,bag:Container,blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[],obstaclesSortedByX=false,maxObstacleLength?:number,prefixMaxRight?:readonly number[]):boolean {
-  const top=bag.inside.height;
+  // Every component of an in-bounds shape shares the same sweep top.
+  const top=bag.inside.height,sweepTop=Math.max(p.z+p.height,top+p.height);
   const obstacles=cachedObstacles??[...blockedSpaces,...placed.filter(other=>other.containerId===p.containerId).flatMap(other=>placementBoxes(other,items.get(other.instanceId)))];
   // Keep both rectangular and shaped candidate sweeps allocation-free.
   const shape=items.get(p.instanceId)?.packingShape;
   if(!shape){
-    const sweepTop=p.z+Math.max(p.height,top-p.z+p.height),right=p.x+p.length,back=p.y+p.width;
+    const right=p.x+p.length,back=p.y+p.width;
     for(let i=firstPotentialObstacle(obstacles,p.x,maxObstacleLength,obstaclesSortedByX,prefixMaxRight);i<obstacles.length;i++){const o=obstacles[i];if(obstaclesSortedByX&&o.x>=right-EPS)break;if(p.x<o.x+o.length-EPS&&right>o.x+EPS&&p.y<o.y+o.width-EPS&&back>o.y+EPS&&p.z<o.z+o.height-EPS&&sweepTop>o.z+EPS)return false;}
     return true;
   }
   for(const b of localGeometry(shape,p.rotation??0).boxes){
-    const x=p.x+b.x,y=p.y+b.y,z=p.z+b.z,right=x+b.length,back=y+b.width,sweepTop=z+Math.max(b.height,top-z+p.height);
+    const x=p.x+b.x,y=p.y+b.y,z=p.z+b.z,right=x+b.length,back=y+b.width;
     for(let i=firstPotentialObstacle(obstacles,x,maxObstacleLength,obstaclesSortedByX,prefixMaxRight);i<obstacles.length;i++){const o=obstacles[i];if(obstaclesSortedByX&&o.x>=right-EPS)break;if(x<o.x+o.length-EPS&&right>o.x+EPS&&y<o.y+o.width-EPS&&back>o.y+EPS&&z<o.z+o.height-EPS&&sweepTop>o.z+EPS)return false;}
   }
   return true;
 }
 
 export function contactPositions(bag:Container,orientation:DimensionsMm&{rotation:number},item:ShapeItem,placed:Placement[],items:Map<string,ShapeItem>,region:GeometryBox={x:0,y:0,z:0,...bag.inside,height:usableContainerHeight(bag)},blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[],maxPositions=20000,collisionObstacles?:readonly GeometryBox[],collisionObstaclePrefixMaxRight?:readonly number[]) {
-  const local=placementBoxes({x:0,y:0,z:0,...orientation},item),obstacles=cachedObstacles??[...placed.flatMap(p=>placementBoxes(p,items.get(p.instanceId))),...blockedSpaces];
+  const local=item.packingShape?localGeometry(item.packingShape,orientation.rotation).boxes:[{x:0,y:0,z:0,length:orientation.length,width:orientation.width,height:orientation.height}],obstacles=cachedObstacles??[...placed.flatMap(p=>placementBoxes(p,items.get(p.instanceId))),...blockedSpaces];
   let indexedCollisionObstacles=collisionObstacles,indexedCollisionPrefix=collisionObstaclePrefixMaxRight;
   if(collisionObstacles&&!indexedCollisionPrefix){indexedCollisionObstacles=[...collisionObstacles].sort((a,b)=>a.x-b.x);indexedCollisionPrefix=obstaclePrefixMaxRight(indexedCollisionObstacles);}
-  const values=[new Set([region.x,region.x+region.length-orientation.length]),new Set([region.y,region.y+region.width-orientation.width]),new Set([region.z])],mins=['x','y','z'] as const;
-  for(const b of obstacles)for(const c of local)for(let axis=0;axis<3;axis++){
-    values[axis].add(b[mins[axis]]+b[axes[axis]]-c[mins[axis]]);
-    if(axis<2)values[axis].add(b[mins[axis]]-c[mins[axis]]-c[axes[axis]]);
-  }
   const minimum=[region.x,region.y,region.z],maximum=[region.x+region.length-orientation.length,region.y+region.width-orientation.width,region.z+region.height-orientation.height];
-  const coords=values.map((set,i)=>[...set].filter(v=>v>=minimum[i]-EPS&&v<=maximum[i]+EPS).map(v=>Math.max(minimum[i],v)).sort((a,b)=>a-b));
+  const values=[new Set([minimum[0],maximum[0]]),new Set([minimum[1],maximum[1]]),new Set([minimum[2]])];
+  for(const b of obstacles)for(const c of local){
+    const right=b.x+b.length-c.x,left=b.x-c.x-c.length;
+    if(right>=minimum[0]-EPS&&right<=maximum[0]+EPS)values[0].add(Math.max(minimum[0],right));
+    if(left>=minimum[0]-EPS&&left<=maximum[0]+EPS)values[0].add(Math.max(minimum[0],left));
+    const back=b.y+b.width-c.y,front=b.y-c.y-c.width;
+    if(back>=minimum[1]-EPS&&back<=maximum[1]+EPS)values[1].add(Math.max(minimum[1],back));
+    if(front>=minimum[1]-EPS&&front<=maximum[1]+EPS)values[1].add(Math.max(minimum[1],front));
+    const top=b.z+b.height-c.z;
+    if(top>=minimum[2]-EPS&&top<=maximum[2]+EPS)values[2].add(Math.max(minimum[2],top));
+  }
+  const coords=values.map(set=>[...set].sort((a,b)=>a-b));
   const positions:Array<{x:number;y:number;z:number}>=[];let limited=false,examined=0;
   outer:for(const z of coords[2])for(const y of coords[1])for(const x of coords[0]){
     if(examined>=maxPositions){limited=true;break outer;}

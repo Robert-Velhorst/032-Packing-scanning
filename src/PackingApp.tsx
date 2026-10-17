@@ -598,6 +598,23 @@ function Workspace(props: WorkspaceProps) {
   const unavailableIds = useMemo(() => new Set(trip.unavailableInstanceIds), [trip.unavailableInstanceIds]);
   const separableEntries = useMemo(() => separablePackingEntryIds(trip), [trip.entries, trip.completedInstanceIds, trip.unavailableInstanceIds, trip.lockedPlacements, trip.rejectedPlacements]);
   const placedIds = useMemo(() => new Set(plan.placements.map((placement) => placement.instanceId)), [plan.placements]);
+  const unresolved = useMemo(() => plan.excluded.filter((entry) => entry.reason !== 'Marked unavailable for this plan.'), [plan.excluded]);
+  const lockedByInstance = useMemo(() => {
+    const byInstance = new Map<string, Placement[]>();
+    for (const placement of trip.lockedPlacements) {
+      const saved = byInstance.get(placement.instanceId);
+      if (saved) saved.push(placement);
+      else byInstance.set(placement.instanceId, [placement]);
+    }
+    return byInstance;
+  }, [trip.lockedPlacements]);
+  const selectedLayerMax = useMemo(() => {
+    let highest = 1;
+    if (selectedContainer) for (const placement of plan.placements) {
+      if (placement.containerId === selectedContainer.id && placement.layer > highest) highest = placement.layer;
+    }
+    return highest;
+  }, [plan.placements, selectedContainer?.id]);
   const totalInstances = useMemo(() => validEntries.reduce((sum, entry) => sum + Math.max(1, entry.quantity), 0), [validEntries]);
   const stepsRemaining = plan.placements.reduce((remaining, placement) => remaining + Number(!completed.has(placement.instanceId)), 0);
   const selectedSummary = plan.summaries.find((summary) => summary.containerId === selectedContainer?.id);
@@ -674,7 +691,7 @@ function Workspace(props: WorkspaceProps) {
         {containers.length > 0 && <div className="bag-tabs" role="tablist" aria-label="Bags">{containers.map((bag) => <button role="tab" aria-selected={selectedContainer?.id === bag.id} className={selectedContainer?.id === bag.id ? 'active' : ''} key={bag.id} onClick={() => props.onSelectContainer(bag.id)}><Backpack size={14}/>{bag.name}</button>)}</div>}
         {selectedContainer ? <>
           <div ref={visualStageRef} className="visual-stage">{canvasRequested ? <Suspense fallback={canvasPlaceholder}><PackCanvas container={selectedContainer} plan={plan} items={data.libraryItems} selectedInstanceId={undefined} view={canvasView} layer={canvasView === 'layers' ? layer : undefined}/></Suspense> : canvasPlaceholder}<div className="canvas-caption"><span>GEOMETRIC PREVIEW</span><span>{mmToDisplay(selectedContainer.inside.length,unit)} × {mmToDisplay(selectedContainer.inside.width,unit)} × {mmToDisplay(selectedContainer.inside.height,unit)} {dimLabel(unit)} inside</span></div></div>
-          <div className="view-controls"><div className="view-tabs" role="tablist" aria-label="Model view">{(['3d','top','layers'] as const).map((view) => <button role="tab" aria-selected={canvasView === view} className={canvasView === view ? 'active' : ''} key={view} onClick={() => props.onView(view)}>{view === '3d' ? '3D' : view === 'top' ? 'Top view' : 'Layers'}</button>)}</div>{canvasView === 'layers' && <div className="layer-control"><span>Layer</span><input aria-label="Layer" type="range" min="1" max={Math.max(1, ...plan.placements.filter((placement) => placement.containerId === selectedContainer.id).map((placement) => placement.layer))} value={layer} onChange={(event) => props.onLayer(Number(event.target.value))}/><strong>{layer}</strong></div>}</div>
+          <div className="view-controls"><div className="view-tabs" role="tablist" aria-label="Model view">{(['3d','top','layers'] as const).map((view) => <button role="tab" aria-selected={canvasView === view} className={canvasView === view ? 'active' : ''} key={view} onClick={() => props.onView(view)}>{view === '3d' ? '3D' : view === 'top' ? 'Top view' : 'Layers'}</button>)}</div>{canvasView === 'layers' && <div className="layer-control"><span>Layer</span><input aria-label="Layer" type="range" min="1" max={selectedLayerMax} value={layer} onChange={(event) => props.onLayer(Number(event.target.value))}/><strong>{layer}</strong></div>}</div>
           <div className="bag-summary"><div><span>ITEMS IN THIS BAG</span><strong>{selectedSummary?.itemCount ?? 0}</strong></div><div><span>OCCUPIED VOLUME USED</span><strong>~{Math.round(volumePercent)}<small>%</small></strong></div><div><span>UPPER ITEM WEIGHT</span><strong>{selectedSummary ? gramToDisplay(selectedSummary.usedMassGrams,unit) : '—'}</strong></div><span className="summary-info" title="Volume uses adopted occupied cells or rectangular item bounds. Weight uses the upper saved item values where available; it does not include the bag unless tare is recorded."><CircleHelp size={15}/></span></div>
     <BagWeightNotes containers={containers} plan={plan} trip={trip} unit={unit}/>
           <p className="geometry-note">Estimated occupied cells or rectangular item bounds inside the recorded bag space. It does not simulate closure, soft sides, cushioning, compression or physical stability.</p>
@@ -702,7 +719,7 @@ function Workspace(props: WorkspaceProps) {
       : <div className="separation-rules-deferred" aria-hidden="true"/>}</div>
     {Array.isArray(trip.separationRules)&&trip.separationRules.length>0&&<Suspense fallback={<p className="candidate-uncertainty" role="status">Loading separation review…</p>}><SeparationNotes trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit}/></Suspense>}
     <section ref={planReviewRef} className="plan-review"><div className="review-heading"><div><span className="panel-kicker">PLAN CHECK</span><h2>Fit and trade-offs</h2></div><span className="review-caption">Deterministic geometric placement · generated on this device</span></div>{planReviewRequested ? <Suspense fallback={<p className="candidate-uncertainty" role="status">Opening approach comparisons…</p>}><PlanReview trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit} modeCopy={modeCopy} onSelect={props.onMode} requestPlanComparison={props.requestPlanComparison}/></Suspense> : <p className="candidate-uncertainty" role="status" aria-live="polite">Approach comparisons will be prepared when you reach this section.</p>}
-      {plan.excluded.filter((entry) => entry.reason !== 'Marked unavailable for this plan.').length > 0 && <div className="excluded-list"><strong>Needs a decision</strong>{plan.excluded.filter((entry) => entry.reason !== 'Marked unavailable for this plan.').map((entry) => <div key={entry.instanceId}><AlertTriangle size={15}/><span><strong>{entry.name}{entry.required ? ' · required' : ''}</strong><small>{entry.reason}</small></span>{trip.lockedPlacements.filter(saved => saved.instanceId === entry.instanceId).map(saved => <button className="button button-secondary" key={saved.instanceId} onClick={() => completed.has(saved.instanceId) ? props.onToggleComplete(saved.instanceId,false) : props.onToggleLock(saved)}>{completed.has(saved.instanceId) ? `Undo packed for ${entry.name}` : `Unlock ${entry.name}`}</button>)}<button className="text-button" onClick={() => props.onUnavailable(entry.instanceId)}>Remove from plan</button></div>)}</div>}
+      {unresolved.length > 0 && <div className="excluded-list"><strong>Needs a decision</strong>{unresolved.map((entry) => <div key={entry.instanceId}><AlertTriangle size={15}/><span><strong>{entry.name}{entry.required ? ' · required' : ''}</strong><small>{entry.reason}</small></span>{(lockedByInstance.get(entry.instanceId) ?? []).map(saved => <button className="button button-secondary" key={saved.instanceId} onClick={() => completed.has(saved.instanceId) ? props.onToggleComplete(saved.instanceId,false) : props.onToggleLock(saved)}>{completed.has(entry.instanceId) ? `Undo packed for ${entry.name}` : `Unlock ${entry.name}`}</button>)}<button className="text-button" onClick={() => props.onUnavailable(entry.instanceId)}>Remove from plan</button></div>)}</div>}
     </section>
     <div className="plan-trust-note"><Lock size={15}/><span>Locked placements are preserved during replanning. A geometric match is a suggestion, not a guarantee the bag will close.</span></div>
   </main>;

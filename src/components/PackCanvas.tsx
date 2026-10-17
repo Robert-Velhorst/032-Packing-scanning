@@ -1,5 +1,6 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { Container, LibraryItem, PackingPlan } from '../types';
+import { threeViewData } from '../three-view-data';
 import { ContainerSpaceNotes } from './ContainerSpaceNotes';
 import { PackingDiagram } from './PackingDiagram';
 
@@ -34,6 +35,7 @@ export const PackCanvas = memo(function PackCanvas({ container, plan, items, sel
 });
 
 function ThreePackFrame({ container, plan, items, selectedInstanceId, placementLabels }: Omit<Props, 'view' | 'layer'>) {
+  const viewData = useMemo(() => threeViewData(container?.id, plan, items), [container?.id, plan.placements, items]);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const [shouldLoad, setShouldLoad] = useState(false);
@@ -58,12 +60,12 @@ function ThreePackFrame({ container, plan, items, selectedInstanceId, placementL
     frameRef.current?.contentWindow?.postMessage({
       type: 'packing-scanning:render',
       container,
-      plan,
-      items,
+      plan: viewData.plan,
+      items: viewData.items,
       selectedInstanceId,
       placementLabels,
     }, location.origin);
-  }, [frameLoaded, container, plan, items, selectedInstanceId, placementLabels]);
+  }, [frameLoaded, container, viewData, selectedInstanceId, placementLabels]);
 
   return <div className="packing-viewer">
     <div className="pack-canvas" ref={viewportRef}>

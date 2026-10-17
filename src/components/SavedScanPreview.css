@@ -11,3 +11,6 @@
 @media(max-width:620px) {
   .saved-scan-preview { padding:12px; }
 }
+
+.saved-scan-viewer-slot { min-height:260px; }
+.saved-scan-viewer-placeholder { display:grid; min-height:260px; place-items:center; margin:0; border-radius:8px; background:#f7faf7; color:#526257; text-align:center; }

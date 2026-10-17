@@ -3,12 +3,13 @@ import { useEffect, useRef, useState } from 'react';
 import type * as ThreeApi from 'three';
 import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { Container, LibraryItem, PackingPlan, Placement } from '../types';
+import type { ThreeViewPlan } from '../three-view-data';
 import { containerBlockedBoxes, containerSpaceError } from '../container-space';
 import { placementBoxes,placementSurface } from '../packing-geometry';
 
 interface Props {
   container?: Container;
-  plan: PackingPlan;
+  plan: ThreeViewPlan;
   items: LibraryItem[];
   selectedInstanceId?: string;
   view: 'top' | '3d' | 'layers';
@@ -95,6 +96,9 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
     let itemBoxEdges: ThreeApi.EdgesGeometry | undefined;
     const itemMaterials = new Map<string, ThreeApi.MeshStandardMaterial>();
     const itemEdgeMaterials = new Map<string, ThreeApi.LineBasicMaterial>();
+    const boxMaterials = new Map<string, ThreeApi.MeshStandardMaterial>();
+    const boxInstances = new Map<ThreeApi.MeshStandardMaterial, { boxes: { size: [number, number, number]; position: [number, number, number]; color: string }[] }>();
+    const boxEdgePositions = new Map<string, number[]>();
     const itemMaterial = (category: string, flexibility: string | undefined, selected: boolean) => {
       const key = `${category}:${flexibility ?? ''}:${selected}`;
       let material = itemMaterials.get(key);
@@ -110,25 +114,41 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
       }
       return material;
     };
-    const makeItemBox = (size: [number, number, number], position: [number, number, number], material: ThreeApi.Material, edgeColor: string) => {
-      itemBoxGeometry ??= new THREE.BoxGeometry(1, 1, 1);
-      itemBoxEdges ??= new THREE.EdgesGeometry(itemBoxGeometry);
-      const mesh = new THREE.Mesh(itemBoxGeometry, material);
-      mesh.position.set(...position);
-      mesh.scale.set(...size);
-      mesh.castShadow = true;
-      scene.add(mesh);
-      let edgeMaterial = itemEdgeMaterials.get(edgeColor);
-      if (!edgeMaterial) {
-        edgeMaterial = new THREE.LineBasicMaterial({ color: edgeColor, transparent: true, opacity: 0.75 });
-        itemEdgeMaterials.set(edgeColor, edgeMaterial);
+    const boxMaterial = (flexibility: string | undefined, selected: boolean) => {
+      const key = `${flexibility ?? ''}:${selected}`;
+      let material = boxMaterials.get(key);
+      if (!material) {
+        material = new THREE.MeshStandardMaterial({
+          color: '#ffffff',
+          vertexColors: true,
+          roughness: flexibility === 'rigid' ? 0.72 : 0.93,
+          metalness: 0.01,
+          emissive: selected ? '#12452f' : '#000000',
+          emissiveIntensity: selected ? 0.2 : 0,
+        });
+        boxMaterials.set(key, material);
       }
-      const edge = new THREE.LineSegments(itemBoxEdges, edgeMaterial);
-      edge.position.copy(mesh.position);
-      edge.scale.copy(mesh.scale);
-      edge.renderOrder = 2;
-      scene.add(edge);
-      return mesh;
+      return material;
+    };
+    const makeItemBox = (size: [number, number, number], position: [number, number, number], material: ThreeApi.MeshStandardMaterial, edgeColor: string, color: string) => {
+      if (!itemBoxGeometry) {
+        itemBoxGeometry = new THREE.BoxGeometry(1, 1, 1);
+        itemBoxGeometry.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(itemBoxGeometry.getAttribute('position').count * 3).fill(1), 3));
+      }
+      itemBoxEdges ??= new THREE.EdgesGeometry(itemBoxGeometry);
+      const batch = boxInstances.get(material) ?? { boxes: [] };
+      batch.boxes.push({ size, position, color });
+      boxInstances.set(material, batch);
+      const edgePositions = boxEdgePositions.get(edgeColor) ?? [];
+      const vertices = itemBoxEdges.getAttribute('position');
+      for (let index = 0; index < vertices.count; index++) {
+        edgePositions.push(
+          position[0] + vertices.getX(index) * size[0],
+          position[1] + vertices.getY(index) * size[1],
+          position[2] + vertices.getZ(index) * size[2],
+        );
+      }
+      boxEdgePositions.set(edgeColor, edgePositions);
     };
 
     const caseMaterial = new THREE.MeshStandardMaterial({ color: '#27332d', roughness: 0.78, metalness: 0.04, transparent: true, opacity: 0.3, side: THREE.DoubleSide,depthWrite:false });
@@ -187,8 +207,9 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
       }else makeItemBox(
         [placement.length * scale, placement.height * scale, placement.width * scale],
         [(placement.x + placement.length / 2) * scale, (placement.z + placement.height / 2) * scale, (placement.y + placement.width / 2) * scale],
-        material,
+        boxMaterial(item.flexibility,isSelected),
         isSelected ? '#006b3f' : '#64756d',
+        isSelected ? '#348665' : colors[item.category] ?? colors.other,
       );
       const number = placementLabels?.[placement.instanceId];
       const labelBox=placementBoxes(placement,item).reduce((best,b)=>b.length*b.width>best.length*best.width?b:best);
@@ -214,6 +235,31 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
         }
       }
     }
+
+    const matrix = new THREE.Matrix4(), instancePosition = new THREE.Vector3(), instanceScale = new THREE.Vector3(), instanceRotation = new THREE.Quaternion(), instanceColor = new THREE.Color();
+    for (const [material, batch] of boxInstances) {
+      const mesh = new THREE.InstancedMesh(itemBoxGeometry!, material, batch.boxes.length);
+      batch.boxes.forEach((box,index) => {
+        instancePosition.set(...box.position);
+        instanceScale.set(...box.size);
+        matrix.compose(instancePosition,instanceRotation,instanceScale);
+        mesh.setMatrixAt(index,matrix);
+        mesh.setColorAt(index,instanceColor.set(box.color));
+      });
+      mesh.instanceMatrix.needsUpdate=true;
+      if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;
+      mesh.castShadow=true;
+      scene.add(mesh);
+    }
+    for (const [edgeColor,positions] of boxEdgePositions) {
+      let material=itemEdgeMaterials.get(edgeColor);
+      if(!material){material=new THREE.LineBasicMaterial({color:edgeColor,transparent:true,opacity:.75});itemEdgeMaterials.set(edgeColor,material);}
+      const geometry=new THREE.BufferGeometry();
+      geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+      const edges=new THREE.LineSegments(geometry,material);edges.renderOrder=2;scene.add(edges);
+    }
+    itemBoxEdges?.dispose();
+    itemBoxEdges=undefined;
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.copy(target);

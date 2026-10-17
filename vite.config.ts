@@ -9,7 +9,10 @@ export default defineConfig({
     target: 'es2022',
     sourcemap: false,
     rollupOptions: {
-      input: 'index.html',
+      input: {
+        app: 'index.html',
+        three: 'three/three-view.html',
+      },
     },
   },
 });
