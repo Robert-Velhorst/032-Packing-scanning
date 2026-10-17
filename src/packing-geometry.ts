@@ -386,11 +386,16 @@ export function contactPositions(bag:Container,orientation:DimensionsMm&{rotatio
   let indexedCollisionObstacles=collisionObstacles,indexedCollisionPrefix=collisionObstaclePrefixMaxRight;
   if(collisionObstacles&&!indexedCollisionPrefix){indexedCollisionObstacles=[...collisionObstacles].sort((a,b)=>a.x-b.x);indexedCollisionPrefix=obstaclePrefixMaxRight(indexedCollisionObstacles);}
   const minimum=[region.x,region.y,region.z],maximum=[region.x+region.length-orientation.length,region.y+region.width-orientation.width,region.z+region.height-orientation.height];
-  const values=[new Set([minimum[0],maximum[0]]),new Set([minimum[1],maximum[1]]),new Set([minimum[2]])],mins=['x','y','z'] as const;
-  const addCoordinate=(axis:number,value:number)=>{if(value>=minimum[axis]-EPS&&value<=maximum[axis]+EPS)values[axis].add(Math.max(minimum[axis],value));};
-  for(const b of obstacles)for(const c of local)for(let axis=0;axis<3;axis++){
-    addCoordinate(axis,b[mins[axis]]+b[axes[axis]]-c[mins[axis]]);
-    if(axis<2)addCoordinate(axis,b[mins[axis]]-c[mins[axis]]-c[axes[axis]]);
+  const values=[new Set([minimum[0],maximum[0]]),new Set([minimum[1],maximum[1]]),new Set([minimum[2]])];
+  for(const b of obstacles)for(const c of local){
+    const right=b.x+b.length-c.x,left=b.x-c.x-c.length;
+    if(right>=minimum[0]-EPS&&right<=maximum[0]+EPS)values[0].add(Math.max(minimum[0],right));
+    if(left>=minimum[0]-EPS&&left<=maximum[0]+EPS)values[0].add(Math.max(minimum[0],left));
+    const back=b.y+b.width-c.y,front=b.y-c.y-c.width;
+    if(back>=minimum[1]-EPS&&back<=maximum[1]+EPS)values[1].add(Math.max(minimum[1],back));
+    if(front>=minimum[1]-EPS&&front<=maximum[1]+EPS)values[1].add(Math.max(minimum[1],front));
+    const top=b.z+b.height-c.z;
+    if(top>=minimum[2]-EPS&&top<=maximum[2]+EPS)values[2].add(Math.max(minimum[2],top));
   }
   const coords=values.map(set=>[...set].sort((a,b)=>a-b));
   const positions:Array<{x:number;y:number;z:number}>=[];let limited=false,examined=0;
