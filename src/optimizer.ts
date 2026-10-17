@@ -587,9 +587,10 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             if(separationError){if(hasCandidateVerticalEntry(placement,bagPlacements,container))separationFailure=separationError;continue;}
             if (rejected.some((failed) => samePlacementGeometry(failed, placement))) continue;
             const needsStackCheck = useShapeSequence || stackSensitiveIds.has(item.instanceId) || hasStackSensitivePlacement;
-            const stackConflict=needsStackCheck&&hasStackContact(placement,bagPlacements,itemById,container)
-              &&(incrementalStackCheck?stackLoadContactCache.wouldCreateStackConflict(placement,bagPlacements,[container])
-                :assessStackLoads([...bagPlacements,placement],itemById,[container],stackLoadContactCache).some(load=>load.status==='conflict'));
+            const stackConflict=needsStackCheck&&(incrementalStackCheck
+              ?stackLoadContactCache.wouldCreateStackConflict(placement,bagPlacements,[container])
+              :hasStackContact(placement,bagPlacements,itemById,container)
+                &&assessStackLoads([...bagPlacements,placement],itemById,[container],stackLoadContactCache).some(load=>load.status==='conflict'));
             if (stackConflict) {
               if(hasCandidateVerticalEntry(placement,bagPlacements,container)){
                 const conflicts=assessStackLoads([...bagPlacements, placement], itemById, [container],stackLoadContactCache).filter(load => load.status === 'conflict');
