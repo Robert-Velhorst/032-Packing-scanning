@@ -495,7 +495,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     let loadFailure: string | undefined;
     let separationFailure: string | undefined;
     let searchLimited=false;
-    let best: { placement: Placement; container: Container; score: number; lookahead: number; affinity: boolean } | undefined;
+    let best: { placement: Placement; position: { x: number; y: number; z: number }; container: Container; score: number; lookahead: number; affinity: boolean } | undefined;
     const lookaheadCache = new Map<string,number>();
     const balancingBags = mode === 'balanced' ? candidateContainers.filter(bag => !blockedBagIds.has(bag.id) && !containerError(bag) && !interiorSupportError(bag.packingInterior)) : [];
     const completeBalancedTotals = balancingBags.every(bag => typeof bag.tareGrams === 'number' && Number.isFinite(bag.tareGrams) && bag.tareGrams >= 0
@@ -560,26 +560,51 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             ? separationPositions(basePositions,space,item,orientation,item.entryId,bagPlacements,rules,itemById)
             : basePositions;
           if(positions.length>=20000)searchLimited=true;
+          const reusablePlacement: Placement | undefined = !useShapeSequence && rules.length === 0 ? {
+            instanceId: item.instanceId,
+            entryId: item.entryId,
+            itemId: item.itemId,
+            containerId: container.id,
+            ...context.placementMetadata,
+            x: 0,
+            y: 0,
+            z: 0,
+            length: orientation.length,
+            width: orientation.width,
+            height: orientation.height,
+            layer: 1,
+            rotation: orientation.rotation,
+            ...placementSequenceMetadata,
+            ...shapePlacementMetadata,
+            ...formPlacementMetadata,
+            ...interiorPlacementMetadata,
+          } : undefined;
           for (const position of positions) {
-            const placement: Placement = {
-              instanceId: item.instanceId,
-              entryId: item.entryId,
-              itemId: item.itemId,
-              containerId: container.id,
-              ...context.placementMetadata,
-              x: position.x,
-              y: position.y,
-              z: position.z,
-              length: orientation.length,
-              width: orientation.width,
-              height: orientation.height,
-              layer: 1,
-              rotation: orientation.rotation,
-              ...placementSequenceMetadata,
-              ...shapePlacementMetadata,
-              ...formPlacementMetadata,
-              ...interiorPlacementMetadata,
-            };
+            let placement: Placement;
+            if(reusablePlacement){
+              reusablePlacement.x=position.x;reusablePlacement.y=position.y;reusablePlacement.z=position.z;
+              placement=reusablePlacement;
+            }else{
+              placement = {
+                instanceId: item.instanceId,
+                entryId: item.entryId,
+                itemId: item.itemId,
+                containerId: container.id,
+                ...context.placementMetadata,
+                x: position.x,
+                y: position.y,
+                z: position.z,
+                length: orientation.length,
+                width: orientation.width,
+                height: orientation.height,
+                layer: 1,
+                rotation: orientation.rotation,
+                ...placementSequenceMetadata,
+                ...shapePlacementMetadata,
+                ...formPlacementMetadata,
+                ...interiorPlacementMetadata,
+              };
+            }
             // Plain rectangular candidates come only from free regions already
             // clipped to the bag and split around any blocked geometry. When
             // there is no shape sequence or blocked geometry, this check repeats
@@ -643,7 +668,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
               && weightCost !== undefined && priorCost !== undefined && Math.abs(weightCost - priorCost) > 1e-12;
             if (!best || (compareAffinity ? affinity : compareWeight ? weightCost! < priorCost! : score < best.score)) {
               if(!hasCandidateVerticalEntry(placement,bagPlacements,container))continue;
-              best = { placement, container, score, lookahead, affinity };
+              best = { placement, position, container, score, lookahead, affinity };
             }
           }
         }
@@ -652,6 +677,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
 
     if(best){
       const bestPlacements=placementsByContainer.get(best.container.id)??[];
+      best.placement.x=best.position.x;best.placement.y=best.position.y;best.placement.z=best.position.z;
       best.placement.layer=1+bestPlacements.reduce((maxLayer,placed)=>placed.compartmentId===best.placement.compartmentId
         &&placed.z+placed.height<=best.placement.z+EPSILON?Math.max(maxLayer,placed.layer):maxLayer,0);
     }
