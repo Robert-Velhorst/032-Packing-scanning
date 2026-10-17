@@ -6,14 +6,14 @@ import { itemMassError, savedBagMassConflict } from './mass-constraints';
 import { retrievalReward } from './retrieval';
 import type {
   BagMassConflict, Container, ExcludedItem, LibraryItem, OptimizationMode, PackingPlan,
-  PlanItem, Placement, Trip, SeparationRule,
+  PlanItem, Placement, PlannerTrip, SeparationRule,
 } from './types';
 import { assessStackLoads, hasStackContact, StackLoadContactCache, topLoadError } from './stack-load';
 import { packingItem, packingFormKey } from './packing-forms';
 import { isValidRejectedPlacement, samePlacementGeometry } from './packing-progress';
 import { containerBlockedBoxes, containerSpaceError, usableContainerHeight, usableContainerVolume } from './container-space';
 import { interiorKey, interiorSupportError, interiorTravelUp } from './packing-interior';
-import { contactPositions, fitsGeometrySpaceInValidatedContainer, geometryIntersects, geometryOrientations, hasGeometrySupport, hasPackingAndTravelSupport, hasVerticalEntry, insertObstaclePrefixMaxRight, obstaclePrefixMaxRight, orientationForRotation, packingShapeError, placementBoxes, RectangularSupportIndex, shapeDimensions, shapeKey, shapeVolume, type GeometryBox } from './packing-geometry';
+import { contactPositions, fitsGeometrySpaceInValidatedContainer, geometryIntersects, geometryOrientations, hasGeometrySupport, hasPackingAndTravelSupport, hasVerticalEntry, insertObstaclePrefixMaxRight, obstaclePrefixMaxRight, orientationForRotation, packingShapeError, placementBoxes, RectangularSupportIndex, shapeDimensions, shapeKey, shapeVolume, type GeometryBox, uniqueGeometryOrientations } from './packing-geometry';
 
 interface FreeSpace {
   compartmentId?: string;
@@ -34,9 +34,11 @@ const SUPPORT_INDEX_THRESHOLD=16;
 const SHAPED_SUPPORT_INDEX_THRESHOLD=8;
 // Bound the Cartesian product of shape-aware contact positions per orientation.
 const SHAPE_CONTACT_POSITION_LIMIT=100;
+// Deduplicating exact shape orientations pays off only when many shapes are searched.
+const SHAPE_ORIENTATION_DEDUP_THRESHOLD=512;
 const FREE_SPACE_HASH_THRESHOLD=64;
 
-export function buildPlan(trip: Trip, library: LibraryItem[], allContainers: Container[], mode: OptimizationMode = trip.mode): PackingPlan {
+export function buildPlan(trip: PlannerTrip, library: LibraryItem[], allContainers: Container[], mode: OptimizationMode = trip.mode): PackingPlan {
   const referencedItemIds = new Set(trip.entries.map(entry => entry.itemId));
   const byId = new Map<string, LibraryItem>();
   for (const item of library) if (referencedItemIds.has(item.id)) byId.set(item.id, item);
@@ -374,13 +376,14 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
   // weight-limited item, a candidate cannot create a stacking conflict.
   const stackSensitiveIds = new Set(items.filter(item => item.fragile || item.maxTopLoadGrams !== undefined).map(item => item.instanceId));
   const shapeItems = items.filter(item => item.packingShape);
+  const pruneEquivalentShapeOrientations=items.length*shapeItems.length>=SHAPE_ORIENTATION_DEDUP_THRESHOLD;
   const shapeOrientations = new Map<string, ReturnType<typeof geometryOrientations>>();
   const orientationsFor = (item: PlanItem, bag: Container) => {
     if (!item.packingShape) return geometryOrientations(item, bag);
     const key = `${bag.id}\u0000${item.instanceId}`;
     let orientations = shapeOrientations.get(key);
     if (!orientations) {
-      orientations = geometryOrientations(item, bag);
+      orientations = pruneEquivalentShapeOrientations?uniqueGeometryOrientations(item, bag):geometryOrientations(item, bag);
       shapeOrientations.set(key, orientations);
     }
     return orientations;
@@ -584,9 +587,10 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             if(separationError){if(hasCandidateVerticalEntry(placement,bagPlacements,container))separationFailure=separationError;continue;}
             if (rejected.some((failed) => samePlacementGeometry(failed, placement))) continue;
             const needsStackCheck = useShapeSequence || stackSensitiveIds.has(item.instanceId) || hasStackSensitivePlacement;
-            const stackConflict=needsStackCheck&&hasStackContact(placement,bagPlacements,itemById,container)
-              &&(incrementalStackCheck?stackLoadContactCache.wouldCreateStackConflict(placement,bagPlacements,[container])
-                :assessStackLoads([...bagPlacements,placement],itemById,[container],stackLoadContactCache).some(load=>load.status==='conflict'));
+            const stackConflict=needsStackCheck&&(incrementalStackCheck
+              ?stackLoadContactCache.wouldCreateStackConflict(placement,bagPlacements,[container])
+              :hasStackContact(placement,bagPlacements,itemById,container)
+                &&assessStackLoads([...bagPlacements,placement],itemById,[container],stackLoadContactCache).some(load=>load.status==='conflict'));
             if (stackConflict) {
               if(hasCandidateVerticalEntry(placement,bagPlacements,container)){
                 const conflicts=assessStackLoads([...bagPlacements, placement], itemById, [container],stackLoadContactCache).filter(load => load.status === 'conflict');
@@ -612,8 +616,8 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
                 lookaheadCache.set(key,penalty);
               }
               lookahead=penalty;
-            } else if(future){const prior=[...bagPlacements,placement],possible=futureProbes.some(next=>
-              !placementSeparationError(next,prior,rules,itemById)&&fitsGeometrySpaceInValidatedContainer(next,container,future,blockedSpaces.get(container.id))&&!prior.some(p=>geometryIntersects(next,p,itemById))&&hasPackingAndTravelSupport(next,prior,itemById,mode==='fragile_protection'?1:.65,container)&&hasVerticalEntry(next,prior,itemById,container,blockedSpaces.get(container.id))
+            } else if(future){const prior=[...bagPlacements,placement],candidateObstacles=placementBoxes(placement,item),entryObstacles=verticalEntryObstacles?.get(container.id),entryPrefix=verticalEntryObstaclePrefixMaxRights.get(container.id),possible=futureProbes.some(next=>
+              !placementSeparationError(next,prior,rules,itemById)&&fitsGeometrySpaceInValidatedContainer(next,container,future,blockedSpaces.get(container.id))&&hasVerticalEntry(next,[],itemById,container,blockedSpaces.get(container.id),entryObstacles,true,undefined,entryPrefix,candidateObstacles)&&hasPackingAndTravelSupport(next,prior,itemById,mode==='fragile_protection'?1:.65,container)
                 // An isolated probe cannot change the already-checked stack graph.
                 && (!hasStackContact(next,prior,itemById,container)||!assessStackLoads([...prior,next],itemById,[container],stackLoadContactCache).some(load=>load.status==='conflict')));
               if(!possible)lookahead=future.volumeMm3*20;}
@@ -803,24 +807,26 @@ function rememberFreeSpace(seen: Map<number, FreeSpace | FreeSpace[]>, space: Fr
 }
 
 function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVolumes = false, previousSpacesScratch?: Set<FreeSpace>): FreeSpace[] {
-  const next: FreeSpace[] = [];
+  let next: FreeSpace[] | undefined;
   const usedRight=used.x+used.length,usedBack=used.y+used.width,usedTop=used.z+used.height;
-  for (const space of spaces) {
+  for (let index=0;index<spaces.length;index++) {
+    const space=spaces[index];
     const right=space.x+space.length;
     if(space.x>=usedRight-EPSILON||right<=used.x+EPSILON){
-      next.push(space);
+      next?.push(space);
       continue;
     }
     const back = space.y + space.width;
     if(space.y>=usedBack-EPSILON||back<=used.y+EPSILON){
-      next.push(space);
+      next?.push(space);
       continue;
     }
     const top = space.z + space.height;
     if(space.z>=usedTop-EPSILON||top<=used.z+EPSILON){
-      next.push(space);
+      next?.push(space);
       continue;
     }
+    next??=spaces.slice(0,index);
     if (used.x > space.x + EPSILON) next.push({ ...space, length: used.x - space.x });
     if (usedRight < right - EPSILON) next.push({ ...space, x: usedRight, length: right - usedRight });
     if (used.y > space.y + EPSILON) next.push({ ...space, width: used.y - space.y });
@@ -828,6 +834,7 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
     if (used.z > space.z + EPSILON) next.push({ ...space, height: used.z - space.z });
     if (usedTop < top - EPSILON) next.push({ ...space, z: usedTop, height: top - usedTop });
   }
+  if(!next)return spaces;
   // Filter and deduplicate in one pass; preserve the first record for each geometry.
   let unique:FreeSpace[];
   if(cacheCandidateVolumes){
@@ -874,7 +881,7 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
     }
   }
   if(unique.length<2)return unique;
-  if(unique.length<32)return unique.filter((space,index)=>!unique.some((other,otherIndex)=>otherIndex!==index&&containsSpace(other,space)&&(!containsSpace(space,other)||otherIndex<index)));
+  if(unique.length<16)return unique.filter((space,index)=>!unique.some((other,otherIndex)=>otherIndex!==index&&containsSpace(other,space)&&(!containsSpace(space,other)||otherIndex<index)));
   const previousSpaces = previousSpacesScratch ?? new Set<FreeSpace>();
   previousSpaces.clear();
   for(const space of spaces)previousSpaces.add(space);

@@ -73,8 +73,20 @@ export function geometryOrientations(item:{dimensions:DimensionsMm;keepUpright:b
   const upAxis=up?axes.indexOf(up.axis):2,upSign=up?.sign??1;
   const target=bag?.packingInterior?interiorTravelUp(bag.packingInterior):{axis:2,sign:1},spatial=!!item.packingShape||!!bag?.packingInterior;
   const allowed=spatial?rotations.filter(r=>!item.keepUpright||(r.axis[target.axis]===upAxis&&r.sign[target.axis]===upSign*target.sign)):legacy.filter(r=>!item.keepUpright||r.code===0||r.code===90);
-  const seen=new Set<string>();
-  return allowed.flatMap(r=>{const key=r.axis.map(a=>values[a]).join('|');if(!item.packingShape&&seen.has(key))return [];seen.add(key);return [{length:values[r.axis[0]],width:values[r.axis[1]],height:values[r.axis[2]],rotation:r.code}];});
+  const seenDimensions=new Set<string>();
+  return allowed.flatMap(r=>{const key=r.axis.map(a=>values[a]).join('|');if(!item.packingShape&&seenDimensions.has(key))return [];seenDimensions.add(key);return [{length:values[r.axis[0]],width:values[r.axis[1]],height:values[r.axis[2]],rotation:r.code}];});
+}
+/** Preserve all public rotations while avoiding duplicate occupied-geometry searches in the planner. */
+export function uniqueGeometryOrientations(item:{dimensions:DimensionsMm;keepUpright:boolean;packingShape?:PackingShape},bag?:Pick<Container,'packingInterior'>) {
+  const orientations=geometryOrientations(item,bag);
+  if(!item.packingShape)return orientations;
+  const compiled=compile(item.packingShape),seen=new Set<string>();
+  return orientations.filter(orientation=>{
+    const rotation=rotations.find(candidate=>candidate.code===orientation.rotation)!;
+    const key=orientationGeometryKey(orientedBoxes(compiled,rotation));
+    if(seen.has(key))return false;
+    seen.add(key);return true;
+  });
 }
 /** Older rectangular plans deduplicated equal side permutations differently. */
 export function orientationForRotation(item:{dimensions:DimensionsMm;keepUpright:boolean;packingShape?:PackingShape},code:number,bag?:Pick<Container,'packingInterior'>) {
@@ -89,11 +101,7 @@ export function orientationForRotation(item:{dimensions:DimensionsMm;keepUpright
 function localGeometry(shape:PackingShape,code:number) {
   const compiled=compile(shape),prior=compiled.oriented.get(code);if(prior)return prior;
   const rotation=rotations.find(r=>r.code===code);if(!rotation)throw Error('Unsupported shape rotation.');
-  const dimensions=axes.map(a=>compiled.bounds[a]);
-  const boxes=compiled.boxes.map(b=>{
-    const min=[b.x,b.y,b.z],size=[b.length,b.width,b.height],outMin=rotation.axis.map((a,i)=>rotation.sign[i]>0?min[a]:dimensions[a]-min[a]-size[a]),outSize=rotation.axis.map(a=>size[a]);
-    return {x:outMin[0],y:outMin[1],z:outMin[2],length:outSize[0],width:outSize[1],height:outSize[2]};
-  });
+  const boxes=orientedBoxes(compiled,rotation);
   const bottom=boxes.filter(b=>Math.abs(b.z)<EPS).map(b=>({x:b.x,y:b.y,z:b.z,length:b.length,width:b.width}));
   const top=boxes.flatMap(b=>{
     let faces:Face[]=[{x:b.x,y:b.y,z:b.z+b.height,length:b.length,width:b.width}];
@@ -102,6 +110,18 @@ function localGeometry(shape:PackingShape,code:number) {
   });
   const down=boxes.flatMap(b=>{let patches:Face[]=[{x:b.x,y:b.y,z:b.z,length:b.length,width:b.width}];for(const below of boxes)if(Math.abs(below.z+below.height-b.z)<=EPS)patches=patches.flatMap(f=>subtractFace(f,below));return patches;});
   const result={boxes,bottom,down,top,directional:new Map<string,ContactFaces>()};compiled.oriented.set(code,result);return result;
+}
+function orientedBoxes(compiled:Compiled,rotation:Rotation):GeometryBox[] {
+  const dimensions=axes.map(a=>compiled.bounds[a]);
+  return compiled.boxes.map(box=>{
+    const minimum=[box.x,box.y,box.z],size=[box.length,box.width,box.height];
+    const outMinimum=rotation.axis.map((axis,index)=>rotation.sign[index]>0?minimum[axis]:dimensions[axis]-minimum[axis]-size[axis]);
+    const outSize=rotation.axis.map(axis=>size[axis]);
+    return {x:outMinimum[0],y:outMinimum[1],z:outMinimum[2],length:outSize[0],width:outSize[1],height:outSize[2]};
+  });
+}
+function orientationGeometryKey(boxes:GeometryBox[]):string {
+  return boxes.map(box=>[box.x,box.y,box.z,box.length,box.width,box.height].map(value=>Object.is(value,-0)?0:value).join(',')).sort().join(';');
 }
 function subtractFace(face:Face,cut:GeometryBox):Face[] {
   const x=Math.max(face.x,cut.x),y=Math.max(face.y,cut.y),r=Math.min(face.x+face.length,cut.x+cut.length),b=Math.min(face.y+face.width,cut.y+cut.width);
@@ -363,7 +383,7 @@ function firstPotentialObstacle(obstacles:readonly GeometryBox[],x:number,maxObs
   return low;
 }
 /** Fixed orientation, straight downward entry: recesses must remain reachable from above. */
-export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,bag:Container,blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[],obstaclesSortedByX=false,maxObstacleLength?:number,prefixMaxRight?:readonly number[]):boolean {
+export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,bag:Container,blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[],obstaclesSortedByX=false,maxObstacleLength?:number,prefixMaxRight?:readonly number[],additionalObstacles:readonly GeometryBox[]=[]):boolean {
   // Every component of an in-bounds shape shares the same sweep top.
   const top=bag.inside.height,sweepTop=Math.max(p.z+p.height,top+p.height);
   const obstacles=cachedObstacles??[...blockedSpaces,...placed.filter(other=>other.containerId===p.containerId).flatMap(other=>placementBoxes(other,items.get(other.instanceId)))];
@@ -371,11 +391,13 @@ export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string
   const shape=items.get(p.instanceId)?.packingShape;
   if(!shape){
     const right=p.x+p.length,back=p.y+p.width;
+    for(const obstacle of additionalObstacles)if(p.x<obstacle.x+obstacle.length-EPS&&right>obstacle.x+EPS&&p.y<obstacle.y+obstacle.width-EPS&&back>obstacle.y+EPS&&p.z<obstacle.z+obstacle.height-EPS&&sweepTop>obstacle.z+EPS)return false;
     for(let i=firstPotentialObstacle(obstacles,p.x,maxObstacleLength,obstaclesSortedByX,prefixMaxRight);i<obstacles.length;i++){const o=obstacles[i];if(obstaclesSortedByX&&o.x>=right-EPS)break;if(p.x<o.x+o.length-EPS&&right>o.x+EPS&&p.y<o.y+o.width-EPS&&back>o.y+EPS&&p.z<o.z+o.height-EPS&&sweepTop>o.z+EPS)return false;}
     return true;
   }
   for(const b of localGeometry(shape,p.rotation??0).boxes){
     const x=p.x+b.x,y=p.y+b.y,z=p.z+b.z,right=x+b.length,back=y+b.width;
+    for(const obstacle of additionalObstacles)if(x<obstacle.x+obstacle.length-EPS&&right>obstacle.x+EPS&&y<obstacle.y+obstacle.width-EPS&&back>obstacle.y+EPS&&z<obstacle.z+obstacle.height-EPS&&sweepTop>obstacle.z+EPS)return false;
     for(let i=firstPotentialObstacle(obstacles,x,maxObstacleLength,obstaclesSortedByX,prefixMaxRight);i<obstacles.length;i++){const o=obstacles[i];if(obstaclesSortedByX&&o.x>=right-EPS)break;if(x<o.x+o.length-EPS&&right>o.x+EPS&&y<o.y+o.width-EPS&&back>o.y+EPS&&z<o.z+o.height-EPS&&sweepTop>o.z+EPS)return false;}
   }
   return true;

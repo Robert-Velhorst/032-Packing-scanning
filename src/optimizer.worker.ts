@@ -1,10 +1,10 @@
 import { buildPlan } from './optimizer';
 import { reconcilePackingShapes } from './planner-shape-cache';
-import type { Container, LibraryItem, OptimizationMode, PackingPlan, PackingShape, Trip } from './types';
+import type { Container, LibraryItem, OptimizationMode, PackingPlan, PackingShape, PlannerTrip } from './types';
 
 interface PlanRequest {
   requestId: number;
-  trip: Trip;
+  trip: PlannerTrip;
   items: LibraryItem[];
   containers: Container[];
   modes?: OptimizationMode[];

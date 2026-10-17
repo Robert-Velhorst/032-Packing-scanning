@@ -1,8 +1,8 @@
-import type { Container, LibraryItem, OptimizationMode, PackingPlan, Trip } from './types';
+import type { Container, LibraryItem, OptimizationMode, PackingPlan, PlannerTrip, Trip } from './types';
 
 export interface PlannerWorkerRequest {
   requestId: number;
-  trip: Trip;
+  trip: PlannerTrip;
   items: LibraryItem[];
   containers: Container[];
   modes?: OptimizationMode[];
@@ -29,6 +29,33 @@ export const PLANNER_WORKER_MIN_ITEMS = 15;
 
 export function shouldUsePlannerWorker(instanceCount: number, hasComplexGeometry: boolean) {
   return instanceCount >= PLANNER_WORKER_MIN_ITEMS || hasComplexGeometry;
+}
+
+/** Exclude trip metadata not read by buildPlan before the browser clones the worker message. */
+export function plannerTripForWorker(trip: Trip): PlannerTrip {
+  return {
+    mode: trip.mode,
+    entries: trip.entries,
+    containerIds: trip.containerIds,
+    unavailableInstanceIds: trip.unavailableInstanceIds,
+    lockedPlacements: trip.lockedPlacements,
+    rejectedPlacements: trip.rejectedPlacements,
+    separationRules: trip.separationRules,
+  };
+}
+
+/** Exclude library records the planner cannot reach through this trip's entries. */
+export function plannerItemsForWorker(trip: Pick<Trip, 'entries'>, items: LibraryItem[]): LibraryItem[] {
+  const referencedIds = new Set(trip.entries.map(entry => entry.itemId));
+  const selected = items.filter(item => referencedIds.has(item.id));
+  return selected.length === items.length ? items : selected;
+}
+
+/** Exclude bags the planner cannot select through this trip's container IDs. */
+export function plannerContainersForWorker(trip: Pick<Trip, 'containerIds'>, containers: Container[]): Container[] {
+  const selectedIds = new Set(trip.containerIds);
+  const selected = containers.filter(container => selectedIds.has(container.id));
+  return selected.length === containers.length ? containers : selected;
 }
 
 export class PlannerWorkerClient {

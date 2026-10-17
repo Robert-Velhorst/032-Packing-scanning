@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest';
 import {buildPlan} from './optimizer';
 import {assessStackLoads} from './stack-load';
 import {orderPackingSteps} from './packing-sequence';
-import {boxesIntersect,contactPositions,geometryContactArea,geometryIntersects,geometryOrientations,geometrySupportArea,hasGeometrySupport,hasVerticalEntry,insertObstaclePrefixMaxRight,obstaclePrefixMaxRight,packingShapeError,placementBoxes,placementSurface,RectangularSupportIndex,shapeDimensions,shapeKey,shapeVolume} from './packing-geometry';
+import {boxesIntersect,contactPositions,geometryContactArea,geometryIntersects,geometryOrientations,geometrySupportArea,hasGeometrySupport,hasVerticalEntry,insertObstaclePrefixMaxRight,obstaclePrefixMaxRight,packingShapeError,placementBoxes,placementSurface,RectangularSupportIndex,shapeDimensions,shapeKey,shapeVolume,uniqueGeometryOrientations} from './packing-geometry';
 import type {Container,LibraryItem,PackingShape,Placement,PlanItem,Trip} from './types';
 const date='2026-10-01T00:00:00Z',evidence={source:'estimated' as const,confidence:.5,collectedAt:date};
 function shape(portal=false):PackingShape {
@@ -21,12 +21,33 @@ const bag:Container={id:'bag',name:'bag',kind:'other',inside:{length:120,width:1
 function trip(items:LibraryItem[]):Trip{return {id:'trip',name:'trip',destination:'',packingOnly:true,sample:false,travellers:[{id:'person',name:'person'}],containerIds:['bag'],entries:items.map(i=>({id:i.id,itemId:i.id,travellerId:'person',quantity:1,priority:'required',required:true,accessPriority:1})),mode:'balanced',completedInstanceIds:[],unavailableInstanceIds:[],lockedPlacements:[],carrierRules:[],createdAt:date,updatedAt:date};}
 function placement(id:string,patch:Partial<Placement>={}):Placement{return {instanceId:id+'#1',entryId:id,itemId:id,containerId:'bag',x:0,y:0,z:0,length:120,width:100,height:60,rotation:0,layer:1,...patch};}
 describe('adopted occupied-cell planning',()=>{
+ it('skips rotations that produce the exact same occupied boxes',()=>{
+  const shaped=shape(),candidate=item('U',shaped.fittedDimensionsMm,shaped);candidate.keepUpright=false;
+  const codes=[0,90,1,2,3,4,...Array.from({length:18},(_,index)=>106+index)],signature=(rotation:number)=>placementBoxes(placement('U',{rotation}),candidate)
+   .map(box=>[box.x,box.y,box.z,box.length,box.width,box.height].join(',')).sort().join(';');
+  const seen=new Set<string>(),expected:number[]=[];
+  for(const code of codes){const key=signature(code);if(!seen.has(key)){seen.add(key);expected.push(code);}}
+  const actual=uniqueGeometryOrientations(candidate,bag).map(orientation=>orientation.rotation);
+  expect(geometryOrientations(candidate,bag)).toHaveLength(codes.length);
+  expect(expected.length).toBeLessThan(codes.length);
+  expect(actual).toEqual(expected);
+ });
  it('preserves vertical-entry results when cached obstacles are sorted by x',()=>{
   const shaped=shape(),small=item('small'),arch=item('U',shaped.fittedDimensionsMm,shaped),items=new Map([[small.id+'#1',small],[arch.id+'#1',arch]]);
   const obstacles=[{x:75,y:0,z:10,length:10,width:100,height:20},{x:35,y:15,z:30,length:10,width:10,height:20}],sorted=[...obstacles].sort((a,b)=>a.x-b.x),prefix=obstaclePrefixMaxRight(sorted);
   for(const candidate of [placement('small',{x:30,y:10,z:0,length:40,width:40,height:20}),placement('U')]){
    const ordinary=hasVerticalEntry(candidate,[],items,bag,[],obstacles),indexed=hasVerticalEntry(candidate,[],items,bag,[],sorted,true,10),prefixIndexed=hasVerticalEntry(candidate,[],items,bag,[],sorted,true,undefined,prefix);
    expect(indexed).toBe(ordinary);expect(prefixIndexed).toBe(ordinary);
+  }
+ });
+ it('checks a trial placement against cached entry obstacles without rebuilding the full list',()=>{
+  const shaped=shape(),arch=item('U',shaped.fittedDimensionsMm,shaped),small=item('small'),items=new Map([[arch.id+'#1',arch],[small.id+'#1',small]]),blocker=placement('U'),blockerBoxes=placementBoxes(blocker,arch);
+  const overhead=placement('small',{x:40,y:35,z:30,length:40,width:20,height:20}),overheadBoxes=placementBoxes(overhead,small);
+  for(const [probe,obstacles] of [[placement('small',{x:40,y:10,z:0,length:40,width:20,height:20}),blockerBoxes],[placement('small',{x:40,y:35,z:0,length:40,width:20,height:20}),blockerBoxes],[placement('small',{x:40,y:35,z:0,length:40,width:20,height:20}),overheadBoxes]] as const){
+   const placed=obstacles===overheadBoxes?overhead:blocker;
+   const ordinary=hasVerticalEntry(probe,[placed],items,bag,[]);
+   const indexed=hasVerticalEntry(probe,[],items,bag,[],[],true,undefined,[],obstacles);
+   expect(indexed).toBe(ordinary);
   }
  });
  it('skips x-sorted entry obstacles beyond the maximum obstacle reach',()=>{
