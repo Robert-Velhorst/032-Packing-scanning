@@ -45,9 +45,14 @@ export function parseInteriorCavity(value:unknown,source:SavedGeometryPreview,re
     if(!Number.isInteger(cell)||cell<0||cell>=total||cellState[cell]!==0||(i>0&&cell<=cavity.freeCells[i-1]))return fail();
     cellState[cell]=2;
     const x=cell%nx,y=Math.floor(cell/nx)%ny,z=Math.floor(cell/(nx*ny));
-    for(let axis=0;axis<3;axis++)for(const sign of [-1,1])if((axis===0?x:axis===1?y:z)===(sign===1?dimensions[axis]-1:0)){
-      if(axis!==review.openingAxis||sign!==review.openingSign)return fail();opening.push(cell);
-    }
+    const openingAxis=review.openingAxis,openingSign=review.openingSign;
+    const onOpening=openingAxis===0?openingSign===1?x===nx-1:x===0
+      :openingAxis===1?openingSign===1?y===ny-1:y===0
+        :openingSign===1?z===dimensions[2]-1:z===0;
+    if(x===0&&!(openingAxis===0&&openingSign===-1)||x===nx-1&&!(openingAxis===0&&openingSign===1)
+      ||y===0&&!(openingAxis===1&&openingSign===-1)||y===ny-1&&!(openingAxis===1&&openingSign===1)
+      ||z===0&&!(openingAxis===2&&openingSign===-1)||z===dimensions[2]-1&&!(openingAxis===2&&openingSign===1))return fail();
+    if(onOpening)opening.push(cell);
   }
   if(opening.length!==cavity.opening.cells.length||opening.some((cell,i)=>cell!==cavity.opening.cells[i]))return fail();
   const seed=coordinates.map((coordinate,i)=>Math.min(dimensions[i]-1,Math.floor(review.seedMm[coordinate]/bounds[axes[i]]*dimensions[i]))),seedCell=seed[0]+nx*(seed[1]+ny*seed[2]);
