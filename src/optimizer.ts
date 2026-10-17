@@ -587,7 +587,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             const separationError = rules.length?placementSeparationError(placement,[...placements,...savedMassPositions],rules,itemById):undefined;
             if(separationError){if(hasCandidateVerticalEntry(placement,bagPlacements,container))separationFailure=separationError;continue;}
             if (rejected.some((failed) => samePlacementGeometry(failed, placement))) continue;
-            const needsStackCheck = useShapeSequence || stackSensitiveIds.has(item.instanceId) || hasStackSensitivePlacement;
+            const needsStackCheck = stackSensitiveIds.has(item.instanceId) || hasStackSensitivePlacement;
             const stackConflict=needsStackCheck&&(incrementalStackCheck
               ?stackLoadContactCache.wouldCreateStackConflict(placement,bagPlacements,[container])
               :hasStackContact(placement,bagPlacements,itemById,container)
