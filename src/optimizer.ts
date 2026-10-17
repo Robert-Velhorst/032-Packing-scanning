@@ -359,7 +359,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
   const freeSpaces = new Map(containers.map((container) => {
     const error=containerError(container);
     let spaces:FreeSpace[]=error||usableHeight(container)<=EPSILON?[]:packingRegions(container);
-    if(!error)for(const blocked of [...(container.unavailableSpaces??[])].sort((a,b)=>a.x-b.x||a.y-b.y||a.z-b.z||a.length-b.length||a.width-b.width||a.height-b.height))spaces=splitFreeSpaces(spaces,blocked,!useShapeSequence,previousFreeSpaces);
+    if(!error)for(const blocked of [...(container.unavailableSpaces??[])].sort((a,b)=>a.x-b.x||a.y-b.y||a.z-b.z||a.length-b.length||a.width-b.width||a.height-b.height))spaces=splitFreeSpaces(spaces,blocked,true,previousFreeSpaces);
     return [container.id,spaces] as const;
   }));
   const shapeSearchSpaces = useShapeSequence
@@ -415,7 +415,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     massByContainer.set(saved.containerId, (massByContainer.get(saved.containerId) ?? 0) + (item.upperMassGrams ?? 0));
     if (item.upperMassGrams === undefined) unweighedByContainer.set(saved.containerId, (unweighedByContainer.get(saved.containerId) ?? 0) + 1);
     placementByInstanceId.set(locked.instanceId,locked);
-    let spaces=freeSpaces.get(container.id)??[];for(const box of placementBoxes(saved,item))spaces=splitFreeSpaces(spaces,box,!useShapeSequence,previousFreeSpaces);freeSpaces.set(container.id,spaces);
+    let spaces=freeSpaces.get(container.id)??[];for(const box of placementBoxes(saved,item))spaces=splitFreeSpaces(spaces,box,true,previousFreeSpaces);freeSpaces.set(container.id,spaces);
   }
 
   const savedMassPositions = [...lockedById.values()].filter(isValidRejectedPlacement);
@@ -682,7 +682,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     massByContainer.set(best.container.id, (massByContainer.get(best.container.id) ?? best.container.tareGrams ?? 0) + (item.upperMassGrams ?? 0));
     if (item.upperMassGrams === undefined) unweighedByContainer.set(best.container.id, (unweighedByContainer.get(best.container.id) ?? 0) + 1);
     placedIds.add(item.instanceId);
-    let remaining=freeSpaces.get(best.container.id)??[];for(const box of placementBoxes(best.placement,item))remaining=splitFreeSpaces(remaining,box,!useShapeSequence,previousFreeSpaces);freeSpaces.set(best.container.id,remaining);
+    let remaining=freeSpaces.get(best.container.id)??[];for(const box of placementBoxes(best.placement,item))remaining=splitFreeSpaces(remaining,box,true,previousFreeSpaces);freeSpaces.set(best.container.id,remaining);
   }
 
   return { placements, excluded, massConflicts, score: solutionScore(placements, excluded, items, mode, containers) };
