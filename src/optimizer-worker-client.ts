@@ -44,6 +44,20 @@ export function plannerTripForWorker(trip: Trip): PlannerTrip {
   };
 }
 
+/** Exclude library records the planner cannot reach through this trip's entries. */
+export function plannerItemsForWorker(trip: Pick<Trip, 'entries'>, items: LibraryItem[]): LibraryItem[] {
+  const referencedIds = new Set(trip.entries.map(entry => entry.itemId));
+  const selected = items.filter(item => referencedIds.has(item.id));
+  return selected.length === items.length ? items : selected;
+}
+
+/** Exclude bags the planner cannot select through this trip's container IDs. */
+export function plannerContainersForWorker(trip: Pick<Trip, 'containerIds'>, containers: Container[]): Container[] {
+  const selectedIds = new Set(trip.containerIds);
+  const selected = containers.filter(container => selectedIds.has(container.id));
+  return selected.length === containers.length ? containers : selected;
+}
+
 export class PlannerWorkerClient {
   private worker?: Worker;
   private pending?: PendingRequest;

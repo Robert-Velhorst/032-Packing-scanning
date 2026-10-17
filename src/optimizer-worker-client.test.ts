@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PlannerWorkerClient, PLANNER_WORKER_MIN_ITEMS, plannerTripForWorker, shouldUsePlannerWorker, type PlannerWorkerRequest, type PlannerWorkerResponse } from './optimizer-worker-client';
+import { PlannerWorkerClient, PLANNER_WORKER_MIN_ITEMS, plannerContainersForWorker, plannerItemsForWorker, plannerTripForWorker, shouldUsePlannerWorker, type PlannerWorkerRequest, type PlannerWorkerResponse } from './optimizer-worker-client';
 import { buildPlan } from './optimizer';
 import { createInitialData } from './seed';
 import type { PackingPlan, Trip } from './types';
@@ -53,6 +53,31 @@ describe('PlannerWorkerClient', () => {
     expect(plannerTrip.containerIds).toBe(trip.containerIds);
     expect(JSON.stringify(plannerTrip).length).toBeLessThan(JSON.stringify(trip).length / 2);
     expect(buildPlan(plannerTrip, data.libraryItems, data.containers)).toEqual(buildPlan(trip, data.libraryItems, data.containers));
+  });
+
+  it('limits comparison worker inputs to the trip items and selected bags', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const data = createInitialData();
+    const trip = data.trips[0];
+    const extraItems = Array.from({ length: 100 }, (_, index) => ({ ...data.libraryItems[0], id: `unused-library-item-${index}` }));
+    const extraContainers = Array.from({ length: 20 }, (_, index) => ({ ...data.containers[0], id: `unused-container-${index}` }));
+
+    const allItems = [...data.libraryItems, ...extraItems];
+    const allContainers = [...data.containers, ...extraContainers];
+    const items = plannerItemsForWorker(trip, allItems);
+    const containers = plannerContainersForWorker(trip, allContainers);
+
+    expect(items.some(item => extraItems.includes(item))).toBe(false);
+    expect(items.every(item => trip.entries.some(entry => entry.itemId === item.id))).toBe(true);
+    expect(containers.some(container => extraContainers.includes(container))).toBe(false);
+    expect(containers.every(container => trip.containerIds.includes(container.id))).toBe(true);
+    expect(plannerItemsForWorker(trip, items)).toBe(items);
+    expect(plannerContainersForWorker(trip, containers)).toBe(containers);
+    expect(items).toEqual(data.libraryItems.filter(item => trip.entries.some(entry => entry.itemId === item.id)));
+    expect(containers).toEqual(data.containers.filter(container => trip.containerIds.includes(container.id)));
+    expect(JSON.stringify({ items, containers }).length).toBeLessThan(JSON.stringify({ items: allItems, containers: allContainers }).length / 2);
+    expect(buildPlan(trip, items, containers)).toEqual(buildPlan(trip, allItems, allContainers));
   });
 
   it('keeps small plans on the main thread and hands medium or complex plans to the worker', () => {
