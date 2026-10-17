@@ -73,8 +73,20 @@ export function geometryOrientations(item:{dimensions:DimensionsMm;keepUpright:b
   const upAxis=up?axes.indexOf(up.axis):2,upSign=up?.sign??1;
   const target=bag?.packingInterior?interiorTravelUp(bag.packingInterior):{axis:2,sign:1},spatial=!!item.packingShape||!!bag?.packingInterior;
   const allowed=spatial?rotations.filter(r=>!item.keepUpright||(r.axis[target.axis]===upAxis&&r.sign[target.axis]===upSign*target.sign)):legacy.filter(r=>!item.keepUpright||r.code===0||r.code===90);
-  const seen=new Set<string>();
-  return allowed.flatMap(r=>{const key=r.axis.map(a=>values[a]).join('|');if(!item.packingShape&&seen.has(key))return [];seen.add(key);return [{length:values[r.axis[0]],width:values[r.axis[1]],height:values[r.axis[2]],rotation:r.code}];});
+  const seenDimensions=new Set<string>();
+  return allowed.flatMap(r=>{const key=r.axis.map(a=>values[a]).join('|');if(!item.packingShape&&seenDimensions.has(key))return [];seenDimensions.add(key);return [{length:values[r.axis[0]],width:values[r.axis[1]],height:values[r.axis[2]],rotation:r.code}];});
+}
+/** Preserve all public rotations while avoiding duplicate occupied-geometry searches in the planner. */
+export function uniqueGeometryOrientations(item:{dimensions:DimensionsMm;keepUpright:boolean;packingShape?:PackingShape},bag?:Pick<Container,'packingInterior'>) {
+  const orientations=geometryOrientations(item,bag);
+  if(!item.packingShape)return orientations;
+  const compiled=compile(item.packingShape),seen=new Set<string>();
+  return orientations.filter(orientation=>{
+    const rotation=rotations.find(candidate=>candidate.code===orientation.rotation)!;
+    const key=orientationGeometryKey(orientedBoxes(compiled,rotation));
+    if(seen.has(key))return false;
+    seen.add(key);return true;
+  });
 }
 /** Older rectangular plans deduplicated equal side permutations differently. */
 export function orientationForRotation(item:{dimensions:DimensionsMm;keepUpright:boolean;packingShape?:PackingShape},code:number,bag?:Pick<Container,'packingInterior'>) {
@@ -89,11 +101,7 @@ export function orientationForRotation(item:{dimensions:DimensionsMm;keepUpright
 function localGeometry(shape:PackingShape,code:number) {
   const compiled=compile(shape),prior=compiled.oriented.get(code);if(prior)return prior;
   const rotation=rotations.find(r=>r.code===code);if(!rotation)throw Error('Unsupported shape rotation.');
-  const dimensions=axes.map(a=>compiled.bounds[a]);
-  const boxes=compiled.boxes.map(b=>{
-    const min=[b.x,b.y,b.z],size=[b.length,b.width,b.height],outMin=rotation.axis.map((a,i)=>rotation.sign[i]>0?min[a]:dimensions[a]-min[a]-size[a]),outSize=rotation.axis.map(a=>size[a]);
-    return {x:outMin[0],y:outMin[1],z:outMin[2],length:outSize[0],width:outSize[1],height:outSize[2]};
-  });
+  const boxes=orientedBoxes(compiled,rotation);
   const bottom=boxes.filter(b=>Math.abs(b.z)<EPS).map(b=>({x:b.x,y:b.y,z:b.z,length:b.length,width:b.width}));
   const top=boxes.flatMap(b=>{
     let faces:Face[]=[{x:b.x,y:b.y,z:b.z+b.height,length:b.length,width:b.width}];
@@ -102,6 +110,18 @@ function localGeometry(shape:PackingShape,code:number) {
   });
   const down=boxes.flatMap(b=>{let patches:Face[]=[{x:b.x,y:b.y,z:b.z,length:b.length,width:b.width}];for(const below of boxes)if(Math.abs(below.z+below.height-b.z)<=EPS)patches=patches.flatMap(f=>subtractFace(f,below));return patches;});
   const result={boxes,bottom,down,top,directional:new Map<string,ContactFaces>()};compiled.oriented.set(code,result);return result;
+}
+function orientedBoxes(compiled:Compiled,rotation:Rotation):GeometryBox[] {
+  const dimensions=axes.map(a=>compiled.bounds[a]);
+  return compiled.boxes.map(box=>{
+    const minimum=[box.x,box.y,box.z],size=[box.length,box.width,box.height];
+    const outMinimum=rotation.axis.map((axis,index)=>rotation.sign[index]>0?minimum[axis]:dimensions[axis]-minimum[axis]-size[axis]);
+    const outSize=rotation.axis.map(axis=>size[axis]);
+    return {x:outMinimum[0],y:outMinimum[1],z:outMinimum[2],length:outSize[0],width:outSize[1],height:outSize[2]};
+  });
+}
+function orientationGeometryKey(boxes:GeometryBox[]):string {
+  return boxes.map(box=>[box.x,box.y,box.z,box.length,box.width,box.height].map(value=>Object.is(value,-0)?0:value).join(',')).sort().join(';');
 }
 function subtractFace(face:Face,cut:GeometryBox):Face[] {
   const x=Math.max(face.x,cut.x),y=Math.max(face.y,cut.y),r=Math.min(face.x+face.length,cut.x+cut.length),b=Math.min(face.y+face.width,cut.y+cut.width);

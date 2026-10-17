@@ -13,7 +13,7 @@ import { packingItem, packingFormKey } from './packing-forms';
 import { isValidRejectedPlacement, samePlacementGeometry } from './packing-progress';
 import { containerBlockedBoxes, containerSpaceError, usableContainerHeight, usableContainerVolume } from './container-space';
 import { interiorKey, interiorSupportError, interiorTravelUp } from './packing-interior';
-import { contactPositions, fitsGeometrySpaceInValidatedContainer, geometryIntersects, geometryOrientations, hasGeometrySupport, hasPackingAndTravelSupport, hasVerticalEntry, insertObstaclePrefixMaxRight, obstaclePrefixMaxRight, orientationForRotation, packingShapeError, placementBoxes, RectangularSupportIndex, shapeDimensions, shapeKey, shapeVolume, type GeometryBox } from './packing-geometry';
+import { contactPositions, fitsGeometrySpaceInValidatedContainer, geometryIntersects, geometryOrientations, hasGeometrySupport, hasPackingAndTravelSupport, hasVerticalEntry, insertObstaclePrefixMaxRight, obstaclePrefixMaxRight, orientationForRotation, packingShapeError, placementBoxes, RectangularSupportIndex, shapeDimensions, shapeKey, shapeVolume, type GeometryBox, uniqueGeometryOrientations } from './packing-geometry';
 
 interface FreeSpace {
   compartmentId?: string;
@@ -34,6 +34,8 @@ const SUPPORT_INDEX_THRESHOLD=16;
 const SHAPED_SUPPORT_INDEX_THRESHOLD=8;
 // Bound the Cartesian product of shape-aware contact positions per orientation.
 const SHAPE_CONTACT_POSITION_LIMIT=100;
+// Deduplicating exact shape orientations pays off only when many shapes are searched.
+const SHAPE_ORIENTATION_DEDUP_THRESHOLD=512;
 const FREE_SPACE_HASH_THRESHOLD=64;
 
 export function buildPlan(trip: PlannerTrip, library: LibraryItem[], allContainers: Container[], mode: OptimizationMode = trip.mode): PackingPlan {
@@ -374,13 +376,14 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
   // weight-limited item, a candidate cannot create a stacking conflict.
   const stackSensitiveIds = new Set(items.filter(item => item.fragile || item.maxTopLoadGrams !== undefined).map(item => item.instanceId));
   const shapeItems = items.filter(item => item.packingShape);
+  const pruneEquivalentShapeOrientations=items.length*shapeItems.length>=SHAPE_ORIENTATION_DEDUP_THRESHOLD;
   const shapeOrientations = new Map<string, ReturnType<typeof geometryOrientations>>();
   const orientationsFor = (item: PlanItem, bag: Container) => {
     if (!item.packingShape) return geometryOrientations(item, bag);
     const key = `${bag.id}\u0000${item.instanceId}`;
     let orientations = shapeOrientations.get(key);
     if (!orientations) {
-      orientations = geometryOrientations(item, bag);
+      orientations = pruneEquivalentShapeOrientations?uniqueGeometryOrientations(item, bag):geometryOrientations(item, bag);
       shapeOrientations.set(key, orientations);
     }
     return orientations;
