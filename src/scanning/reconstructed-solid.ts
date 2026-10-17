@@ -61,7 +61,9 @@ export function voxelSurface(solid: Pick<ReconstructedSolid,'grid'|'resolutionMm
   }
   if(tail!==occupiedCells.length)return fail();
   const verticesMm:number[]=[],triangles:number[]=[],vertexIds=new Map<number,number>();
-  const edges=new Map<number,{count:number;orientation:number}>();
+  // Count and winding balance fit in one small integer, avoiding a heap object
+  // for every boundary edge on a dense scan.
+  const edges=new Map<number,number>();
   // A vertex link only connects its six axis-neighbor directions; byte masks
   // avoid per-face tuples plus a Map and Set for every surface vertex.
   const vertexCapacity=(grid.x+1)*(grid.y+1)*(grid.z+1),linkNeighbors=new Uint8Array(vertexCapacity*6),linkSeen=new Uint8Array(vertexCapacity),linkedVertices:number[]=[];
@@ -83,8 +85,8 @@ export function voxelSurface(solid: Pick<ReconstructedSolid,'grid'|'resolutionMm
       const vertex0=vertexIds.get(ids[0])!,vertex1=vertexIds.get(ids[1])!,vertex2=vertexIds.get(ids[2])!,vertex3=vertexIds.get(ids[3])!;
       triangles.push(vertex0,vertex1,vertex2,vertex0,vertex2,vertex3);
       for(let i=0;i<4;i++){
-        const a=ids[i],b=ids[(i+1)%4],key=Math.min(a,b)*262144+Math.max(a,b),edge=edges.get(key)??{count:0,orientation:0};
-        edge.count++;edge.orientation+=a<b?1:-1;edges.set(key,edge);
+        const a=ids[i],b=ids[(i+1)%4],key=Math.min(a,b)*262144+Math.max(a,b);
+        edges.set(key,(edges.get(key)??8)+16+(a<b?1:-1));
         const previousDirection=linkDirection(ids[(i+3)%4]-a),nextDirection=linkDirection(b-a),vertexIndex=i===0?vertex0:i===1?vertex1:i===2?vertex2:vertex3;
         if(previousDirection<0||nextDirection<0)return fail();
         if(!linkSeen[vertexIndex]){linkSeen[vertexIndex]=1;linkedVertices.push(vertexIndex);}
@@ -96,7 +98,7 @@ export function voxelSurface(solid: Pick<ReconstructedSolid,'grid'|'resolutionMm
       }
     }
   }
-  if([...edges.values()].some(e=>e.count!==2||e.orientation!==0))return fail();
+  for(const edge of edges.values())if(edge!==40)return fail();
   const linkQueue=new Uint8Array(6),linkVisited=new Uint8Array(6);
   for(const vertex of linkedVertices){
     const base=vertex*6;let start=-1,nodeCount=0;
