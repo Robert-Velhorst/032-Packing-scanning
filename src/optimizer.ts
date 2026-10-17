@@ -353,7 +353,8 @@ function baseArea(item: PlanItem) {
 function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<string, Placement>, mode: OptimizationMode, rejected: Placement[], rules: SeparationRule[], containerErrors: Map<string,string|undefined>, blockedSpaces: Map<string,ReturnType<typeof containerBlockedBoxes>>, lookaheadDepth = 1) {
   const containerError=(container:Container)=>containerErrors.get(container.id);
   const usableHeight=(container:Container)=>container.inside.height-(container.lidClearanceMm??0);
-  const useShapeSequence=items.some(item=>item.packingShape)||containers.some(bag=>bag.packingInterior||bag.compartments);
+  const hasPackingShapes=items.some(item=>item.packingShape);
+  const useShapeSequence=hasPackingShapes||containers.some(bag=>bag.packingInterior||bag.compartments);
   const placements: Placement[] = [];
   const previousFreeSpaces = new Set<FreeSpace>();
   // Large plans split free spaces repeatedly; reuse the containment summaries.
@@ -371,7 +372,10 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     if(!error)for(const blocked of [...(container.unavailableSpaces??[])].sort((a,b)=>a.x-b.x||a.y-b.y||a.z-b.z||a.length-b.length||a.width-b.width||a.height-b.height))spaces=splitFreeSpaces(spaces,blocked,true,previousFreeSpaces,containmentBlockScratch);
     return [container.id,spaces] as const;
   }));
-  const shapeSearchSpaces = useShapeSequence
+  // Rectangular free-space splits already cover compartment boundaries and
+  // unavailable rectangles. The broad contact grid is needed for shaped
+  // item geometry and adopted bag interiors, not plain compartment layouts.
+  const shapeSearchSpaces = hasPackingShapes||containers.some(bag=>bag.packingInterior)
     ? new Map(containers.map(container => {
       const spaces=containerError(container)||usableHeight(container)<=EPSILON?[]:packingRegions(container);
       return [container.id,spaces.map(region => ({ ...region, shapeSearch: true }))] as const;
