@@ -34,6 +34,7 @@ const spaceVolume = (box: FreeSpace) => box.length * box.width * box.height;
 const EPSILON = 0.01;
 const obstacleXOrder = (left: GeometryBox, right: GeometryBox) => left.x - right.x;
 const SUPPORT_INDEX_THRESHOLD=8;
+const SINGLE_CONTAINER_SUPPORT_INDEX_THRESHOLD=16;
 const SHAPED_SUPPORT_INDEX_THRESHOLD=8;
 // Bound the Cartesian product of shape-aware contact positions per orientation.
 const SHAPE_CONTACT_POSITION_LIMIT=100;
@@ -470,7 +471,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     freeSpaces.set(bagId, []);
   }
 
-  const supportIndexThreshold=shapeItems.length?SHAPED_SUPPORT_INDEX_THRESHOLD:SUPPORT_INDEX_THRESHOLD;
+  const supportIndexThreshold=shapeItems.length?SHAPED_SUPPORT_INDEX_THRESHOLD:containers.length===1?SINGLE_CONTAINER_SUPPORT_INDEX_THRESHOLD:SUPPORT_INDEX_THRESHOLD;
   const supportIndexes=items.length>=supportIndexThreshold?new Map<string,RectangularSupportIndex>():undefined;
   if(supportIndexes)for(const bag of containers){const current=placementsByContainer.get(bag.id)??[];if(current.length>=supportIndexThreshold)supportIndexes.set(bag.id,new RectangularSupportIndex(itemById,current));}
   const verticalEntryObstaclePrefixMaxRights=new Map<string,number[]>();
