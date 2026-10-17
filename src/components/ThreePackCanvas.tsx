@@ -222,12 +222,12 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
           && other.y + other.width >= placement.y + placement.width / 2) { covered = true; break; }
       }
       if (number && (isSelected || !covered)) {
-        const labelCanvas = document.createElement('canvas'); labelCanvas.width = labelCanvas.height = 128;
+        const labelCanvas = document.createElement('canvas'); labelCanvas.width = labelCanvas.height = 96;
         const drawing = labelCanvas.getContext('2d');
         if (drawing) {
-          drawing.fillStyle = '#fff'; drawing.strokeStyle = '#172a20'; drawing.lineWidth = isSelected ? 12 : 5;
-          drawing.beginPath(); drawing.arc(64, 64, 54, 0, Math.PI * 2); drawing.fill(); drawing.stroke();
-          drawing.fillStyle = '#172a20'; drawing.font = 'bold 64px sans-serif'; drawing.textAlign = 'center'; drawing.textBaseline = 'middle'; drawing.fillText(number, 64, 66, 96);
+          drawing.fillStyle = '#fff'; drawing.strokeStyle = '#172a20'; drawing.lineWidth = isSelected ? 9 : 3.75;
+          drawing.beginPath(); drawing.arc(48, 48, 40.5, 0, Math.PI * 2); drawing.fill(); drawing.stroke();
+          drawing.fillStyle = '#172a20'; drawing.font = 'bold 48px sans-serif'; drawing.textAlign = 'center'; drawing.textBaseline = 'middle'; drawing.fillText(number, 48, 49.5, 72);
           const marker = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(labelCanvas), depthTest: false }));
           const size = Math.min(length, width) * 0.15;
           marker.position.set((labelBox.x + labelBox.length / 2) * scale, (labelBox.z + labelBox.height) * scale + size / 2, (labelBox.y + labelBox.width / 2) * scale);
