@@ -35,9 +35,26 @@ try {
     length: 20, width: 20, height: 10, layer: 1, rotation: 0,
   }));
   const initial = threeViewData(container, { placements }, items);
-  const updatedContainer = { ...container, massLimitGrams: (container.massLimitGrams ?? 0) + 1 };
+  const updatedContainer = {
+    ...container,
+    massLimitGrams: (container.massLimitGrams ?? 0) + 1,
+    scan: {
+      id: 'three-view-bag-scan', target: 'container_interior', createdAt: '2026-01-01T00:00:00.000Z',
+      platform: 'android', method: 'arcore_depth', completedPasses: 4, modelStoredLocally: true,
+      geometry: { format: 'ply_point_cloud', units: 'metres', coordinateFrame: 'capture_local_right_handed', pointCount: 20000 },
+    },
+  };
   const updatedPlan = { placements: placements.map((placement) => ({ ...placement })) };
-  const updatedItems = items.map((item) => ({ ...item, photoId: 'updated-photo' }));
+  const updatedItems = items.map((item, index) => ({
+    ...item,
+    photoId: `updated-photo-${index}`,
+    massGrams: 250 + index,
+    scan: {
+      id: `three-view-item-scan-${index}`, target: 'item', createdAt: '2026-01-01T00:00:00.000Z',
+      platform: 'android', method: 'guided_object_capture', completedPasses: 4, modelStoredLocally: true,
+      geometry: { format: 'ply_point_cloud', units: 'metres', coordinateFrame: 'capture_local_right_handed', pointCount: 12000 },
+    },
+  }));
   const fingerprint = (view) => createHash('sha256').update(JSON.stringify({
     placements: view.plan.placements.map(({ instanceId, itemId, containerId, x, y, z, length, width, height, rotation, packingFormId, packingFormKey }) =>
       [instanceId, itemId, containerId, x, y, z, length, width, height, rotation, packingFormId, packingFormKey]),
@@ -45,6 +62,15 @@ try {
   })).digest('hex');
   const expectedFingerprint = fingerprint(initial);
   const projectUpdated = () => threeViewData(updatedContainer, updatedPlan, updatedItems);
+  const projectLegacyUpdated = () => {
+    const selectedPlacements = updatedPlan.placements.filter((placement) => placement.containerId === updatedContainer.id);
+    const itemIds = new Set(selectedPlacements.map((placement) => placement.itemId));
+    return {
+      container: updatedContainer,
+      plan: { placements: selectedPlacements },
+      items: updatedItems.filter((item) => itemIds.has(item.id)),
+    };
+  };
   const checkUpdated = () => {
     const next = projectUpdated();
     if (!sameThreeViewData(initial, next)) throw new Error('A metadata-only update changed the selected 3D render inputs.');
@@ -55,7 +81,7 @@ try {
 
   for (let warmup = 0; warmup < 3; warmup++) {
     for (let index = 0; index < 10; index++) checkUpdated();
-    for (let index = 0; index < 10; index++) structuredClone(projectUpdated());
+    for (let index = 0; index < 10; index++) structuredClone(projectLegacyUpdated());
   }
   const guardedSamplesMs = [], cloneSamplesMs = [];
   for (let run = 0; run < runs; run++) {
@@ -63,11 +89,12 @@ try {
     for (let index = 0; index < iterations; index++) checkUpdated();
     guardedSamplesMs.push((performance.now() - start) / iterations);
     start = performance.now();
-    for (let index = 0; index < iterations; index++) structuredClone(projectUpdated());
+    for (let index = 0; index < iterations; index++) structuredClone(projectLegacyUpdated());
     cloneSamplesMs.push((performance.now() - start) / iterations);
   }
   const median = (samples) => [...samples].sort((left, right) => left - right)[Math.floor(samples.length / 2)];
   const messageBytes = Buffer.byteLength(JSON.stringify(projectUpdated()));
+  const legacyMessageBytes = Buffer.byteLength(JSON.stringify(projectLegacyUpdated()));
   const guardedMedianMs = median(guardedSamplesMs), cloneMedianMs = median(cloneSamplesMs);
   console.log(JSON.stringify({
     operation: 'metadata-only 3D iframe update projection and clone avoidance',
@@ -75,11 +102,13 @@ try {
     itemCount,
     placementCount: initial.plan.placements.length,
     serializedMessageBytes: messageBytes,
+    legacySerializedMessageBytes: legacyMessageBytes,
+    estimatedPayloadReductionPercent: legacyMessageBytes > 0 ? (1 - messageBytes / legacyMessageBytes) * 100 : 0,
     runs,
     iterationsPerRun: iterations,
     guardedProjectionMedianMs: guardedMedianMs,
-    projectionAndStructuredCloneMedianMs: cloneMedianMs,
-    estimatedStructuredCloneTimeAvoidedPercent: cloneMedianMs > 0 ? (1 - guardedMedianMs / cloneMedianMs) * 100 : 0,
+    legacyProjectionAndStructuredCloneMedianMs: cloneMedianMs,
+    estimatedMetadataUpdateWorkReductionPercent: cloneMedianMs > 0 ? (1 - guardedMedianMs / cloneMedianMs) * 100 : 0,
     placementAndRenderFingerprint: expectedFingerprint,
     guardedSamplesMs,
     cloneSamplesMs,

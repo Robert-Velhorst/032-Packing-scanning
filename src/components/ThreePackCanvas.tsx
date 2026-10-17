@@ -2,15 +2,15 @@ import { packingItemForPlacement } from '../packing-forms';
 import { useEffect, useRef, useState } from 'react';
 import type * as ThreeApi from 'three';
 import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import type { Container, LibraryItem, PackingPlan, Placement } from '../types';
-import type { ThreeViewPlan } from '../three-view-data';
+import type { PackingPlan, Placement } from '../types';
+import type { ThreeViewContainer, ThreeViewItem, ThreeViewPlan } from '../three-view-data';
 import { containerBlockedBoxes, containerSpaceError } from '../container-space';
 import { placementBoxes,placementSurface } from '../packing-geometry';
 
 interface Props {
-  container?: Container;
+  container?: ThreeViewContainer;
   plan: ThreeViewPlan;
-  items: LibraryItem[];
+  items: ThreeViewItem[];
   selectedInstanceId?: string;
   view: 'top' | '3d' | 'layers';
   layer?: number;

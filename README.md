@@ -18,7 +18,7 @@ npm start
 
 Use `npm run benchmark:optimizer:shapes -- --runs=3` for a deterministic synthetic optimizer workload. Add `--optimizer-ref=<git-ref>` to load `src/optimizer.ts` from a local Git revision without changing the checked-out source. Reports include wall time and process CPU time; these synthetic placements do not establish physical packing acceptance.
 
-Use `npm run benchmark:three-view` to compare metadata-only 3D iframe update checks with a structured-clone baseline. It measures synthetic Node projection and cloning only; it does not measure browser messaging or WebGL rendering.
+Use `npm run benchmark:three-view` to compare the renderer-only 3D payload with the earlier full-record payload and measure metadata-only iframe update checks against a structured-clone baseline. It measures synthetic Node projection and cloning only; it does not measure browser messaging or WebGL rendering.
 
 Open http://127.0.0.1:3001/ for the built app and live carrier lookup. During development, run `npm run api` and `npm run dev` in separate terminals; Vite proxies the public endpoint to port 3001. A static-only host cannot perform carrier retrieval. See [carrier lookup operation and deployment](docs/CARRIER-LOOKUP.md) for the native HTTPS configuration, cache, supported allowances and failure behavior.
 

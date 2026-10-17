@@ -18,11 +18,17 @@ describe('3D view data projection', () => {
       placement('other-bag', unrelated.id, 'other-bag'),
     ] };
 
-    expect(threeViewData({ ...container, id: 'selected-bag' }, plan, items)).toEqual({
-      container: { ...container, id: 'selected-bag' },
-      plan: { placements: plan.placements.slice(0, 2) },
-      items: [used],
-    });
+    const result = threeViewData({ ...container, id: 'selected-bag' }, plan, items);
+    expect(result.container).toMatchObject({ id: 'selected-bag', name: container.name, inside: container.inside });
+    expect(Object.keys(result.container ?? {}).sort()).toEqual([
+      'compartments', 'id', 'inside', 'lidClearanceEvidence', 'lidClearanceMm', 'name', 'opening', 'openingEvidence', 'packingInterior', 'unavailableSpaces',
+    ]);
+    expect(result.plan).toEqual({ placements: plan.placements.slice(0, 2) });
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({ id: used.id, category: used.category, flexibility: used.flexibility, packingShape: used.packingShape });
+    expect(Object.keys(result.items[0]).sort()).toEqual([
+      'category', 'createdAt', 'dimensionEvidence', 'dimensions', 'flexibility', 'fragile', 'id', 'keepUpright', 'name', 'packingForms', 'packingShape', 'updatedAt',
+    ]);
   });
 
   it('does not include records when no bag is selected', () => {
