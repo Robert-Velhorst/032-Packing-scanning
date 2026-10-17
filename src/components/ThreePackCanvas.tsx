@@ -41,9 +41,9 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
     setStatus('loading');
     let active = true;
     let cleanup: (() => void) | undefined;
-    void Promise.all([import('three'), import('three/addons/controls/OrbitControls.js')]).then(([THREE, controlsModule]) => {
+    void import('../three-engine').then((THREE) => {
     if (!active) return;
-    const OrbitControls = controlsModule.OrbitControls;
+    const OrbitControls = THREE.OrbitControls;
     let renderer: ThreeApi.WebGLRenderer;
     try {
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
