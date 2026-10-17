@@ -32,6 +32,7 @@ import {MAX_BACKUP_BYTES} from './backup-limits';
 import { createEmptyData } from './empty-data';
 import { PlannerWorkerClient, plannerContainersForWorker, plannerItemsForWorker, plannerTripForWorker, shouldUsePlannerWorker } from './optimizer-worker-client';
 import { observeNearViewport } from './viewport-observer';
+import { filterLibraryItems } from './library-search';
 import type { AppData, CarrierRule, Container, Evidence, ItemPriority, LibraryItem, OptimizationMode, PackEntry, PackingPlan, Placement, Trip, TripActivity, UnitSystem } from './types';
 
 type Page = 'workspace' | 'items' | 'bags' | 'carrier-rules' | 'settings' | 'steps' | 'sequence';
@@ -132,12 +133,8 @@ export function PackingApp() {
   }, [data, savedData, saveAppData]);
 
   const activeTrip = data?.trips.find((trip) => trip.id === data.activeTripId) ?? data?.trips[0];
-  const libraryItems = useMemo(() => {
-    if (!data) return [];
-    if (!search) return data.libraryItems;
-    const normalizedSearch = search.toLowerCase();
-    return data.libraryItems.filter((item) => `${item.name} ${item.category}`.toLowerCase().includes(normalizedSearch));
-  }, [data?.libraryItems, search]);
+  const librarySearchCache = useMemo(() => new WeakMap<LibraryItem, string>(), [data?.libraryItems]);
+  const libraryItems = useMemo(() => data ? filterLibraryItems(data.libraryItems, search, librarySearchCache) : [], [data?.libraryItems, librarySearchCache, search]);
   const editingPhotoId = capture?.kind === 'item' ? capture.item?.photoId : undefined;
   useEffect(() => {
     let active = true;
