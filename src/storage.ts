@@ -105,12 +105,21 @@ export async function prunePhotos(olderThanDays: number): Promise<number> {
 
 export async function exportPhotos(): Promise<Array<{ id: string; dataUrl: string; createdAt: string }>> {
   const db = await database();
-  const records = await db.getAll('photos');
-  return Promise.all(records.map(async (record) => ({
-    id: record.id,
-    createdAt: record.createdAt,
-    dataUrl: await blobToDataUrl(record.blob),
-  })));
+  return exportPhotoRecords(await db.getAll('photos'));
+}
+
+async function exportPhotoRecords(records: Array<{ id: string; blob: Blob; createdAt: string }>) {
+  const photos: Array<{ id: string; dataUrl: string; createdAt: string }> = [];
+  // Bound temporary base64 buffers while keeping two photo reads in flight.
+  for (let index = 0; index < records.length; index += 2) {
+    const batch = records.slice(index, index + 2);
+    photos.push(...await Promise.all(batch.map(async (record) => ({
+      id: record.id,
+      createdAt: record.createdAt,
+      dataUrl: await blobToDataUrl(record.blob),
+    }))));
+  }
+  return photos;
 }
 
 export async function importPhoto(id: string, dataUrl: string, createdAt?: string): Promise<void> {
@@ -150,7 +159,7 @@ export function workspaceStorage(session?:ProtectedSession) {
     savePhoto:(id:string,blob:Blob)=>session.savePhoto(id,blob),getPhoto:(id:string)=>session.photo(id),deletePhoto:(id:string)=>session.deletePhoto(id),
     removeUnreferencedPhotos:(ids:Set<string>)=>session.removePhotos(photo=>ids.has(photo.id)),
     prunePhotos:(days:number)=>session.removePhotos(photo=>Date.parse(photo.createdAt)>=Date.now()-days*86400000),
-    exportPhotos:async()=>Promise.all((await session.photos()).map(async photo=>({id:photo.id,createdAt:photo.createdAt,dataUrl:await blobToDataUrl(photo.blob)}))),
+    exportPhotos:async()=>exportPhotoRecords(await session.photos()),
     importPhoto:async(id:string,dataUrl:string,createdAt?:string)=>{await session.savePhoto(id,photoDataUrlBlob(dataUrl),createdAt);},
     photoRecords:()=>session.photos(),
     clearLocalData:()=>session.clear(),
