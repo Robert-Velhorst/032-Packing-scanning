@@ -38,9 +38,10 @@ export function parseInteriorCavity(value:unknown,source:SavedGeometryPreview,re
     ||!Array.isArray(cavity.freeCells)||cavity.freeCells.length<8||cavity.freeCells.length>total-cavity.wallCellCount
     ||!Array.isArray(cavity.opening.cells)||cavity.opening.cells.length<4
     ||!Array.isArray(cavity.warnings)||cavity.warnings.length>8||!cavity.warnings.every(w=>typeof w==='string'&&w.length<=600))return fail();
-  const {x:nx,y:ny}=cavity.grid,opening:number[]=[],walls=new Set(cavity.observedCells);
+  const {x:nx,y:ny}=cavity.grid,opening:number[]=[],cellState=new Uint8Array(total);
+  for(const cell of cavity.observedCells)cellState[cell]=1;
   for(const [i,cell] of cavity.freeCells.entries()){
-    if(!Number.isInteger(cell)||cell<0||cell>=total||walls.has(cell)||(i>0&&cell<=cavity.freeCells[i-1]))return fail();
+    if(!Number.isInteger(cell)||cell<0||cell>=total||cellState[cell]!==0||(i>0&&cell<=cavity.freeCells[i-1]))return fail();
     const xyz=[cell%nx,Math.floor(cell/nx)%ny,Math.floor(cell/(nx*ny))];
     for(let axis=0;axis<3;axis++)for(const sign of [-1,1])if(xyz[axis]===(sign===1?dimensions[axis]-1:0)){
       if(axis!==review.openingAxis||sign!==review.openingSign)return fail();opening.push(cell);
@@ -51,13 +52,13 @@ export function parseInteriorCavity(value:unknown,source:SavedGeometryPreview,re
   if(!cavity.freeCells.includes(seed[0]+nx*(seed[1]+ny*seed[2])))return fail();
   for(let i=0;i<source.pointsMm.length;i+=4){
     const xyz=axes.map((axis,j)=>Math.min(dimensions[j]-1,Math.max(0,Math.floor(source.pointsMm[i+j]/bounds[axis]*dimensions[j]))));
-    if(!walls.has(xyz[0]+nx*(xyz[1]+ny*xyz[2])))return fail();
+    if(cellState[xyz[0]+nx*(xyz[1]+ny*xyz[2])]!==1)return fail();
   }
   // Independently traverse the empty complement of all observed cells. A subset
   // selected merely to look closed, or an unreviewed escape, cannot pass.
-  const plane=nx*ny,start=seed[0]+nx*(seed[1]+ny*seed[2]),visited=new Uint8Array(total),queue=new Int32Array(total);
-  let head=0,tail=1;queue[0]=start;visited[start]=1;
-  const enqueue=(index:number)=>{if(!walls.has(index)&&!visited[index]){visited[index]=1;queue[tail++]=index;}};
+  const plane=nx*ny,start=seed[0]+nx*(seed[1]+ny*seed[2]),queue=new Int32Array(total);
+  let head=0,tail=1;queue[0]=start;cellState[start]=2;
+  const enqueue=(index:number)=>{if(cellState[index]===0){cellState[index]=2;queue[tail++]=index;}};
   while(head<tail){
     const cell=queue[head++],x=cell%nx,y=Math.floor(cell/nx)%ny,z=Math.floor(cell/plane);
     if(x===0&&(review.openingAxis!==0||review.openingSign!==-1)||x===nx-1&&(review.openingAxis!==0||review.openingSign!==1)
@@ -67,7 +68,7 @@ export function parseInteriorCavity(value:unknown,source:SavedGeometryPreview,re
     if(y>0)enqueue(cell-nx);if(y+1<ny)enqueue(cell+nx);
     if(z>0)enqueue(cell-plane);if(z+1<dimensions[2])enqueue(cell+plane);
   }
-  if(tail!==cavity.freeCells.length||cavity.freeCells.some(cell=>!visited[cell]))return fail();
+  if(tail!==cavity.freeCells.length||cavity.freeCells.some(cell=>cellState[cell]!==2))return fail();
   // A 10 mm reference lattice validates topology/connectivity. Positive per-axis scaling
   // then fits its unchanged cells exactly inside the original source envelope.
   const reference=voxelSurface({grid:cavity.grid,resolutionMm:10,occupiedCells:cavity.freeCells});

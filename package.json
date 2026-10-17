@@ -16,6 +16,7 @@
     "benchmark:optimizer:shapes": "node scripts/optimizer-performance.mjs --counts=20 --shapes=4",
     "benchmark:sequence": "node scripts/packing-sequence-performance.mjs",
     "benchmark:reconstruction": "node --expose-gc scripts/reconstruction-performance.mjs",
+    "benchmark:interior": "node --expose-gc scripts/interior-cavity-performance.mjs",
     "check:benchmarks": "tsc -p tsconfig.tools.json",
     "preview": "vite preview --host 127.0.0.1",
     "start": "node server/index.ts",
