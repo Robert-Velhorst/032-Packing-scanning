@@ -104,6 +104,20 @@ describe('adopted occupied-cell planning',()=>{
   expect(upperIndex.candidates(shapedUpper)).toEqual([rectangularSupport]);
   expect(hasGeometrySupport(shapedUpper,upperPlacements,upperItems,.65,undefined,0,upperIndex)).toBe(hasGeometrySupport(shapedUpper,upperPlacements,upperItems,.65));
  });
+ it('indexes stepped shape supports by their actual top-surface planes',()=>{
+  const stepped=customShape({x:8,y:8,z:6},(x,_y,z)=>x>=4||z<3);
+  const lower=placement('stepped',{length:80,width:80,height:60}),remote=placement('remote',{z:100,length:120,width:100,height:60});
+  const lowUpper=placement('low-upper',{x:0,y:0,z:30,length:20,width:10,height:5}),highUpper=placement('high-upper',{x:40,y:0,z:60,length:20,width:10,height:5});
+  const items=new Map<string,LibraryItem>([
+   [lower.instanceId,item('stepped',stepped.fittedDimensionsMm,stepped)],
+   [remote.instanceId,item('remote',shape().fittedDimensionsMm,shape())],
+   [lowUpper.instanceId,item('low-upper',{length:20,width:10,height:5})],
+   [highUpper.instanceId,item('high-upper',{length:20,width:10,height:5})],
+  ]),index=new RectangularSupportIndex(items,[remote,lower]);
+  expect(index.candidates(lowUpper)).toEqual([lower]);expect(index.candidates(highUpper)).toEqual([lower]);
+  expect(hasGeometrySupport(lowUpper,[remote,lower],items,.65,undefined,0,index)).toBe(hasGeometrySupport(lowUpper,[remote,lower],items,.65));
+  expect(hasGeometrySupport(highUpper,[remote,lower],items,.65,undefined,0,index)).toBe(hasGeometrySupport(highUpper,[remote,lower],items,.65));
+ });
  it('computes shaped-on-rectangular support from the shaped bottom patches',()=>{
   const s=shape(),upper=placement('U',{z:20}),lower=placement('lower',{height:20}),shapedLower=placement('shaped-lower',{height:60}),items=new Map<string,LibraryItem>([[upper.instanceId,item('U',s.fittedDimensionsMm,s)],[lower.instanceId,item('lower',{length:120,width:100,height:20})],[shapedLower.instanceId,item('shaped-lower',s.fittedDimensionsMm,s)]]);
   expect(geometrySupportArea(upper,lower,items)).toBe(9200);

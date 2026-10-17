@@ -258,7 +258,7 @@ function rectangleFaceContact(upper:GeometryBox,lower:GeometryBox):number {
   const width=Math.min(upper.y+upper.width,lower.y+lower.width)-Math.max(upper.y,lower.y);
   return length>EPS&&width>EPS?length*width:0;
 }
-type SupportPlaneGroup={shapes:Placement[];rectangles:Map<number,Placement[]>};
+type SupportPlaneGroup={shapesByTopPlane:Map<number,Placement[]>;rectangles:Map<number,Placement[]>};
 /** Incremental candidate index for rectangular supports; shaped tops may be stepped. */
 export class RectangularSupportIndex {
   private readonly groups=new Map<string,Map<string|undefined,SupportPlaneGroup>>();
@@ -269,23 +269,31 @@ export class RectangularSupportIndex {
   constructor(items:Map<string,ShapeItem>,placements:Placement[]=[]){this.items=items;for(const placement of placements)this.add(placement);}
   add(placement:Placement){
     let compartments=this.groups.get(placement.containerId);if(!compartments){compartments=new Map();this.groups.set(placement.containerId,compartments);}
-    let group=compartments.get(placement.compartmentId);if(!group){group={shapes:[],rectangles:new Map()};compartments.set(placement.compartmentId,group);}
+    let group=compartments.get(placement.compartmentId);if(!group){group={shapesByTopPlane:new Map(),rectangles:new Map()};compartments.set(placement.compartmentId,group);}
     this.candidateCache.delete(group);
     this.order.set(placement.instanceId,this.nextOrder++);
-    if(this.items.get(placement.instanceId)?.packingShape){group.shapes.push(placement);return;}
+    const shape=this.items.get(placement.instanceId)?.packingShape;
+    if(shape){
+      const planes=new Set(localGeometry(shape,placement.rotation??0).top.map(face=>Math.floor((placement.z+face.z)/(2*EPS))));
+      for(const plane of planes){const bucket=group.shapesByTopPlane.get(plane)??[];bucket.push(placement);group.shapesByTopPlane.set(plane,bucket);}
+      return;
+    }
     const plane=Math.floor((placement.z+placement.height)/(2*EPS)),bucket=group.rectangles.get(plane)??[];
     bucket.push(placement);group.rectangles.set(plane,bucket);
   }
   candidates(placement:Placement){
     const group=this.groups.get(placement.containerId)?.get(placement.compartmentId);if(!group)return [];
-    const plane=Math.floor(placement.z/(2*EPS)),lower=group.rectangles.get(plane-1),center=group.rectangles.get(plane),upper=group.rectangles.get(plane+1);
-    const rectanglePlanes=Number(!!lower)+Number(!!center)+Number(!!upper);
-    if(!group.shapes.length&&rectanglePlanes===1)return lower??center??upper!;
-    if(!group.shapes.length&&rectanglePlanes===0)return [];
+    const plane=Math.floor(placement.z/(2*EPS)),shapeLower=group.shapesByTopPlane.get(plane-1),shapeCenter=group.shapesByTopPlane.get(plane),shapeUpper=group.shapesByTopPlane.get(plane+1);
+    const rectangleLower=group.rectangles.get(plane-1),rectangleCenter=group.rectangles.get(plane),rectangleUpper=group.rectangles.get(plane+1);
+    const sourceCount=Number(!!shapeLower)+Number(!!shapeCenter)+Number(!!shapeUpper)
+      +Number(!!rectangleLower)+Number(!!rectangleCenter)+Number(!!rectangleUpper);
+    if(sourceCount===0)return [];
+    if(sourceCount===1)return shapeLower??shapeCenter??shapeUpper??rectangleLower??rectangleCenter??rectangleUpper!;
     const cached=this.candidateCache.get(group)?.get(plane);if(cached)return cached;
-    const candidates=group.shapes.length?[...group.shapes]:[];
-    if(lower)candidates.push(...lower);if(center)candidates.push(...center);if(upper)candidates.push(...upper);
-    if(rectanglePlanes>1||(group.shapes.length>0&&rectanglePlanes>0))candidates.sort((left,right)=>(this.order.get(left.instanceId)??0)-(this.order.get(right.instanceId)??0));
+    const sources=[shapeLower,shapeCenter,shapeUpper,rectangleLower,rectangleCenter,rectangleUpper];
+    const candidates:Placement[]=[],seen=new Set<Placement>();
+    for(const source of sources)for(const candidate of source??[])if(!seen.has(candidate)){seen.add(candidate);candidates.push(candidate);}
+    candidates.sort((left,right)=>(this.order.get(left.instanceId)??0)-(this.order.get(right.instanceId)??0));
     let byPlane=this.candidateCache.get(group);if(!byPlane){byPlane=new Map();this.candidateCache.set(group,byPlane);}if(byPlane.size>=64)byPlane.clear();byPlane.set(plane,candidates);
     return candidates;
   }
