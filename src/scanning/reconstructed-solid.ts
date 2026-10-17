@@ -45,12 +45,15 @@ export function voxelSurface(solid: Pick<ReconstructedSolid,'grid'|'resolutionMm
   const {grid,resolutionMm,occupiedCells}=solid;
   if (!grid || ![grid.x,grid.y,grid.z].every(n => Number.isInteger(n) && n>=1 && n<=46)
     || !Number.isFinite(resolutionMm) || resolutionMm<10 || resolutionMm>218 || !Array.isArray(occupiedCells)
-    || occupiedCells.length<1 || occupiedCells.length>grid.x*grid.y*grid.z
-    || occupiedCells.some((n,i) => !Number.isInteger(n) || n<0 || n>=grid.x*grid.y*grid.z || (i>0 && n<=occupiedCells[i-1]))) return fail();
+    || occupiedCells.length<1 || occupiedCells.length>grid.x*grid.y*grid.z) return fail();
   // 0 is empty, 1 is occupied and unvisited, and 2 is occupied and reached.
   // Reusing this byte map avoids both the occupied-cell Set and a second bitmap.
   const total=grid.x*grid.y*grid.z,plane=grid.x*grid.y,cellState=new Uint8Array(total);
-  for(const cell of occupiedCells)cellState[cell]=1;
+  let previousCell=-1;
+  for(const cell of occupiedCells){
+    if(!Number.isInteger(cell)||cell<0||cell>=total||cell<=previousCell)return fail();
+    cellState[cell]=1;previousCell=cell;
+  }
   const pending=new Int32Array(occupiedCells.length);
   let head=0,tail=1;pending[0]=occupiedCells[0];cellState[pending[0]]=2;
   const enqueue=(cell:number)=>{if(cellState[cell]===1){cellState[cell]=2;pending[tail++]=cell;}};
