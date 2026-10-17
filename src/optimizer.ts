@@ -34,6 +34,7 @@ const SUPPORT_INDEX_THRESHOLD=16;
 const SHAPED_SUPPORT_INDEX_THRESHOLD=8;
 // Bound the Cartesian product of shape-aware contact positions per orientation.
 const SHAPE_CONTACT_POSITION_LIMIT=100;
+const FREE_SPACE_HASH_THRESHOLD=64;
 
 export function buildPlan(trip: Trip, library: LibraryItem[], allContainers: Container[], mode: OptimizationMode = trip.mode): PackingPlan {
   const referencedItemIds = new Set(trip.entries.map(entry => entry.itemId));
@@ -773,6 +774,31 @@ function massInContainer(containerId: string, placements: Placement[], items: Ma
     .reduce((sum, placement) => sum + (items.get(placement.instanceId)?.upperMassGrams ?? 0), tareGrams);
 }
 
+function rememberFreeSpace(seen: Map<number, FreeSpace | FreeSpace[]>, space: FreeSpace): boolean {
+  let hash = 2166136261;
+  hash = Math.imul(hash ^ Math.round(space.x * 100), 16777619);
+  hash = Math.imul(hash ^ Math.round(space.y * 100), 16777619);
+  hash = Math.imul(hash ^ Math.round(space.z * 100), 16777619);
+  hash = Math.imul(hash ^ Math.round(space.length * 100), 16777619);
+  hash = Math.imul(hash ^ Math.round(space.width * 100), 16777619);
+  hash = Math.imul(hash ^ Math.round(space.height * 100), 16777619);
+  const existing = seen.get(hash);
+  if (!existing) {
+    seen.set(hash, space);
+    return false;
+  }
+  const matches = (candidate: FreeSpace) => candidate.x === space.x && candidate.y === space.y && candidate.z === space.z
+    && candidate.length === space.length && candidate.width === space.width && candidate.height === space.height;
+  if (Array.isArray(existing)) {
+    if (existing.some(matches)) return true;
+    existing.push(space);
+    return false;
+  }
+  if (matches(existing)) return true;
+  seen.set(hash, [existing, space]);
+  return false;
+}
+
 function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVolumes = false): FreeSpace[] {
   const next: FreeSpace[] = [];
   const usedRight=used.x+used.length,usedBack=used.y+used.width,usedTop=used.z+used.height;
@@ -803,25 +829,45 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
   let unique:FreeSpace[];
   if(cacheCandidateVolumes){
     let uniqueCount=0;
-    let seen:Set<string>|undefined;
-    for(const space of next){
-      if(space.length<=EPSILON||space.width<=EPSILON||space.height<=EPSILON)continue;
-      if(uniqueCount===0){next[uniqueCount++]=space;continue;}
-      if(!seen){const first=next[0];seen=new Set([`${first.x},${first.y},${first.z},${first.length},${first.width},${first.height}`]);}
-      const key=`${space.x},${space.y},${space.z},${space.length},${space.width},${space.height}`;
-      if(seen.has(key))continue;seen.add(key);next[uniqueCount++]=space;
+    if(next.length<FREE_SPACE_HASH_THRESHOLD){
+      let seen:Set<string>|undefined;
+      for(const space of next){
+        if(space.length<=EPSILON||space.width<=EPSILON||space.height<=EPSILON)continue;
+        if(uniqueCount===0){next[uniqueCount++]=space;continue;}
+        if(!seen){const first=next[0];seen=new Set([`${first.x},${first.y},${first.z},${first.length},${first.width},${first.height}`]);}
+        const key=`${space.x},${space.y},${space.z},${space.length},${space.width},${space.height}`;
+        if(seen.has(key))continue;seen.add(key);next[uniqueCount++]=space;
+      }
+    }else{
+      let seen:Map<number,FreeSpace|FreeSpace[]>|undefined;
+      for(const space of next){
+        if(space.length<=EPSILON||space.width<=EPSILON||space.height<=EPSILON)continue;
+        if(uniqueCount===0){next[uniqueCount++]=space;continue;}
+        if(!seen){seen=new Map();rememberFreeSpace(seen,next[0]);}
+        if(rememberFreeSpace(seen,space))continue;next[uniqueCount++]=space;
+      }
     }
     next.length=uniqueCount;
     unique=next;
   }else{
     unique=[];
-    let seen:Set<string>|undefined;
-    for(const space of next){
-      if(space.length<=EPSILON||space.width<=EPSILON||space.height<=EPSILON)continue;
-      if(unique.length===0){unique.push(space);continue;}
-      if(!seen){const first=unique[0];seen=new Set([`${first.x},${first.y},${first.z},${first.length},${first.width},${first.height}`]);}
-      const key=`${space.x},${space.y},${space.z},${space.length},${space.width},${space.height}`;
-      if(seen.has(key))continue;seen.add(key);unique.push(space);
+    if(next.length<FREE_SPACE_HASH_THRESHOLD){
+      let seen:Set<string>|undefined;
+      for(const space of next){
+        if(space.length<=EPSILON||space.width<=EPSILON||space.height<=EPSILON)continue;
+        if(unique.length===0){unique.push(space);continue;}
+        if(!seen){const first=unique[0];seen=new Set([`${first.x},${first.y},${first.z},${first.length},${first.width},${first.height}`]);}
+        const key=`${space.x},${space.y},${space.z},${space.length},${space.width},${space.height}`;
+        if(seen.has(key))continue;seen.add(key);unique.push(space);
+      }
+    }else{
+      let seen:Map<number,FreeSpace|FreeSpace[]>|undefined;
+      for(const space of next){
+        if(space.length<=EPSILON||space.width<=EPSILON||space.height<=EPSILON)continue;
+        if(unique.length===0){unique.push(space);continue;}
+        if(!seen){seen=new Map();rememberFreeSpace(seen,unique[0]);}
+        if(rememberFreeSpace(seen,space))continue;unique.push(space);
+      }
     }
   }
   if(unique.length<2)return unique;
