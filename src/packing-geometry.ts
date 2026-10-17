@@ -448,23 +448,23 @@ export function contactPositions(bag:Container,orientation:DimensionsMm&{rotatio
   const local=item.packingShape?localGeometry(item.packingShape,orientation.rotation).boxes:[{x:0,y:0,z:0,length:orientation.length,width:orientation.width,height:orientation.height}],obstacles=cachedObstacles??[...placed.flatMap(p=>placementBoxes(p,items.get(p.instanceId))),...blockedSpaces];
   let indexedCollisionObstacles=collisionObstacles,indexedCollisionPrefix=collisionObstaclePrefixMaxRight;
   if(collisionObstacles&&!indexedCollisionPrefix){indexedCollisionObstacles=[...collisionObstacles].sort((a,b)=>a.x-b.x);indexedCollisionPrefix=obstaclePrefixMaxRight(indexedCollisionObstacles);}
-  const minimum=[region.x,region.y,region.z],maximum=[region.x+region.length-orientation.length,region.y+region.width-orientation.width,region.z+region.height-orientation.height];
-  const values=scratch?.values??[new Set([minimum[0],maximum[0]]),new Set([minimum[1],maximum[1]]),new Set([minimum[2]])];
+  const minimumX=region.x,minimumY=region.y,minimumZ=region.z;
+  const maximumX=region.x+region.length-orientation.length,maximumY=region.y+region.width-orientation.width,maximumZ=region.z+region.height-orientation.height;
+  const values=scratch?.values??[new Set([minimumX,maximumX]),new Set([minimumY,maximumY]),new Set([minimumZ])];
   if(scratch){
-    for(let axis=0;axis<3;axis++){
-      values[axis].clear();values[axis].add(minimum[axis]);
-      if(axis<2)values[axis].add(maximum[axis]);
-    }
+    values[0].clear();values[0].add(minimumX);values[0].add(maximumX);
+    values[1].clear();values[1].add(minimumY);values[1].add(maximumY);
+    values[2].clear();values[2].add(minimumZ);
   }
   for(const b of obstacles)for(const c of local){
     const right=b.x+b.length-c.x,left=b.x-c.x-c.length;
-    if(right>=minimum[0]-EPS&&right<=maximum[0]+EPS)values[0].add(Math.max(minimum[0],right));
-    if(left>=minimum[0]-EPS&&left<=maximum[0]+EPS)values[0].add(Math.max(minimum[0],left));
+    if(right>=minimumX-EPS&&right<=maximumX+EPS)values[0].add(Math.max(minimumX,right));
+    if(left>=minimumX-EPS&&left<=maximumX+EPS)values[0].add(Math.max(minimumX,left));
     const back=b.y+b.width-c.y,front=b.y-c.y-c.width;
-    if(back>=minimum[1]-EPS&&back<=maximum[1]+EPS)values[1].add(Math.max(minimum[1],back));
-    if(front>=minimum[1]-EPS&&front<=maximum[1]+EPS)values[1].add(Math.max(minimum[1],front));
+    if(back>=minimumY-EPS&&back<=maximumY+EPS)values[1].add(Math.max(minimumY,back));
+    if(front>=minimumY-EPS&&front<=maximumY+EPS)values[1].add(Math.max(minimumY,front));
     const top=b.z+b.height-c.z;
-    if(top>=minimum[2]-EPS&&top<=maximum[2]+EPS)values[2].add(Math.max(minimum[2],top));
+    if(top>=minimumZ-EPS&&top<=maximumZ+EPS)values[2].add(Math.max(minimumZ,top));
   }
   let coords:[number[],number[],number[]];
   if(scratch){
