@@ -96,13 +96,16 @@ export class StackLoadContactCache {
       for(let index=0;index<pending.length;index++){const current=pending[index];if(seen.has(current))continue;seen.add(current);pending.push(...(edges.get(current)??[]));}
       return seen;
     };
-    const lowerSet=new Set(belowNeighbors);
-    for(const upper of aboveNeighbors)for(const node of reachable([upper],graph.above))if(lowerSet.has(node))return true;
-    const aboveCandidate=reachable(aboveNeighbors,graph.above),affectedBelow=reachable(belowNeighbors,graph.below);
-    const loadConflict=(placement:Placement,additional:Placement[]=[]):boolean=>{
+    const lowerSet=new Set(belowNeighbors),aboveCandidate=new Set<Placement>();
+    for(const upper of aboveNeighbors)for(const node of reachable([upper],graph.above)){
+      if(lowerSet.has(node))return true;
+      aboveCandidate.add(node);
+    }
+    const affectedBelow=reachable(belowNeighbors,graph.below);
+    const loadConflict=(placement:Placement,additional:Placement[]=[],existingAbove=reachable([placement],graph.above)):boolean=>{
       const item=this.items.get(placement.instanceId);
       if(!item)return true;
-      const ids=new Set([...reachable([placement],graph.above),...additional].filter(entry=>entry!==placement).map(entry=>entry.instanceId));
+      const ids=new Set([...existingAbove,...additional].filter(entry=>entry!==placement).map(entry=>entry.instanceId));
       if(!ids.size)return false;
       if(item.fragile)return true;
       const limit=item.maxTopLoadGrams;
@@ -116,7 +119,7 @@ export class StackLoadContactCache {
     for(const lower of affectedBelow){
       const existingAbove=reachable([lower],graph.above);
       const additions=propagated.filter(entry=>!existingAbove.has(entry));
-      if(loadConflict(lower,additions))return true;
+      if(loadConflict(lower,additions,existingAbove))return true;
     }
     return false;
   }
