@@ -13,6 +13,7 @@ const runs = Number(value('runs', '3'));
 const warmupRunsPerSize = 3;
 const shapeCount = Number(value('shapes', '0'));
 const bagCount = Number(value('bags', '1'));
+const compartmentCount = Number(value('compartments', '0'));
 const optimizerRef = value('optimizer-ref', '');
 const compareOptimizerRef = value('compare-optimizer-ref', '');
 const stackLoadRef = value('stack-load-ref', '');
@@ -57,6 +58,7 @@ if (!counts.length || counts.some((count) => !Number.isInteger(count) || count <
 if (!Number.isInteger(runs) || runs < 1 || runs > 10) throw new Error('Use --runs= with a count from 1 to 10.');
 if (!Number.isInteger(shapeCount) || shapeCount < 0 || shapeCount > 500) throw new Error('Use --shapes= with a count from 0 to 500.');
 if (!Number.isInteger(bagCount) || bagCount < 1 || bagCount > 10) throw new Error('Use --bags= with a count from 1 to 10.');
+if (!Number.isInteger(compartmentCount) || compartmentCount < 0 || compartmentCount > 10) throw new Error('Use --compartments= with a count from 0 to 10.');
 
 function benchmarkShape() {
   const grid = { x: 12, y: 10, z: 6 };
@@ -202,14 +204,29 @@ try {
       unavailableInstanceIds: [],
       lockedPlacements: [],
     };
-    const bags = containerIds.map(id => ({
-      ...structuredClone(seed.containers[0]),
-      id,
-      inside: { length: 1000, width: 800, height: 500 },
-      opening: { length: 1000, width: 800 },
-      massLimitGrams: 100000,
-      travellerIds: ['traveller-you'],
-    }));
+    const bags = containerIds.map(id => {
+      const bag = {
+        ...structuredClone(seed.containers[0]),
+        id,
+        inside: { length: 1000, width: 800, height: 500 },
+        opening: { length: 1000, width: 800 },
+        massLimitGrams: 100000,
+        travellerIds: ['traveller-you'],
+      };
+      if (compartmentCount > 0) {
+        const evidence = { source: 'user_confirmed', confidence: 1, collectedAt: '2026-10-01T00:00:00Z' };
+        bag.compartments = Array.from({ length: compartmentCount }, (_, index) => {
+          const length = 1000 / compartmentCount;
+          return {
+            id: `benchmark-compartment-${index + 1}`,
+            name: `Benchmark compartment ${index + 1}`,
+            x: index * length, y: 0, z: 0, length, width: 800, height: 500,
+            opening: { length, width: 800 }, evidence, supportEvidence: evidence,
+          };
+        });
+      }
+      return bag;
+    });
     return { trip, items, bags };
   };
 
@@ -327,8 +344,7 @@ try {
     if (profileFunctions) results.at(-1).profileFunctions = profileFunctions;
   }
   console.log(JSON.stringify({
-    fixture: shapeCount ? `varied rectangles with ${shapeCount} synthetic voxel U-shapes in ${bagCount} 1000x800x500 mm bags`
-      : `varied rectangular items in ${bagCount} 1000x800x500 mm bags`,
+    fixture: `${shapeCount ? `varied rectangles with ${shapeCount} synthetic voxel U-shapes` : 'varied rectangular items'} in ${bagCount} 1000x800x500 mm bags${compartmentCount ? ` with ${compartmentCount} synthetic compartments per bag` : ''}`,
     dimensions: shapeCount ? '120x100x60 mm voxel U-shapes mixed with 48-200 x 36-162 x 18-120 mm rectangles'
       : '48-200 x 36-162 x 18-120 mm, deterministic per item index',
     mode: mode || seed.trips[0].mode,
