@@ -808,6 +808,7 @@ function rememberFreeSpace(seen: Map<number, FreeSpace | FreeSpace[]>, space: Fr
 }
 
 function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVolumes = false, previousSpacesScratch?: Set<FreeSpace>): FreeSpace[] {
+  const containmentBlockSize=16;
   let next: FreeSpace[] | undefined;
   const usedRight=used.x+used.length,usedBack=used.y+used.width,usedTop=used.z+used.height;
   for (let index=0;index<spaces.length;index++) {
@@ -892,6 +893,16 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
   const ordered=unique.map((space,index)=>({space,index,right:space.x+space.length,back:space.y+space.width,top:space.z+space.height,volume:cacheCandidateVolumes?spaceVolume(space):undefined}))
     .sort((left,right)=>left.space.x-right.space.x||left.index-right.index);
   const candidatesByVolume=ordered;
+  let blockMaximumVolumes:number[]|undefined;
+  // Skip x-ordered candidate blocks that cannot contain a large new region.
+  if(cacheCandidateVolumes&&ordered.length>=128){
+    blockMaximumVolumes=[];
+    for(let start=0;start<ordered.length;start+=containmentBlockSize){
+      let maximum=0;
+      for(let index=start;index<Math.min(start+containmentBlockSize,ordered.length);index++)maximum=Math.max(maximum,ordered[index].volume!);
+      blockMaximumVolumes.push(maximum);
+    }
+  }
   const keep=new Array<boolean>(unique.length).fill(true);
   for(const inner of ordered){
     // The input list is already maximal: packingRegions produces disjoint
@@ -911,6 +922,7 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
       scan=ordered;scanCount=low;scanByX=true;
     }
     for(let candidateIndex=0;candidateIndex<scanCount;candidateIndex++){
+      if(blockMaximumVolumes&&candidateIndex%containmentBlockSize===0&&blockMaximumVolumes[candidateIndex/containmentBlockSize]<volumeThreshold){candidateIndex+=containmentBlockSize-1;continue;}
       const candidate=scan[candidateIndex];
       const outer=candidate.space;
       if(cacheCandidateVolumes&&scanByX&&candidate.volume!<volumeThreshold)continue;
