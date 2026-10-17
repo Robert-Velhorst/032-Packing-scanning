@@ -42,8 +42,8 @@ export function parseInteriorCavity(value:unknown,source:SavedGeometryPreview,re
   for(const cell of cavity.observedCells)cellState[cell]=1;
   for(const [i,cell] of cavity.freeCells.entries()){
     if(!Number.isInteger(cell)||cell<0||cell>=total||cellState[cell]!==0||(i>0&&cell<=cavity.freeCells[i-1]))return fail();
-    const xyz=[cell%nx,Math.floor(cell/nx)%ny,Math.floor(cell/(nx*ny))];
-    for(let axis=0;axis<3;axis++)for(const sign of [-1,1])if(xyz[axis]===(sign===1?dimensions[axis]-1:0)){
+    const x=cell%nx,y=Math.floor(cell/nx)%ny,z=Math.floor(cell/(nx*ny));
+    for(let axis=0;axis<3;axis++)for(const sign of [-1,1])if((axis===0?x:axis===1?y:z)===(sign===1?dimensions[axis]-1:0)){
       if(axis!==review.openingAxis||sign!==review.openingSign)return fail();opening.push(cell);
     }
   }
@@ -51,8 +51,10 @@ export function parseInteriorCavity(value:unknown,source:SavedGeometryPreview,re
   const seed=coordinates.map((coordinate,i)=>Math.min(dimensions[i]-1,Math.floor(review.seedMm[coordinate]/bounds[axes[i]]*dimensions[i])));
   if(!cavity.freeCells.includes(seed[0]+nx*(seed[1]+ny*seed[2])))return fail();
   for(let i=0;i<source.pointsMm.length;i+=4){
-    const xyz=axes.map((axis,j)=>Math.min(dimensions[j]-1,Math.max(0,Math.floor(source.pointsMm[i+j]/bounds[axis]*dimensions[j]))));
-    if(cellState[xyz[0]+nx*(xyz[1]+ny*xyz[2])]!==1)return fail();
+    const x=Math.min(dimensions[0]-1,Math.max(0,Math.floor(source.pointsMm[i]/bounds.length*dimensions[0])));
+    const y=Math.min(dimensions[1]-1,Math.max(0,Math.floor(source.pointsMm[i+1]/bounds.width*dimensions[1])));
+    const z=Math.min(dimensions[2]-1,Math.max(0,Math.floor(source.pointsMm[i+2]/bounds.height*dimensions[2])));
+    if(cellState[x+nx*(y+ny*z)]!==1)return fail();
   }
   // Independently traverse the empty complement of all observed cells. A subset
   // selected merely to look closed, or an unreviewed escape, cannot pass.
