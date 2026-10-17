@@ -1,5 +1,6 @@
 import { buildPlan } from './optimizer';
-import type { Container, LibraryItem, OptimizationMode, PackingPlan, Trip } from './types';
+import { reconcilePackingShapes } from './planner-shape-cache';
+import type { Container, LibraryItem, OptimizationMode, PackingPlan, PackingShape, Trip } from './types';
 
 interface PlanRequest {
   requestId: number;
@@ -9,9 +10,11 @@ interface PlanRequest {
   modes?: OptimizationMode[];
 }
 
+let reusableShapes = new Map<string, PackingShape>();
 self.addEventListener('message', (event: MessageEvent<PlanRequest>) => {
   const { requestId, trip, items, containers, modes } = event.data;
   try {
+    reusableShapes=reconcilePackingShapes(items,reusableShapes);
     if (modes) {
       const plans: PackingPlan[] = modes.map(mode => buildPlan({ ...trip, mode }, items, containers, mode));
       self.postMessage({ requestId, plans });

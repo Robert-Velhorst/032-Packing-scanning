@@ -120,6 +120,14 @@ describe('adopted occupied-cell planning',()=>{
   expect(geometrySupportArea(upper,lower,records)).toBe(0);expect(assessStackLoads([lower,upper],records)[0].aboveInstanceIds).toEqual([]);
   const plan=buildPlan(trip([u,item('small')]),[u,item('small')],[bag]);expect(plan.placements).toHaveLength(2);expect(plan.stackLoads!.every(l=>l.status==='clear')).toBe(true);
  });
+ it('keeps straight-entry failures from being replaced by later separation diagnostics',()=>{
+  const s=shape(true),arch=item('U',s.fittedDimensionsMm,s),small=item('small',{length:40,width:100,height:30}),t=trip([arch,small]);
+  const smallEntry=t.entries.find(entry=>entry.itemId==='small')!;smallEntry.required=false;smallEntry.priority='optional';
+  t.separationRules=[{id:'rule',firstEntryId:'U',secondEntryId:'small',kind:'clearance',clearanceMm:1000}];
+  const plan=buildPlan(t,[arch,small],[bag]);
+  expect(plan.placements.map(placement=>placement.itemId)).toContain('U');
+  expect(plan.excluded.find(excluded=>excluded.itemId==='small')?.reason).toContain('straight downward access');
+ });
  it.each(['balanced','maximum_capacity','easy_access','fragile_protection'] as const)('rejects inaccessible entry and finds the feasible reverse insertion order in %s',mode=>{
   const s=shape(true),arch=item('U',s.fittedDimensionsMm,s),small=item('small',{length:40,width:100,height:30}),a=placement('U'),b=placement('small',{x:40,length:40,width:100,height:30}),records=new Map([['U#1',arch],['small#1',small]]);
    expect(geometryIntersects(a,b,records)).toBe(false);expect(hasVerticalEntry(b,[a],records,bag)).toBe(false);expect(hasVerticalEntry(b,[a],records,bag,[],placementBoxes(a,arch))).toBe(false);expect(hasVerticalEntry(a,[b],records,bag)).toBe(true);expect(hasVerticalEntry(a,[b],records,bag,[],placementBoxes(b,small))).toBe(true);

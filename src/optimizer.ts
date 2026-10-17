@@ -463,6 +463,8 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     verticalEntryObstaclePrefixMaxRights.set(bag.id,obstaclePrefixMaxRight(obstacles));
     return [bag.id,obstacles] as const;
   })):undefined;
+  const hasCandidateVerticalEntry=(placement:Placement,placed:Placement[],container:Container)=>!useShapeSequence
+    ||hasVerticalEntry(placement,placed,itemById,container,blockedSpaces.get(container.id),verticalEntryObstacles?.get(container.id),true,undefined,verticalEntryObstaclePrefixMaxRights.get(container.id));
 
   for (const item of items) {
     if (placedIds.has(item.instanceId)) continue;
@@ -574,17 +576,18 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             // bypass those checks and still need the exact geometry gate here.
             if(rules.length>0&&!contactCollisionObstacles&&bagPlacements.some(p=>geometryIntersects(placement,p,itemById)))continue;
             if(!(supportIndex?hasPackingAndTravelSupport(placement,bagPlacements,itemById,mode==='fragile_protection'?1:.65,container,supportIndex):hasPackingAndTravelSupport(placement,bagPlacements,itemById,mode==='fragile_protection'?1:.65,container)))continue;
-            if(hasShapes&&!hasVerticalEntry(placement,bagPlacements,itemById,container,blockedSpaces.get(container.id),verticalEntryObstacles?.get(container.id),true,undefined,verticalEntryObstaclePrefixMaxRights.get(container.id)))continue;
             const separationError = rules.length?placementSeparationError(placement,[...placements,...savedMassPositions],rules,itemById):undefined;
-            if(separationError){separationFailure=separationError;continue;}
+            if(separationError){if(hasCandidateVerticalEntry(placement,bagPlacements,container))separationFailure=separationError;continue;}
             if (rejected.some((failed) => samePlacementGeometry(failed, placement))) continue;
             const needsStackCheck = useShapeSequence || stackSensitiveIds.has(item.instanceId) || hasStackSensitivePlacement;
             const stackConflict=needsStackCheck&&hasStackContact(placement,bagPlacements,itemById,container)
               &&(incrementalStackCheck?stackLoadContactCache.wouldCreateStackConflict(placement,bagPlacements,[container])
                 :assessStackLoads([...bagPlacements,placement],itemById,[container],stackLoadContactCache).some(load=>load.status==='conflict'));
             if (stackConflict) {
-              const conflicts=assessStackLoads([...bagPlacements, placement], itemById, [container],stackLoadContactCache).filter(load => load.status === 'conflict');
-              loadFailure = conflicts.map(load => `${load.orientation==='travel'?'Travel orientation - ':''}${itemById.get(load.instanceId)?.name ?? 'Item'}: ${load.reason}`).join(' ');
+              if(hasCandidateVerticalEntry(placement,bagPlacements,container)){
+                const conflicts=assessStackLoads([...bagPlacements, placement], itemById, [container],stackLoadContactCache).filter(load => load.status === 'conflict');
+                loadFailure = conflicts.map(load => `${load.orientation==='travel'?'Travel orientation - ':''}${itemById.get(load.instanceId)?.name ?? 'Item'}: ${load.reason}`).join(' ');
+              }
               continue;
             }
             // Look ahead at the largest pending shape to avoid occupying its legs
@@ -620,6 +623,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             const compareWeight = best && container.id !== best.container.id && lookahead === 0 && best.lookahead === 0
               && weightCost !== undefined && priorCost !== undefined && Math.abs(weightCost - priorCost) > 1e-12;
             if (!best || (compareAffinity ? affinity : compareWeight ? weightCost! < priorCost! : score < best.score)) {
+              if(!hasCandidateVerticalEntry(placement,bagPlacements,container))continue;
               best = { placement, container, score, lookahead, affinity };
             }
           }
