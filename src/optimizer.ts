@@ -25,6 +25,9 @@ interface FreeSpace {
   width: number;
   height: number;
 }
+interface FreeSpaceContainmentBlock {
+  volume:number;length:number;width:number;height:number;minY:number;maxBack:number;minZ:number;maxTop:number;
+}
 
 const volume = (box: { length: number; width: number; height: number }) => box.length * box.width * box.height;
 const spaceVolume = (box: FreeSpace) => box.length * box.width * box.height;
@@ -353,6 +356,8 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
   const useShapeSequence=items.some(item=>item.packingShape)||containers.some(bag=>bag.packingInterior||bag.compartments);
   const placements: Placement[] = [];
   const previousFreeSpaces = new Set<FreeSpace>();
+  // Large plans split free spaces repeatedly; reuse the containment summaries.
+  const containmentBlockScratch:FreeSpaceContainmentBlock[]=[];
   const placementsByContainer = new Map(containers.map(container => [container.id, [] as Placement[]]));
   const massByContainer = new Map(containers.map(container => [container.id, container.tareGrams ?? 0]));
   const unweighedByContainer = new Map(containers.map(container => [container.id, 0]));
@@ -362,7 +367,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
   const freeSpaces = new Map(containers.map((container) => {
     const error=containerError(container);
     let spaces:FreeSpace[]=error||usableHeight(container)<=EPSILON?[]:packingRegions(container);
-    if(!error)for(const blocked of [...(container.unavailableSpaces??[])].sort((a,b)=>a.x-b.x||a.y-b.y||a.z-b.z||a.length-b.length||a.width-b.width||a.height-b.height))spaces=splitFreeSpaces(spaces,blocked,true,previousFreeSpaces);
+    if(!error)for(const blocked of [...(container.unavailableSpaces??[])].sort((a,b)=>a.x-b.x||a.y-b.y||a.z-b.z||a.length-b.length||a.width-b.width||a.height-b.height))spaces=splitFreeSpaces(spaces,blocked,true,previousFreeSpaces,containmentBlockScratch);
     return [container.id,spaces] as const;
   }));
   const shapeSearchSpaces = useShapeSequence
@@ -419,7 +424,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     massByContainer.set(saved.containerId, (massByContainer.get(saved.containerId) ?? 0) + (item.upperMassGrams ?? 0));
     if (item.upperMassGrams === undefined) unweighedByContainer.set(saved.containerId, (unweighedByContainer.get(saved.containerId) ?? 0) + 1);
     placementByInstanceId.set(locked.instanceId,locked);
-    let spaces=freeSpaces.get(container.id)??[];for(const box of placementBoxes(saved,item))spaces=splitFreeSpaces(spaces,box,true,previousFreeSpaces);freeSpaces.set(container.id,spaces);
+    let spaces=freeSpaces.get(container.id)??[];for(const box of placementBoxes(saved,item))spaces=splitFreeSpaces(spaces,box,true,previousFreeSpaces,containmentBlockScratch);freeSpaces.set(container.id,spaces);
   }
 
   const savedMassPositions = [...lockedById.values()].filter(isValidRejectedPlacement);
@@ -687,7 +692,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     massByContainer.set(best.container.id, (massByContainer.get(best.container.id) ?? best.container.tareGrams ?? 0) + (item.upperMassGrams ?? 0));
     if (item.upperMassGrams === undefined) unweighedByContainer.set(best.container.id, (unweighedByContainer.get(best.container.id) ?? 0) + 1);
     placedIds.add(item.instanceId);
-    let remaining=freeSpaces.get(best.container.id)??[];for(const box of placementBoxes(best.placement,item))remaining=splitFreeSpaces(remaining,box,true,previousFreeSpaces);freeSpaces.set(best.container.id,remaining);
+    let remaining=freeSpaces.get(best.container.id)??[];for(const box of placementBoxes(best.placement,item))remaining=splitFreeSpaces(remaining,box,true,previousFreeSpaces,containmentBlockScratch);freeSpaces.set(best.container.id,remaining);
   }
 
   return { placements, excluded, massConflicts, score: solutionScore(placements, excluded, items, mode, containers) };
@@ -807,7 +812,7 @@ function rememberFreeSpace(seen: Map<number, FreeSpace | FreeSpace[]>, space: Fr
   return false;
 }
 
-function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVolumes = false, previousSpacesScratch?: Set<FreeSpace>): FreeSpace[] {
+function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVolumes = false, previousSpacesScratch?: Set<FreeSpace>, containmentBlockScratch?:FreeSpaceContainmentBlock[]): FreeSpace[] {
   const containmentBlockSize=16;
   let next: FreeSpace[] | undefined;
   const usedRight=used.x+used.length,usedBack=used.y+used.width,usedTop=used.z+used.height;
@@ -893,12 +898,13 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
   const ordered=unique.map((space,index)=>({space,index,right:space.x+space.length,back:space.y+space.width,top:space.z+space.height,volume:cacheCandidateVolumes?spaceVolume(space):undefined}))
     .sort((left,right)=>left.space.x-right.space.x||left.index-right.index);
   const candidatesByVolume=ordered;
-  let containmentBlocks:Array<{volume:number;length:number;width:number;height:number;minY:number;maxBack:number;minZ:number;maxTop:number}>|undefined;
+  let containmentBlocks:FreeSpaceContainmentBlock[]|undefined;
   // Skip x-ordered candidate blocks that cannot contain a large new region.
   if(cacheCandidateVolumes&&ordered.length>=128){
-    containmentBlocks=[];
+    containmentBlocks=containmentBlockScratch??[];
     for(let start=0;start<ordered.length;start+=containmentBlockSize){
-      const block={volume:0,length:0,width:0,height:0,minY:Number.POSITIVE_INFINITY,maxBack:Number.NEGATIVE_INFINITY,minZ:Number.POSITIVE_INFINITY,maxTop:Number.NEGATIVE_INFINITY};
+      const block=containmentBlocks[start/containmentBlockSize]??(containmentBlocks[start/containmentBlockSize]={volume:0,length:0,width:0,height:0,minY:Number.POSITIVE_INFINITY,maxBack:Number.NEGATIVE_INFINITY,minZ:Number.POSITIVE_INFINITY,maxTop:Number.NEGATIVE_INFINITY});
+      block.volume=0;block.length=0;block.width=0;block.height=0;block.minY=Number.POSITIVE_INFINITY;block.maxBack=Number.NEGATIVE_INFINITY;block.minZ=Number.POSITIVE_INFINITY;block.maxTop=Number.NEGATIVE_INFINITY;
       for(let index=start;index<Math.min(start+containmentBlockSize,ordered.length);index++){
         const candidate=ordered[index],space=candidate.space;
         block.volume=Math.max(block.volume,candidate.volume!);
@@ -906,7 +912,6 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
         block.minY=Math.min(block.minY,space.y);block.maxBack=Math.max(block.maxBack,space.y+space.width);
         block.minZ=Math.min(block.minZ,space.z);block.maxTop=Math.max(block.maxTop,space.z+space.height);
       }
-      containmentBlocks.push(block);
     }
   }
   const keep=new Array<boolean>(unique.length).fill(true);
