@@ -1,4 +1,4 @@
-import { renderToStaticMarkup } from 'react-dom/server';
+import { renderToString as renderToStaticMarkup } from 'preact-render-to-string';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createInitialData } from '../seed';
 import { buildPlan } from '../optimizer';
