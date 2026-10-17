@@ -3,12 +3,13 @@ import { useEffect, useRef, useState } from 'react';
 import type * as ThreeApi from 'three';
 import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { Container, LibraryItem, PackingPlan, Placement } from '../types';
+import type { ThreeViewPlan } from '../three-view-data';
 import { containerBlockedBoxes, containerSpaceError } from '../container-space';
 import { placementBoxes,placementSurface } from '../packing-geometry';
 
 interface Props {
   container?: Container;
-  plan: PackingPlan;
+  plan: ThreeViewPlan;
   items: LibraryItem[];
   selectedInstanceId?: string;
   view: 'top' | '3d' | 'layers';
