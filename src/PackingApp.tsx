@@ -30,7 +30,7 @@ import { measurementInput } from './measurement-input';
 import {workspaceStorage} from './storage';
 import {MAX_BACKUP_BYTES} from './backup-limits';
 import { createEmptyData } from './empty-data';
-import { PlannerWorkerClient, plannerContainersForWorker, plannerItemsForWorker, plannerTripForWorker, shouldUsePlannerWorker } from './optimizer-worker-client';
+import { PlannerWorkerClient, plannerContainersForWorker, plannerItemsForWorker, plannerTripForWorker, reusePlannerItemReferences, shouldUsePlannerWorker } from './optimizer-worker-client';
 import { observeNearViewport } from './viewport-observer';
 import { filterLibraryItems } from './library-search';
 import type { AppData, CarrierRule, Container, Evidence, ItemPriority, LibraryItem, OptimizationMode, PackEntry, PackingPlan, Placement, Trip, TripActivity, UnitSystem } from './types';
@@ -152,7 +152,7 @@ export function PackingApp() {
   const planItems = useMemo(() => {
     const referenced = new Set(activeTrip?.entries.map((entry) => entry.itemId) ?? []);
     const next = data?.libraryItems.filter((item) => referenced.has(item.id)) ?? [];
-    const stable = reuseIdenticalReferences(previousPlanItems.current, next);
+    const stable = reusePlannerItemReferences(previousPlanItems.current, next);
     previousPlanItems.current = stable;
     return stable;
   }, [data?.libraryItems, activeTrip?.entries]);
