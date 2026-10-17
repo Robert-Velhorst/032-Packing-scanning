@@ -889,8 +889,7 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
   // Rectangle-only plans reuse each candidate volume across many containment pairs.
   const ordered=unique.map((space,index)=>({space,index,right:space.x+space.length,back:space.y+space.width,top:space.z+space.height,volume:cacheCandidateVolumes?spaceVolume(space):undefined}))
     .sort((left,right)=>left.space.x-right.space.x||left.index-right.index);
-  // Large candidates first lets rectangle-only searches stop at the volume threshold.
-  const candidatesByVolume=cacheCandidateVolumes?[...ordered].sort((left,right)=>right.volume!-left.volume!||left.index-right.index):ordered;
+  const candidatesByVolume=ordered;
   const keep=new Array<boolean>(unique.length).fill(true);
   for(const inner of ordered){
     // The input list is already maximal: packingRegions produces disjoint
@@ -904,19 +903,15 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
     const volumeThreshold=minimumContainingVolume*(1-1e-12);
     let scanByX=false;
     if(cacheCandidateVolumes){
-      let low=0,high=candidatesByVolume.length;
-      while(low<high){const middle=(low+high)>>>1;if(candidatesByVolume[middle].volume!>=volumeThreshold)low=middle+1;else high=middle;}
-      const byVolumeCount=low;
-      low=0;high=ordered.length;
+      let low=0,high=ordered.length;
       const maximumOuterX=inner.space.x+EPSILON;
       while(low<high){const middle=(low+high)>>>1;if(ordered[middle].space.x<=maximumOuterX)low=middle+1;else high=middle;}
-      if(low<byVolumeCount){scan=ordered;scanCount=low;scanByX=true;}else scanCount=byVolumeCount;
+      scan=ordered;scanCount=low;scanByX=true;
     }
     for(let candidateIndex=0;candidateIndex<scanCount;candidateIndex++){
       const candidate=scan[candidateIndex];
       const outer=candidate.space;
       if(cacheCandidateVolumes&&scanByX&&candidate.volume!<volumeThreshold)continue;
-      if(cacheCandidateVolumes&&!scanByX&&candidate.volume!<volumeThreshold)break;
       if(outer.x>inner.space.x+EPSILON){if(!cacheCandidateVolumes)break;continue;}
       if(candidate.index===inner.index||outer.y>inner.space.y+EPSILON||outer.z>inner.space.z+EPSILON
         ||candidate.back<inner.space.y+inner.space.width-EPSILON||candidate.top<inner.space.z+inner.space.height-EPSILON
