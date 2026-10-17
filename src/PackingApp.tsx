@@ -599,6 +599,15 @@ function Workspace(props: WorkspaceProps) {
   const separableEntries = useMemo(() => separablePackingEntryIds(trip), [trip.entries, trip.completedInstanceIds, trip.unavailableInstanceIds, trip.lockedPlacements, trip.rejectedPlacements]);
   const placedIds = useMemo(() => new Set(plan.placements.map((placement) => placement.instanceId)), [plan.placements]);
   const unresolved = useMemo(() => plan.excluded.filter((entry) => entry.reason !== 'Marked unavailable for this plan.'), [plan.excluded]);
+  const lockedByInstance = useMemo(() => {
+    const byInstance = new Map<string, Placement[]>();
+    for (const placement of trip.lockedPlacements) {
+      const saved = byInstance.get(placement.instanceId);
+      if (saved) saved.push(placement);
+      else byInstance.set(placement.instanceId, [placement]);
+    }
+    return byInstance;
+  }, [trip.lockedPlacements]);
   const selectedLayerMax = useMemo(() => {
     let highest = 1;
     if (selectedContainer) for (const placement of plan.placements) {
@@ -710,7 +719,7 @@ function Workspace(props: WorkspaceProps) {
       : <div className="separation-rules-deferred" aria-hidden="true"/>}</div>
     {Array.isArray(trip.separationRules)&&trip.separationRules.length>0&&<Suspense fallback={<p className="candidate-uncertainty" role="status">Loading separation review…</p>}><SeparationNotes trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit}/></Suspense>}
     <section ref={planReviewRef} className="plan-review"><div className="review-heading"><div><span className="panel-kicker">PLAN CHECK</span><h2>Fit and trade-offs</h2></div><span className="review-caption">Deterministic geometric placement · generated on this device</span></div>{planReviewRequested ? <Suspense fallback={<p className="candidate-uncertainty" role="status">Opening approach comparisons…</p>}><PlanReview trip={trip} items={data.libraryItems} bags={data.containers} plan={plan} unit={unit} modeCopy={modeCopy} onSelect={props.onMode} requestPlanComparison={props.requestPlanComparison}/></Suspense> : <p className="candidate-uncertainty" role="status" aria-live="polite">Approach comparisons will be prepared when you reach this section.</p>}
-      {unresolved.length > 0 && <div className="excluded-list"><strong>Needs a decision</strong>{unresolved.map((entry) => <div key={entry.instanceId}><AlertTriangle size={15}/><span><strong>{entry.name}{entry.required ? ' · required' : ''}</strong><small>{entry.reason}</small></span>{trip.lockedPlacements.filter(saved => saved.instanceId === entry.instanceId).map(saved => <button className="button button-secondary" key={saved.instanceId} onClick={() => completed.has(saved.instanceId) ? props.onToggleComplete(saved.instanceId,false) : props.onToggleLock(saved)}>{completed.has(entry.instanceId) ? `Undo packed for ${entry.name}` : `Unlock ${entry.name}`}</button>)}<button className="text-button" onClick={() => props.onUnavailable(entry.instanceId)}>Remove from plan</button></div>)}</div>}
+      {unresolved.length > 0 && <div className="excluded-list"><strong>Needs a decision</strong>{unresolved.map((entry) => <div key={entry.instanceId}><AlertTriangle size={15}/><span><strong>{entry.name}{entry.required ? ' · required' : ''}</strong><small>{entry.reason}</small></span>{(lockedByInstance.get(entry.instanceId) ?? []).map(saved => <button className="button button-secondary" key={saved.instanceId} onClick={() => completed.has(saved.instanceId) ? props.onToggleComplete(saved.instanceId,false) : props.onToggleLock(saved)}>{completed.has(entry.instanceId) ? `Undo packed for ${entry.name}` : `Unlock ${entry.name}`}</button>)}<button className="text-button" onClick={() => props.onUnavailable(entry.instanceId)}>Remove from plan</button></div>)}</div>}
     </section>
     <div className="plan-trust-note"><Lock size={15}/><span>Locked placements are preserved during replanning. A geometric match is a suggestion, not a guarantee the bag will close.</span></div>
   </main>;
