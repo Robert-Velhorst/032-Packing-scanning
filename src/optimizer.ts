@@ -618,9 +618,8 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             const compareAffinity = best && affinity!==best.affinity;
             const compareWeight = best && container.id !== best.container.id && lookahead === 0 && best.lookahead === 0
               && weightCost !== undefined && priorCost !== undefined && Math.abs(weightCost - priorCost) > 1e-12;
-            const improvesBest = !best || (compareAffinity ? affinity : compareWeight ? weightCost! < priorCost! : score < best.score);
-            if (improvesBest && hasShapes && !hasVerticalEntry(placement,bagPlacements,itemById,container,blockedSpaces.get(container.id),verticalEntryObstacles?.get(container.id),true,undefined,verticalEntryObstaclePrefixMaxRights.get(container.id)))continue;
-            if (improvesBest) {
+            if (!best || (compareAffinity ? affinity : compareWeight ? weightCost! < priorCost! : score < best.score)) {
+              if(hasShapes&&!hasVerticalEntry(placement,bagPlacements,itemById,container,blockedSpaces.get(container.id),verticalEntryObstacles?.get(container.id),true,undefined,verticalEntryObstaclePrefixMaxRights.get(container.id)))continue;
               best = { placement, container, score, lookahead, affinity };
             }
           }
