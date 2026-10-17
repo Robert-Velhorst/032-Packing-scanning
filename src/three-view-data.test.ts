@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialData } from './seed';
 import type { Placement } from './types';
-import { sameThreeViewData, threeViewData } from './three-view-data';
+import { coveredPlacementLabelIds, sameThreeViewData, threeViewData } from './three-view-data';
 
 const placement = (instanceId: string, itemId: string, containerId: string): Placement => ({
   instanceId, entryId: `${instanceId}-entry`, itemId, containerId,
@@ -9,6 +9,16 @@ const placement = (instanceId: string, itemId: string, containerId: string): Pla
 });
 
 describe('3D view data projection', () => {
+  it('skips unlabeled coverage work and preserves center-occlusion rules for labeled placements', () => {
+    const lower = placement('lower', 'item-lower', 'bag');
+    const upper = { ...placement('upper', 'item-upper', 'bag'), z: 10 };
+    const otherBag = { ...upper, instanceId: 'other-bag', containerId: 'other' };
+
+    expect(coveredPlacementLabelIds([lower, upper, otherBag], 'bag')).toEqual(new Set());
+    expect(coveredPlacementLabelIds([lower, upper, otherBag], 'bag', { lower: '1' })).toEqual(new Set(['lower']));
+    expect(coveredPlacementLabelIds([lower, upper, otherBag], 'bag', { upper: '2' })).toEqual(new Set());
+  });
+
   it('sends only placements for the selected bag and their referenced library items', () => {
     const data = createInitialData(), items = data.libraryItems, container = data.containers[0];
     const [used, unrelated] = items;

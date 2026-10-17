@@ -52,6 +52,34 @@ export function threeViewData(container: Container | undefined, plan: ThreeViewP
   };
 }
 
+/** Find labeled placements hidden by another placement above their center point. */
+export function coveredPlacementLabelIds(
+  placements: readonly Placement[],
+  containerId: string,
+  placementLabels?: Record<string, string>,
+): Set<string> {
+  if (!placementLabels) return new Set();
+  const candidates = placements.filter(placement => placement.containerId === containerId);
+  if (!candidates.some(placement => placementLabels[placement.instanceId])) return new Set();
+  candidates.sort((left, right) => right.z - left.z);
+  const covered = new Set<string>();
+  for (const placement of candidates) {
+    if (!placementLabels[placement.instanceId]) continue;
+    const coverHeight = placement.z + placement.height - 0.01;
+    for (const other of candidates) {
+      if (other.z < coverHeight) break;
+      if (other.instanceId !== placement.instanceId && other.x <= placement.x + placement.length / 2
+        && other.x + other.length >= placement.x + placement.length / 2
+        && other.y <= placement.y + placement.width / 2
+        && other.y + other.width >= placement.y + placement.width / 2) {
+        covered.add(placement.instanceId);
+        break;
+      }
+    }
+  }
+  return covered;
+}
+
 const sameDimensions = (left: Container['inside'], right: Container['inside']) => left === right
   || left.length === right.length && left.width === right.width && left.height === right.height;
 const samePlacement = (left: Placement, right: Placement) => left === right

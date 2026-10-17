@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type * as ThreeApi from 'three';
 import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { PackingPlan, Placement } from '../types';
-import type { ThreeViewContainer, ThreeViewItem, ThreeViewPlan } from '../three-view-data';
+import { coveredPlacementLabelIds, type ThreeViewContainer, type ThreeViewItem, type ThreeViewPlan } from '../three-view-data';
 import { containerBlockedBoxes, containerSpaceError } from '../container-space';
 import { placementBoxes,placementSurface } from '../packing-geometry';
 
@@ -176,7 +176,7 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
     }
 
     const itemLookup = new Map(items.map((item) => [item.id, item]));
-    const coverCandidates = [...plan.placements].filter(placement => placement.containerId === container.id).sort((left, right) => right.z - left.z);
+    const coveredLabelIds = coveredPlacementLabelIds(plan.placements, container.id, placementLabels);
     if(!containerSpaceError(container)){
       const reserved=new THREE.MeshStandardMaterial({color:'#d7a24d',roughness:.9,transparent:true,opacity:.25,depthWrite:false});
       const blockedBoxes=containerBlockedBoxes(container);
@@ -222,17 +222,9 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
         colors[item.category] ?? colors.other,
       );
       const number = placementLabels?.[placement.instanceId];
-      const labelBox=placementBoxes(placement,item).reduce((best,b)=>b.length*b.width>best.length*best.width?b:best);
-      let covered = false;
-      const coverHeight = placement.z + placement.height - 0.01;
-      for (const other of coverCandidates) {
-        if (other.z < coverHeight) break;
-        if (other.instanceId !== placement.instanceId && other.x <= placement.x + placement.length / 2
-          && other.x + other.length >= placement.x + placement.length / 2 && other.y <= placement.y + placement.width / 2
-          && other.y + other.width >= placement.y + placement.width / 2) { covered = true; break; }
-      }
       if (number) {
-        const visibleWithoutSelection = !covered;
+        const labelBox=placementBoxes(placement,item).reduce((best,b)=>b.length*b.width>best.length*best.width?b:best);
+        const visibleWithoutSelection = !coveredLabelIds.has(placement.instanceId);
         let marker: ThreeApi.Sprite | undefined;
         let drawing: CanvasRenderingContext2D | null | undefined;
         let texture: ThreeApi.CanvasTexture | undefined;
