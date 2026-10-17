@@ -20,6 +20,7 @@ const quads = [
 ];
 // Vertex keys use grid-sized strides, so each link edge maps to one axis direction.
 const linkDirection = (delta:number,rowStride:number,planeStride:number) => delta===1?0:delta===-1?1:delta===rowStride?2:delta===-rowStride?3:delta===planeStride?4:delta===-planeStride?5:-1;
+const neighborDegrees=new Uint8Array(64);for(let mask=1;mask<64;mask++)neighborDegrees[mask]=neighborDegrees[mask>>>1]+(mask&1);
 const fail = (): never => { throw new Error('The reconstructed surface is incomplete or inconsistent with its source. Recorded dimensions are unchanged.'); };
 
 export function parseReconstructedSolid(value: unknown, source: SavedGeometryPreview): ReconstructedGeometry {
@@ -131,8 +132,7 @@ export function voxelSurface(solid: Pick<ReconstructedSolid,'grid'|'resolutionMm
   for(const vertex of linkedVertices){
     const base=vertex*6;let start=-1,nodeCount=0;
     for(let direction=0;direction<6;direction++){
-      const neighbors=linkNeighbors[base+direction];let degree=0;
-      for(let adjacent=0;adjacent<6;adjacent++)if(neighbors&(1<<adjacent))degree++;
+      const neighbors=linkNeighbors[base+direction],degree=neighborDegrees[neighbors];
       if(neighbors){if(degree!==2)return fail();nodeCount++;if(start<0)start=direction;}
     }
     if(start<0)return fail();
