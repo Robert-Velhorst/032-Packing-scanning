@@ -14,7 +14,7 @@ async function start(retrieve = vi.fn().mockResolvedValue(parseEasyjet(fixture()
   await writeFile(join(root,'private.txt'),'never serve this');
   const server=createAppServer({dist,carrierService:new CarrierService(join(root,'cache.json'),retrieve),allowedOrigins:['https://localhost']});
   await new Promise<void>((resolve) => server.listen(0,'127.0.0.1',resolve));
-  return { dist, url:`http://127.0.0.1:${(server.address() as AddressInfo).port}`, close:async() => {await new Promise<void>((resolve) => {server.closeAllConnections();server.close(() => resolve());});await rm(root,{recursive:true,force:true});} };
+  return { dist, url:`http://127.0.0.1:${(server.address() as AddressInfo).port}`, close:async() => {await new Promise<void>((resolve) => {server.closeAllConnections();server.close(() => resolve());});await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});} };
 }
 describe('public carrier HTTP endpoint', () => {
   it('caches hashed static assets within a bounded server cache', async () => {
