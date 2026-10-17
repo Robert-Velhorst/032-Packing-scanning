@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { AlertTriangle, Backpack, Package, Plus, Ruler, Search, ShieldCheck, Trash2, X } from 'lucide-react';
 import { packingFormsForSelection } from '../packing-forms';
 import { uprightInstruction, uprightTag } from '../upright';
@@ -17,7 +17,7 @@ export type InventoryFormatters = {
   uprightTag: typeof uprightTag;
 };
 
-export function LibraryPage({ items, data, activeTrip, search, setSearch, getPhoto, unit, onAdd, onEdit, onDelete, onAddEntry, formatters }: { items:LibraryItem[]; data:AppData; activeTrip?:Trip; search:string; setSearch:(value:string)=>void; getPhoto:(id:string)=>Promise<Blob|undefined>; unit:UnitSystem; onAdd:()=>void; onEdit:(item:LibraryItem)=>void; onDelete:(item:LibraryItem)=>void; onAddEntry:(item:LibraryItem)=>void; formatters:InventoryFormatters }) {
+export const LibraryPage = memo(function LibraryPage({ items, data, activeTrip, search, setSearch, getPhoto, unit, onAdd, onEdit, onDelete, onAddEntry, formatters }: { items:LibraryItem[]; data:AppData; activeTrip?:Trip; search:string; setSearch:(value:string)=>void; getPhoto:(id:string)=>Promise<Blob|undefined>; unit:UnitSystem; onAdd:()=>void; onEdit:(item:LibraryItem)=>void; onDelete:(item:LibraryItem)=>void; onAddEntry:(item:LibraryItem)=>void; formatters:InventoryFormatters }) {
   const activeItemIds = useMemo(() => new Set(activeTrip?.entries.map((entry) => entry.itemId) ?? []), [activeTrip?.entries]);
   const usedItemIds = useMemo(() => {
     const ids = new Set<string>();
@@ -34,7 +34,7 @@ export function LibraryPage({ items, data, activeTrip, search, setSearch, getPho
     })}</div>}
     <div className="privacy-callout"><ShieldCheck size={17}/><span><strong>Local by design.</strong> Reference photos are stored in this browser and included in backups you download.</span></div>
   </main>;
-}
+});
 
 export function BagsPage({ trip, bags, unit, onAdd, onEdit, onRemove, formatters }: { trip?:Trip; bags:Container[]; unit:UnitSystem; onAdd:()=>void; onEdit:(bag:Container)=>void; onRemove:(bag:Container)=>void; formatters:InventoryFormatters }) {
   return <main className="secondary-page"><div className="page-heading"><div><p className="eyebrow">BAG INVENTORY</p><h1>My bags</h1><p className="page-subtitle">Add inside measurements for packing and outside measurements for carrier checks.</p></div><button className="button button-primary" onClick={onAdd}><Plus size={16}/> Add bag</button></div>
