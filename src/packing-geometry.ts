@@ -365,17 +365,17 @@ function firstPotentialObstacle(obstacles:readonly GeometryBox[],x:number,maxObs
 /** Fixed orientation, straight downward entry: recesses must remain reachable from above. */
 export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,bag:Container,blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[],obstaclesSortedByX=false,maxObstacleLength?:number,prefixMaxRight?:readonly number[]):boolean {
   // Every component of an in-bounds shape shares the same sweep top.
-  const top=bag.inside.height,fullSweepTop=p.z+p.height<=top?top+p.height:undefined;
+  const top=bag.inside.height,sweepTop=Math.max(p.z+p.height,top+p.height);
   const obstacles=cachedObstacles??[...blockedSpaces,...placed.filter(other=>other.containerId===p.containerId).flatMap(other=>placementBoxes(other,items.get(other.instanceId)))];
   // Keep both rectangular and shaped candidate sweeps allocation-free.
   const shape=items.get(p.instanceId)?.packingShape;
   if(!shape){
-    const sweepTop=p.z+Math.max(p.height,top-p.z+p.height),right=p.x+p.length,back=p.y+p.width;
+    const right=p.x+p.length,back=p.y+p.width;
     for(let i=firstPotentialObstacle(obstacles,p.x,maxObstacleLength,obstaclesSortedByX,prefixMaxRight);i<obstacles.length;i++){const o=obstacles[i];if(obstaclesSortedByX&&o.x>=right-EPS)break;if(p.x<o.x+o.length-EPS&&right>o.x+EPS&&p.y<o.y+o.width-EPS&&back>o.y+EPS&&p.z<o.z+o.height-EPS&&sweepTop>o.z+EPS)return false;}
     return true;
   }
   for(const b of localGeometry(shape,p.rotation??0).boxes){
-    const x=p.x+b.x,y=p.y+b.y,z=p.z+b.z,right=x+b.length,back=y+b.width,sweepTop=fullSweepTop??z+Math.max(b.height,top-z+p.height);
+    const x=p.x+b.x,y=p.y+b.y,z=p.z+b.z,right=x+b.length,back=y+b.width;
     for(let i=firstPotentialObstacle(obstacles,x,maxObstacleLength,obstaclesSortedByX,prefixMaxRight);i<obstacles.length;i++){const o=obstacles[i];if(obstaclesSortedByX&&o.x>=right-EPS)break;if(x<o.x+o.length-EPS&&right>o.x+EPS&&y<o.y+o.width-EPS&&back>o.y+EPS&&z<o.z+o.height-EPS&&sweepTop>o.z+EPS)return false;}
   }
   return true;
