@@ -27,7 +27,7 @@ for(const base of legacy)for(const flip of [[1,-1,-1],[-1,1,-1],[-1,-1,1]])rotat
 export interface GravityUp {axis:number;sign:number}
 const packingUp:GravityUp={axis:2,sign:1};
 interface ContactFaces {bottom:Face[];down:Face[];top:Face[]}
-interface Oriented extends ContactFaces {boxes:GeometryBox[];directional:Map<string,ContactFaces>}
+interface Oriented extends ContactFaces {boxes:GeometryBox[];bottomArea:number;directional:Map<string,ContactFaces>}
 interface Compiled {boxes:GeometryBox[];bounds:DimensionsMm;key:string;volume:number;surface:SolidSurface;oriented:Map<number,Oriented>}
 const cache=new WeakMap<PackingShape,Compiled>();
 
@@ -118,7 +118,8 @@ function localGeometry(shape:PackingShape,code:number) {
     return faces;
   });
   const down=boxes.flatMap(b=>{let patches:Face[]=[{x:b.x,y:b.y,z:b.z,length:b.length,width:b.width}];for(const below of boxes)if(Math.abs(below.z+below.height-b.z)<=EPS)patches=patches.flatMap(f=>subtractFace(f,below));return patches;});
-  const result={boxes,bottom,down,top,directional:new Map<string,ContactFaces>()};compiled.oriented.set(code,result);return result;
+  const bottomArea=bottom.reduce((area,face)=>area+face.length*face.width,0);
+  const result={boxes,bottom,bottomArea,down,top,directional:new Map<string,ContactFaces>()};compiled.oriented.set(code,result);return result;
 }
 function orientedBoxes(compiled:Compiled,rotation:Rotation):GeometryBox[] {
   const dimensions=axes.map(a=>compiled.bounds[a]);
@@ -348,7 +349,10 @@ export function hasGeometrySupport(p:Placement,placed:Placement[],items:Map<stri
     }
     return false;
   }
-  const area=facePatches(p,items.get(p.instanceId),'bottom',up).patches.reduce((sum,f)=>sum+f.length*f.width,0);
+  const item=items.get(p.instanceId);
+  const area=up.axis===2&&up.sign===1&&item?.packingShape
+    ?localGeometry(item.packingShape,p.rotation??0).bottomArea
+    :facePatches(p,item,'bottom',up).patches.reduce((sum,f)=>sum+f.length*f.width,0);
   if(area<=0)return false;if(Math.abs(gravityBox(p,up).z-floor)<=EPS)return true;
   const required=area*fraction;let supported=0;
   const candidates=up.axis===2&&up.sign===1&&supportIndex?supportIndex.candidates(p):placed;
