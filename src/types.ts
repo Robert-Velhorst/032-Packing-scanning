@@ -270,6 +270,10 @@ export interface Trip {
   sharedPack?: { householdId: string; packId: string; revision: number; idPrefix: string; baseline?: SharedPackBaseline };
 }
 
+/** Trip fields consumed by the packing planner; excludes unrelated saved metadata from worker messages. */
+export type PlannerTrip = Pick<Trip,
+  'mode' | 'entries' | 'containerIds' | 'unavailableInstanceIds' | 'lockedPlacements' | 'rejectedPlacements' | 'separationRules'>;
+
 export interface AppData {
   schemaVersion: number;
   unitSystem: UnitSystem;

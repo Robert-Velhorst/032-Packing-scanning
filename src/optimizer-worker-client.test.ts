@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PlannerWorkerClient, PLANNER_WORKER_MIN_ITEMS, shouldUsePlannerWorker, type PlannerWorkerRequest, type PlannerWorkerResponse } from './optimizer-worker-client';
+import { PlannerWorkerClient, PLANNER_WORKER_MIN_ITEMS, plannerTripForWorker, shouldUsePlannerWorker, type PlannerWorkerRequest, type PlannerWorkerResponse } from './optimizer-worker-client';
+import { buildPlan } from './optimizer';
+import { createInitialData } from './seed';
 import type { PackingPlan, Trip } from './types';
 
 class FakeWorker {
@@ -21,6 +23,38 @@ const request = (requestId: number): PlannerWorkerRequest => ({
 afterEach(() => vi.useRealTimers());
 
 describe('PlannerWorkerClient', () => {
+  it('sends only planner-relevant trip fields without changing the plan', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const data = createInitialData();
+    const trip = {
+      ...data.trips[0],
+      sharedPack: {
+        householdId: 'household',
+        packId: 'pack',
+        revision: 1,
+        idPrefix: 'shared-copy:',
+        baseline: {
+          method: 'shared_pack_baseline_v1' as const,
+          revision: 1,
+          tripId: data.trips[0].id,
+          hashes: Object.fromEntries([
+            ...['identity', 'name', 'context', 'mode'].map(kind => [JSON.stringify([kind, 'pack']), 'a'.repeat(64)]),
+            ...Array.from({ length: 1_000 }, (_, index) => [JSON.stringify(['entry', `entry-${index}`]), 'a'.repeat(64)]),
+          ]),
+        },
+      },
+    };
+
+    const plannerTrip = plannerTripForWorker(trip);
+
+    expect(plannerTrip).not.toHaveProperty('sharedPack');
+    expect(plannerTrip.entries).toBe(trip.entries);
+    expect(plannerTrip.containerIds).toBe(trip.containerIds);
+    expect(JSON.stringify(plannerTrip).length).toBeLessThan(JSON.stringify(trip).length / 2);
+    expect(buildPlan(plannerTrip, data.libraryItems, data.containers)).toEqual(buildPlan(trip, data.libraryItems, data.containers));
+  });
+
   it('keeps small plans on the main thread and hands medium or complex plans to the worker', () => {
     expect(shouldUsePlannerWorker(PLANNER_WORKER_MIN_ITEMS - 1, false)).toBe(false);
     expect(shouldUsePlannerWorker(PLANNER_WORKER_MIN_ITEMS, false)).toBe(true);

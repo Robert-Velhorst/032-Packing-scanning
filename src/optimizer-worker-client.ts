@@ -1,8 +1,8 @@
-import type { Container, LibraryItem, OptimizationMode, PackingPlan, Trip } from './types';
+import type { Container, LibraryItem, OptimizationMode, PackingPlan, PlannerTrip, Trip } from './types';
 
 export interface PlannerWorkerRequest {
   requestId: number;
-  trip: Trip;
+  trip: PlannerTrip;
   items: LibraryItem[];
   containers: Container[];
   modes?: OptimizationMode[];
@@ -29,6 +29,19 @@ export const PLANNER_WORKER_MIN_ITEMS = 15;
 
 export function shouldUsePlannerWorker(instanceCount: number, hasComplexGeometry: boolean) {
   return instanceCount >= PLANNER_WORKER_MIN_ITEMS || hasComplexGeometry;
+}
+
+/** Exclude trip metadata not read by buildPlan before the browser clones the worker message. */
+export function plannerTripForWorker(trip: Trip): PlannerTrip {
+  return {
+    mode: trip.mode,
+    entries: trip.entries,
+    containerIds: trip.containerIds,
+    unavailableInstanceIds: trip.unavailableInstanceIds,
+    lockedPlacements: trip.lockedPlacements,
+    rejectedPlacements: trip.rejectedPlacements,
+    separationRules: trip.separationRules,
+  };
 }
 
 export class PlannerWorkerClient {

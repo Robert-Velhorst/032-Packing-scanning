@@ -29,7 +29,7 @@ import {  markPackingItemUnavailable, rejectPackingPlacement, setPackingItemComp
 import { measurementInput } from './measurement-input';
 import {workspaceStorage} from './storage';
 import { createEmptyData } from './empty-data';
-import { PlannerWorkerClient, shouldUsePlannerWorker } from './optimizer-worker-client';
+import { PlannerWorkerClient, plannerTripForWorker, shouldUsePlannerWorker } from './optimizer-worker-client';
 import { observeNearViewport } from './viewport-observer';
 import type { AppData, CarrierRule, Container, Evidence, ItemPriority, LibraryItem, OptimizationMode, PackEntry, PackingPlan, Placement, Trip, TripActivity, UnitSystem } from './types';
 
@@ -100,7 +100,7 @@ export function PackingApp() {
   useEffect(() => () => plannerWorker.current?.dispose(), []);
   const requestPlanComparison = useCallback((trip: Trip, items: LibraryItem[], containers: Container[], modes: OptimizationMode[]) => {
     const requestId = ++planRequest.current;
-    const promise = plannerWorker.current!.calculate({ requestId, trip, items, containers, modes }).then(response => {
+    const promise = plannerWorker.current!.calculate({ requestId, trip: plannerTripForWorker(trip), items, containers, modes }).then(response => {
       if (response.error) throw new Error(response.error);
       if (!response.plans || response.plans.length !== modes.length) throw new Error('Plan comparisons could not be prepared.');
       return response.plans;
@@ -184,7 +184,7 @@ export function PackingApp() {
       });
       return () => { active = false; };
     }
-    void plannerWorker.current!.calculate({ requestId, trip: activeTrip, items: planItems, containers: planContainers })
+    void plannerWorker.current!.calculate({ requestId, trip: plannerTripForWorker(activeTrip), items: planItems, containers: planContainers })
       .then((result) => {
         if (!active) return;
         if (result.error) setPlanError(result.error);

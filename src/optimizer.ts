@@ -6,7 +6,7 @@ import { itemMassError, savedBagMassConflict } from './mass-constraints';
 import { retrievalReward } from './retrieval';
 import type {
   BagMassConflict, Container, ExcludedItem, LibraryItem, OptimizationMode, PackingPlan,
-  PlanItem, Placement, Trip, SeparationRule,
+  PlanItem, Placement, PlannerTrip, SeparationRule,
 } from './types';
 import { assessStackLoads, hasStackContact, StackLoadContactCache, topLoadError } from './stack-load';
 import { packingItem, packingFormKey } from './packing-forms';
@@ -36,7 +36,7 @@ const SHAPED_SUPPORT_INDEX_THRESHOLD=8;
 const SHAPE_CONTACT_POSITION_LIMIT=100;
 const FREE_SPACE_HASH_THRESHOLD=64;
 
-export function buildPlan(trip: Trip, library: LibraryItem[], allContainers: Container[], mode: OptimizationMode = trip.mode): PackingPlan {
+export function buildPlan(trip: PlannerTrip, library: LibraryItem[], allContainers: Container[], mode: OptimizationMode = trip.mode): PackingPlan {
   const referencedItemIds = new Set(trip.entries.map(entry => entry.itemId));
   const byId = new Map<string, LibraryItem>();
   for (const item of library) if (referencedItemIds.has(item.id)) byId.set(item.id, item);
