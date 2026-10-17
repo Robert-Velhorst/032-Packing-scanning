@@ -84,9 +84,10 @@ public final class VoxelSolid {
                     int[] a=QUADS[side][i],b=QUADS[side][(i+1)%4],previous=QUADS[side][(i+3)%4];
                     int ax=x+a[0],ay=y+a[1],az=z+a[2],bx=x+b[0],by=y+b[1],bz=z+b[2];
                     int dx=bx-ax,dy=by-ay,dz=bz-az;
-                    if(dx!=0){int key=Math.min(ax,bx)+nx*(ay+(ny+1)*az);edgeCountsX[key]++;edgeWindingX[key]+=dx;}
-                    else if(dy!=0){int key=ax+(nx+1)*(Math.min(ay,by)+ny*az);edgeCountsY[key]++;edgeWindingY[key]+=dy;}
-                    else {int key=ax+(nx+1)*(ay+(ny+1)*Math.min(az,bz));edgeCountsZ[key]++;edgeWindingZ[key]+=dz;}
+                    // Grid topology limits each edge to four incident faces, so byte counters cannot overflow.
+                    if(dx!=0){int key=Math.min(ax,bx)+nx*(ay+(ny+1)*az);edgeCountsX[key]=(byte)(edgeCountsX[key]+1);edgeWindingX[key]=(byte)(edgeWindingX[key]+dx);}
+                    else if(dy!=0){int key=ax+(nx+1)*(Math.min(ay,by)+ny*az);edgeCountsY[key]=(byte)(edgeCountsY[key]+1);edgeWindingY[key]=(byte)(edgeWindingY[key]+dy);}
+                    else {int key=ax+(nx+1)*(ay+(ny+1)*Math.min(az,bz));edgeCountsZ[key]=(byte)(edgeCountsZ[key]+1);edgeWindingZ[key]=(byte)(edgeWindingZ[key]+dz);}
 
                     int px=x+previous[0],py=y+previous[1],pz=z+previous[2];
                     int vertex=ax+vx*(ay+vy*az),first=directionSlot(px-ax,py-ay,pz-az),second=directionSlot(bx-ax,by-ay,bz-az);
