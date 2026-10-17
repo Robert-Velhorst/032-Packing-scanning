@@ -18,8 +18,8 @@ const quads = [
   [[0,0,0],[1,0,0],[1,0,1],[0,0,1]],[[0,1,0],[0,1,1],[1,1,1],[1,1,0]],
   [[0,0,0],[0,1,0],[1,1,0],[1,0,0]],[[0,0,1],[1,0,1],[1,1,1],[0,1,1]],
 ];
-// Vertex keys use a fixed 64-cell stride, so each link edge maps to one axis direction.
-const linkDirection = (delta:number) => delta===1?0:delta===-1?1:delta===64?2:delta===-64?3:delta===4096?4:delta===-4096?5:-1;
+// Vertex keys use grid-sized strides, so each link edge maps to one axis direction.
+const linkDirection = (delta:number,rowStride:number,planeStride:number) => delta===1?0:delta===-1?1:delta===rowStride?2:delta===-rowStride?3:delta===planeStride?4:delta===-planeStride?5:-1;
 const fail = (): never => { throw new Error('The reconstructed surface is incomplete or inconsistent with its source. Recorded dimensions are unchanged.'); };
 
 export function parseReconstructedSolid(value: unknown, source: SavedGeometryPreview): ReconstructedGeometry {
@@ -60,13 +60,15 @@ export function voxelSurface(solid: Pick<ReconstructedSolid,'grid'|'resolutionMm
     if(z>0)enqueue(cell-plane);if(z+1<grid.z)enqueue(cell+plane);
   }
   if(tail!==occupiedCells.length)return fail();
-  const verticesMm:number[]=[],triangles:number[]=[],vertexIds=new Map<number,number>();
+  const vertexCapacity=(grid.x+1)*(grid.y+1)*(grid.z+1),vertexRowStride=grid.x+1,vertexPlaneStride=vertexRowStride*(grid.y+1);
+  // The sentinel-filled dense grid avoids repeated Map lookups and bounds memory by grid volume.
+  const verticesMm:number[]=[],triangles:number[]=[],vertexIds=new Int32Array(vertexCapacity);vertexIds.fill(-1);
   // Count and winding balance fit in one small integer, avoiding a heap object
   // for every boundary edge on a dense scan.
   const edges=new Map<number,number>();
   // A vertex link only connects its six axis-neighbor directions; byte masks
   // avoid per-face tuples plus a Map and Set for every surface vertex.
-  const vertexCapacity=(grid.x+1)*(grid.y+1)*(grid.z+1),linkNeighbors=new Uint8Array(vertexCapacity*6),linkSeen=new Uint8Array(vertexCapacity),linkedVertices:number[]=[];
+  const linkNeighbors=new Uint8Array(vertexCapacity*6),linkSeen=new Uint8Array(vertexCapacity),linkedVertices:number[]=[];
   // Reuse one corner-key buffer rather than allocating one array per face.
   const ids=[0,0,0,0];
   let faceCount=0;
@@ -82,34 +84,34 @@ export function voxelSurface(solid: Pick<ReconstructedSolid,'grid'|'resolutionMm
       const quad=quads[side];
       {
         const c=quad[0];
-        const a=x+c[0],b=y+c[1],cZ=z+c[2],key=a+64*(b+64*cZ);
-        if(!vertexIds.has(key)){vertexIds.set(key,verticesMm.length/3);verticesMm.push(a*resolutionMm,b*resolutionMm,cZ*resolutionMm);}
+        const a=x+c[0],b=y+c[1],cZ=z+c[2],key=a+vertexRowStride*b+vertexPlaneStride*cZ;
+        let vertexIndex=vertexIds[key];if(vertexIndex<0){vertexIndex=verticesMm.length/3;vertexIds[key]=vertexIndex;verticesMm.push(a*resolutionMm,b*resolutionMm,cZ*resolutionMm);}
         ids[0]=key;
       }
       {
         const c=quad[1];
-        const a=x+c[0],b=y+c[1],cZ=z+c[2],key=a+64*(b+64*cZ);
-        if(!vertexIds.has(key)){vertexIds.set(key,verticesMm.length/3);verticesMm.push(a*resolutionMm,b*resolutionMm,cZ*resolutionMm);}
+        const a=x+c[0],b=y+c[1],cZ=z+c[2],key=a+vertexRowStride*b+vertexPlaneStride*cZ;
+        let vertexIndex=vertexIds[key];if(vertexIndex<0){vertexIndex=verticesMm.length/3;vertexIds[key]=vertexIndex;verticesMm.push(a*resolutionMm,b*resolutionMm,cZ*resolutionMm);}
         ids[1]=key;
       }
       {
         const c=quad[2];
-        const a=x+c[0],b=y+c[1],cZ=z+c[2],key=a+64*(b+64*cZ);
-        if(!vertexIds.has(key)){vertexIds.set(key,verticesMm.length/3);verticesMm.push(a*resolutionMm,b*resolutionMm,cZ*resolutionMm);}
+        const a=x+c[0],b=y+c[1],cZ=z+c[2],key=a+vertexRowStride*b+vertexPlaneStride*cZ;
+        let vertexIndex=vertexIds[key];if(vertexIndex<0){vertexIndex=verticesMm.length/3;vertexIds[key]=vertexIndex;verticesMm.push(a*resolutionMm,b*resolutionMm,cZ*resolutionMm);}
         ids[2]=key;
       }
       {
         const c=quad[3];
-        const a=x+c[0],b=y+c[1],cZ=z+c[2],key=a+64*(b+64*cZ);
-        if(!vertexIds.has(key)){vertexIds.set(key,verticesMm.length/3);verticesMm.push(a*resolutionMm,b*resolutionMm,cZ*resolutionMm);}
+        const a=x+c[0],b=y+c[1],cZ=z+c[2],key=a+vertexRowStride*b+vertexPlaneStride*cZ;
+        let vertexIndex=vertexIds[key];if(vertexIndex<0){vertexIndex=verticesMm.length/3;vertexIds[key]=vertexIndex;verticesMm.push(a*resolutionMm,b*resolutionMm,cZ*resolutionMm);}
         ids[3]=key;
       }
-      const vertex0=vertexIds.get(ids[0])!,vertex1=vertexIds.get(ids[1])!,vertex2=vertexIds.get(ids[2])!,vertex3=vertexIds.get(ids[3])!;
+      const vertex0=vertexIds[ids[0]],vertex1=vertexIds[ids[1]],vertex2=vertexIds[ids[2]],vertex3=vertexIds[ids[3]];
       triangles.push(vertex0,vertex1,vertex2,vertex0,vertex2,vertex3);
       for(let i=0;i<4;i++){
-        const a=ids[i],b=ids[(i+1)%4],key=Math.min(a,b)*262144+Math.max(a,b);
+        const a=ids[i],b=ids[(i+1)%4],key=Math.min(a,b)*262144+Math.max(a,b); // Vertex keys stay below 2^18 for the validated 46-cell grid limit.
         edges.set(key,(edges.get(key)??8)+16+(a<b?1:-1));
-        const previousDirection=linkDirection(ids[(i+3)%4]-a),nextDirection=linkDirection(b-a),vertexIndex=i===0?vertex0:i===1?vertex1:i===2?vertex2:vertex3;
+        const previousDirection=linkDirection(ids[(i+3)%4]-a,vertexRowStride,vertexPlaneStride),nextDirection=linkDirection(b-a,vertexRowStride,vertexPlaneStride),vertexIndex=i===0?vertex0:i===1?vertex1:i===2?vertex2:vertex3;
         if(previousDirection<0||nextDirection<0)return fail();
         if(!linkSeen[vertexIndex]){linkSeen[vertexIndex]=1;linkedVertices.push(vertexIndex);}
         const base=vertexIndex*6,previousBit=1<<previousDirection,nextBit=1<<nextDirection;
