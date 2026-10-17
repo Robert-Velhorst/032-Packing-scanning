@@ -133,7 +133,7 @@ export function PackingApp() {
   }, [data, savedData, saveAppData]);
 
   const activeTrip = data?.trips.find((trip) => trip.id === data.activeTripId) ?? data?.trips[0];
-  const librarySearchCache = useMemo(() => new WeakMap<LibraryItem, string>(), [data?.libraryItems]);
+  const librarySearchCache = useMemo(() => new WeakMap<LibraryItem, string>(), [data?.libraryItems, search.length > 0]);
   const libraryItems = useMemo(() => data ? filterLibraryItems(data.libraryItems, search, librarySearchCache) : [], [data?.libraryItems, librarySearchCache, search]);
   const editingPhotoId = capture?.kind === 'item' ? capture.item?.photoId : undefined;
   useEffect(() => {
