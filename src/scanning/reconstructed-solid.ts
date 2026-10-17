@@ -67,6 +67,8 @@ export function voxelSurface(solid: Pick<ReconstructedSolid,'grid'|'resolutionMm
   // A vertex link only connects its six axis-neighbor directions; byte masks
   // avoid per-face tuples plus a Map and Set for every surface vertex.
   const vertexCapacity=(grid.x+1)*(grid.y+1)*(grid.z+1),linkNeighbors=new Uint8Array(vertexCapacity*6),linkSeen=new Uint8Array(vertexCapacity),linkedVertices:number[]=[];
+  // Reuse one corner-key buffer rather than allocating one array per face.
+  const ids=[0,0,0,0];
   let faceCount=0;
   for(const cell of occupiedCells){
     const x=cell%grid.x,y=Math.floor(cell/grid.x)%grid.y,z=Math.floor(cell/(grid.x*grid.y));
@@ -77,11 +79,31 @@ export function voxelSurface(solid: Pick<ReconstructedSolid,'grid'|'resolutionMm
     for(let side=0;side<6;side++){
       if((exposed&(1<<side))===0)continue;
       if(++faceCount>20000)return fail();
-      const ids=quads[side].map(c=>{
+      const quad=quads[side];
+      {
+        const c=quad[0];
         const a=x+c[0],b=y+c[1],cZ=z+c[2],key=a+64*(b+64*cZ);
         if(!vertexIds.has(key)){vertexIds.set(key,verticesMm.length/3);verticesMm.push(a*resolutionMm,b*resolutionMm,cZ*resolutionMm);}
-        return key;
-      });
+        ids[0]=key;
+      }
+      {
+        const c=quad[1];
+        const a=x+c[0],b=y+c[1],cZ=z+c[2],key=a+64*(b+64*cZ);
+        if(!vertexIds.has(key)){vertexIds.set(key,verticesMm.length/3);verticesMm.push(a*resolutionMm,b*resolutionMm,cZ*resolutionMm);}
+        ids[1]=key;
+      }
+      {
+        const c=quad[2];
+        const a=x+c[0],b=y+c[1],cZ=z+c[2],key=a+64*(b+64*cZ);
+        if(!vertexIds.has(key)){vertexIds.set(key,verticesMm.length/3);verticesMm.push(a*resolutionMm,b*resolutionMm,cZ*resolutionMm);}
+        ids[2]=key;
+      }
+      {
+        const c=quad[3];
+        const a=x+c[0],b=y+c[1],cZ=z+c[2],key=a+64*(b+64*cZ);
+        if(!vertexIds.has(key)){vertexIds.set(key,verticesMm.length/3);verticesMm.push(a*resolutionMm,b*resolutionMm,cZ*resolutionMm);}
+        ids[3]=key;
+      }
       const vertex0=vertexIds.get(ids[0])!,vertex1=vertexIds.get(ids[1])!,vertex2=vertexIds.get(ids[2])!,vertex3=vertexIds.get(ids[3])!;
       triangles.push(vertex0,vertex1,vertex2,vertex0,vertex2,vertex3);
       for(let i=0;i<4;i++){
