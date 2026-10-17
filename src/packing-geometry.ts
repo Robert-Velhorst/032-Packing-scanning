@@ -6,6 +6,15 @@ import { uprightRecordError } from './upright.ts';
 import { interiorFrame, interiorSupportError, interiorTravelUp } from './packing-interior.ts';
 
 export interface GeometryBox extends DimensionsMm { x:number; y:number; z:number }
+/** Reused synchronously during planning; returned positions are overwritten by the next call using this scratch. */
+export interface ContactPositionScratch {
+  values:[Set<number>,Set<number>,Set<number>];
+  coords:[number[],number[],number[]];
+  positions:Array<{x:number;y:number;z:number}>;
+}
+export function createContactPositionScratch():ContactPositionScratch {
+  return {values:[new Set(),new Set(),new Set()],coords:[[],[],[]],positions:[]};
+}
 type ShapeItem = {packingShape?:PackingShape};
 type Face = {x:number;y:number;z:number;length:number;width:number};
 const EPS=.01, axes=['length','width','height'] as const;
@@ -411,12 +420,18 @@ export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string
   return true;
 }
 
-export function contactPositions(bag:Container,orientation:DimensionsMm&{rotation:number},item:ShapeItem,placed:Placement[],items:Map<string,ShapeItem>,region:GeometryBox={x:0,y:0,z:0,...bag.inside,height:usableContainerHeight(bag)},blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[],maxPositions=20000,collisionObstacles?:readonly GeometryBox[],collisionObstaclePrefixMaxRight?:readonly number[]) {
+export function contactPositions(bag:Container,orientation:DimensionsMm&{rotation:number},item:ShapeItem,placed:Placement[],items:Map<string,ShapeItem>,region:GeometryBox={x:0,y:0,z:0,...bag.inside,height:usableContainerHeight(bag)},blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[],maxPositions=20000,collisionObstacles?:readonly GeometryBox[],collisionObstaclePrefixMaxRight?:readonly number[],scratch?:ContactPositionScratch) {
   const local=item.packingShape?localGeometry(item.packingShape,orientation.rotation).boxes:[{x:0,y:0,z:0,length:orientation.length,width:orientation.width,height:orientation.height}],obstacles=cachedObstacles??[...placed.flatMap(p=>placementBoxes(p,items.get(p.instanceId))),...blockedSpaces];
   let indexedCollisionObstacles=collisionObstacles,indexedCollisionPrefix=collisionObstaclePrefixMaxRight;
   if(collisionObstacles&&!indexedCollisionPrefix){indexedCollisionObstacles=[...collisionObstacles].sort((a,b)=>a.x-b.x);indexedCollisionPrefix=obstaclePrefixMaxRight(indexedCollisionObstacles);}
   const minimum=[region.x,region.y,region.z],maximum=[region.x+region.length-orientation.length,region.y+region.width-orientation.width,region.z+region.height-orientation.height];
-  const values=[new Set([minimum[0],maximum[0]]),new Set([minimum[1],maximum[1]]),new Set([minimum[2]])];
+  const values=scratch?.values??[new Set([minimum[0],maximum[0]]),new Set([minimum[1],maximum[1]]),new Set([minimum[2]])];
+  if(scratch){
+    for(let axis=0;axis<3;axis++){
+      values[axis].clear();values[axis].add(minimum[axis]);
+      if(axis<2)values[axis].add(maximum[axis]);
+    }
+  }
   for(const b of obstacles)for(const c of local){
     const right=b.x+b.length-c.x,left=b.x-c.x-c.length;
     if(right>=minimum[0]-EPS&&right<=maximum[0]+EPS)values[0].add(Math.max(minimum[0],right));
@@ -427,8 +442,17 @@ export function contactPositions(bag:Container,orientation:DimensionsMm&{rotatio
     const top=b.z+b.height-c.z;
     if(top>=minimum[2]-EPS&&top<=maximum[2]+EPS)values[2].add(Math.max(minimum[2],top));
   }
-  const coords=values.map(set=>[...set].sort((a,b)=>a-b));
-  const positions:Array<{x:number;y:number;z:number}>=[];let limited=false,examined=0;
+  let coords:[number[],number[],number[]];
+  if(scratch){
+    coords=scratch.coords;
+    for(let axis=0;axis<3;axis++){
+      const axisCoords=coords[axis];axisCoords.length=0;
+      for(const value of values[axis])axisCoords.push(value);
+      axisCoords.sort((a,b)=>a-b);
+    }
+  }else coords=values.map(set=>[...set].sort((a,b)=>a-b)) as [number[],number[],number[]];
+  const positions=scratch?.positions??[];positions.length=0;
+  let limited=false,examined=0;
   outer:for(const z of coords[2])for(const y of coords[1])for(const x of coords[0]){
     if(examined>=maxPositions){limited=true;break outer;}
     examined++;

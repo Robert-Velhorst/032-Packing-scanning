@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest';
 import {buildPlan} from './optimizer';
 import {assessStackLoads} from './stack-load';
 import {orderPackingSteps} from './packing-sequence';
-import {boxesIntersect,contactPositions,geometryContactArea,geometryIntersects,geometryOrientations,geometrySupportArea,hasGeometrySupport,hasVerticalEntry,insertObstaclePrefixMaxRight,obstaclePrefixMaxRight,packingShapeError,placementBoxes,placementSurface,RectangularSupportIndex,shapeDimensions,shapeKey,shapeVolume,uniqueGeometryOrientations} from './packing-geometry';
+import {boxesIntersect,contactPositions,createContactPositionScratch,geometryContactArea,geometryIntersects,geometryOrientations,geometrySupportArea,hasGeometrySupport,hasVerticalEntry,insertObstaclePrefixMaxRight,obstaclePrefixMaxRight,packingShapeError,placementBoxes,placementSurface,RectangularSupportIndex,shapeDimensions,shapeKey,shapeVolume,uniqueGeometryOrientations} from './packing-geometry';
 import type {Container,LibraryItem,PackingShape,Placement,PlanItem,Trip} from './types';
 const date='2026-10-01T00:00:00Z',evidence={source:'estimated' as const,confidence:.5,collectedAt:date};
 function shape(portal=false):PackingShape {
@@ -71,6 +71,10 @@ describe('adopted occupied-cell planning',()=>{
   const shaped=shape(),obstacle=placement('U'),shapeItem=item('U',shaped.fittedDimensionsMm,shaped),candidate=item('candidate',{length:40,width:30,height:20}),items=new Map<string,LibraryItem>([[obstacle.instanceId,shapeItem],[candidate.id+'#1',candidate]]),orientation=geometryOrientations(candidate,bag)[0];
   const full=contactPositions(bag,orientation,candidate,[obstacle],items),cached=contactPositions(bag,orientation,candidate,[],items,undefined,[],placementBoxes(obstacle,shapeItem));
   expect(cached).toEqual(full);
+  const scratch=createContactPositionScratch(),reused=contactPositions(bag,orientation,candidate,[obstacle],items,undefined,undefined,undefined,20000,undefined,undefined,scratch);
+  expect(reused).toEqual(full);
+  const narrowRegion={x:0,y:0,z:0,length:90,width:70,height:50},reusedAgain=contactPositions(bag,orientation,candidate,[],items,narrowRegion,[],undefined,8,undefined,undefined,scratch);
+  expect(reusedAgain).toEqual(contactPositions(bag,orientation,candidate,[],items,narrowRegion,[],undefined,8));
   const capped=contactPositions(bag,orientation,candidate,[obstacle],items,undefined,undefined,undefined,8);
   expect(full.positions.length).toBeGreaterThan(8);expect(capped.positions).toEqual(full.positions.slice(0,8));expect(capped.limited).toBe(true);
   const obstacleBoxes=placementBoxes(obstacle,shapeItem),clear=(position:{x:number;y:number;z:number})=>!geometryIntersects(placement('candidate',{...position,...orientation}),obstacle,items);

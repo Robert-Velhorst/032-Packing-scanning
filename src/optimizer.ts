@@ -13,7 +13,7 @@ import { packingItem, packingFormKey } from './packing-forms';
 import { isValidRejectedPlacement, samePlacementGeometry } from './packing-progress';
 import { containerBlockedBoxes, containerSpaceError, usableContainerHeight, usableContainerVolume } from './container-space';
 import { interiorKey, interiorSupportError, interiorTravelUp } from './packing-interior';
-import { contactPositions, fitsGeometrySpaceInValidatedContainer, geometryIntersects, geometryOrientations, hasGeometrySupport, hasPackingAndTravelSupport, hasVerticalEntry, insertObstaclePrefixMaxRight, obstaclePrefixMaxRight, orientationForRotation, packingShapeError, placementBoxes, RectangularSupportIndex, shapeDimensions, shapeKey, shapeVolume, type GeometryBox, uniqueGeometryOrientations } from './packing-geometry';
+import { contactPositions, createContactPositionScratch, fitsGeometrySpaceInValidatedContainer, geometryIntersects, geometryOrientations, hasGeometrySupport, hasPackingAndTravelSupport, hasVerticalEntry, insertObstaclePrefixMaxRight, obstaclePrefixMaxRight, orientationForRotation, packingShapeError, placementBoxes, RectangularSupportIndex, shapeDimensions, shapeKey, shapeVolume, type ContactPositionScratch, type GeometryBox, uniqueGeometryOrientations } from './packing-geometry';
 
 interface FreeSpace {
   compartmentId?: string;
@@ -358,6 +358,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
   const previousFreeSpaces = new Set<FreeSpace>();
   // Large plans split free spaces repeatedly; reuse the containment summaries.
   const containmentBlockScratch:FreeSpaceContainmentBlock[]=[];
+  let contactPositionScratch:ContactPositionScratch|undefined;
   const placementsByContainer = new Map(containers.map(container => [container.id, [] as Placement[]]));
   const massByContainer = new Map(containers.map(container => [container.id, container.tareGrams ?? 0]));
   const unweighedByContainer = new Map(containers.map(container => [container.id, 0]));
@@ -548,7 +549,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
         for (const orientation of context.orientations) {
           if (orientation.length > space.length + EPSILON || orientation.width > space.width + EPSILON || orientation.height > space.height + EPSILON) continue;
           const contactCollisionObstacles=space.shapeSearch?verticalEntryObstacles?.get(container.id):undefined;
-          const contacts=space.shapeSearch?contactPositions(container,orientation,item,shapeContactObstacles?[]:[...bagPlacements,...anchors],itemById,space,blockedSpaces.get(container.id),shapeContactObstacles,SHAPE_CONTACT_POSITION_LIMIT,contactCollisionObstacles,verticalEntryObstaclePrefixMaxRights.get(container.id)):undefined;
+          const contacts=space.shapeSearch?contactPositions(container,orientation,item,shapeContactObstacles?[]:[...bagPlacements,...anchors],itemById,space,blockedSpaces.get(container.id),shapeContactObstacles,SHAPE_CONTACT_POSITION_LIMIT,contactCollisionObstacles,verticalEntryObstaclePrefixMaxRights.get(container.id),contactPositionScratch??=createContactPositionScratch()):undefined;
           if(contacts?.limited)searchLimited=true;
           const basePositions=contacts?.positions??cornerPositions(space, orientation);
           const positions = rules.length
