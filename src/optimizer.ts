@@ -235,17 +235,20 @@ function searchInsertionOrders(orders: PlanItem[][], containers: Container[], lo
     if (seen.has(key)) return;
     seen.add(key);
     const result = packOnce(order, containers, locks, mode, rejected, rules, containerErrors, blockedSpaces, lookaheadDepth);
-    if (!bestResult || result.score > bestResult.score) bestResult = result;
+    // In these modes every complete plan has the same objective; preserve the
+    // first complete result rather than letting sum order choose a float tie.
+    const completeBestCannotImprove = completePlanHasMaximumScore && bestResult?.excluded.length === 0;
+    if (!bestResult || !completeBestCannotImprove && (result.excluded.length === 0 && completePlanHasMaximumScore || result.score > bestResult.score)) bestResult = result;
     if (result.excluded.length === 0) foundComplete = true;
     frontier.push({ order, result });
   };
+  const balancedDistributionAffectsScore = mode === 'balanced' && containers.length > 1
+    && containers.every(bag => typeof bag.tareGrams === 'number' && Number.isFinite(bag.tareGrams) && bag.tareGrams >= 0)
+    && (orders[0]?.every(item => typeof item.upperMassGrams === 'number' && Number.isFinite(item.upperMassGrams) && item.upperMassGrams >= 0) ?? false);
+  const completePlanHasMaximumScore = mode === 'maximum_capacity' || mode === 'fragile_protection'
+    || mode === 'balanced' && !balancedDistributionAffectsScore;
   // Preserve existing rectangular-only mode behavior, including its tie order.
   if (!rules.length && !orders[0]?.some(item => item.packingShape)) {
-    const balancedDistributionAffectsScore = mode === 'balanced' && containers.length > 1
-      && containers.every(bag => typeof bag.tareGrams === 'number' && Number.isFinite(bag.tareGrams) && bag.tareGrams >= 0)
-      && (orders[0]?.every(item => typeof item.upperMassGrams === 'number' && Number.isFinite(item.upperMassGrams) && item.upperMassGrams >= 0) ?? false);
-    const completePlanHasMaximumScore = mode === 'maximum_capacity' || mode === 'fragile_protection'
-      || mode === 'balanced' && !balancedDistributionAffectsScore;
     for (const order of orders) {
       evaluate(order);
       // A complete result is unbeatable in these modes. In balanced mode this
@@ -259,8 +262,7 @@ function searchInsertionOrders(orders: PlanItem[][], containers: Container[], lo
     evaluate(order);
     // Complete plans have the same score in these cases, so alternate insertion
     // orders cannot improve the selected result once every item is placed.
-    if ((mode === 'maximum_capacity' || mode === 'fragile_protection' || (mode === 'balanced' && containers.length === 1))
-      && bestResult?.excluded.length === 0) break;
+    if (completePlanHasMaximumScore && bestResult?.excluded.length === 0) break;
   }
   const complete = () => foundComplete;
   while (frontier.length && seen.size < 24 && !complete()) {
