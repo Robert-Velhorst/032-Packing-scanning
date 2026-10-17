@@ -1,5 +1,5 @@
 const CACHE = 'packing-shell-v6';
-const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
+const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg', '/three/three-view.html'];
 
 function isOfflineAsset(pathname) {
   return SHELL.includes(pathname)
@@ -11,13 +11,19 @@ self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
     await cache.addAll(SHELL);
-    const index = await cache.match('/index.html');
-    if (index) {
-      const html = await index.text();
-      const bundles = [...html.matchAll(/(?:src|href)=["']([^"']+\.(?:js|css))(?:\?[^"']*)?["']/g)]
-        .map((match) => match[1]);
-      await cache.addAll([...new Set(bundles)]);
-      let pendingBundles = [...new Set(bundles.filter((path) => path.endsWith('.js')))];
+    const documents = await Promise.all(['/index.html', '/three/three-view.html']
+      .map((path) => cache.match(path)));
+    if (documents.some(Boolean)) {
+      const bundles = new Set();
+      for (const document of documents) {
+        if (!document) continue;
+        const html = await document.text();
+        for (const match of html.matchAll(/(?:src|href)=["']([^"']+\.(?:js|css))(?:\?[^"']*)?["']/g)) {
+          bundles.add(match[1]);
+        }
+      }
+      await cache.addAll([...bundles]);
+      let pendingBundles = [...bundles].filter((path) => path.endsWith('.js'));
       const inspectedBundles = new Set();
       const moduleAsset = /["'](\/?(?:assets|three\/assets)\/[A-Za-z0-9._-]+\.js)["']/g;
       while (pendingBundles.length) {

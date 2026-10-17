@@ -74,10 +74,15 @@ describe('offline app cache', () => {
     const mainScript = '/assets/index-shell.js';
     const sources = {
       '/index.html': `<script type="module" src="${mainScript}"></script>`,
+      '/three/three-view.html': '<script type="module" src="/three/assets/three-view.js"></script><link rel="stylesheet" href="/three/assets/three-view.css">',
       [mainScript]: 'const dependencies=["assets/PackingApp-core.js","assets/native-storage.js"];',
       '/assets/PackingApp-core.js': 'import "assets/workspace-route.js";',
       '/assets/workspace-route.js': 'import("assets/shape-planner.js");',
       '/assets/shape-planner.js': 'export const ready = true;',
+      '/three/assets/three-view.js': 'import("three/assets/three-scene.js");',
+      '/three/assets/three-scene.js': 'import "three/assets/three-core.js";',
+      '/three/assets/three-core.js': 'export const ready = true;',
+      '/three/assets/three-view.css': '.scene { display: block; }',
     };
     const { listeners, cacheStore } = workerHarness({}, sources);
     let installation: Promise<void> | undefined;
@@ -88,12 +93,19 @@ describe('offline app cache', () => {
     expect(cachedPaths).toContain('/assets/workspace-route.js');
     expect(cachedPaths).toContain('/assets/shape-planner.js');
     expect(cachedPaths).toContain('/assets/native-storage.js');
+    expect(cachedPaths).toContain('/three/assets/three-view.js');
+    expect(cachedPaths).toContain('/three/assets/three-scene.js');
+    expect(cachedPaths).toContain('/three/assets/three-core.js');
+    expect(cachedPaths).toContain('/three/assets/three-view.css');
     let cachedModule: Promise<{ path: string }> | undefined;
     listeners.get('fetch')!({ request: { method: 'GET', url: 'https://packing.test/assets/PackingApp-core.js', mode: 'cors' }, respondWith: (promise: Promise<{ path: string }>) => { cachedModule = promise; } });
     await expect(cachedModule).resolves.toHaveProperty('path', '/assets/PackingApp-core.js');
     let cachedRoute: Promise<{ path: string }> | undefined;
     listeners.get('fetch')!({ request: { method: 'GET', url: 'https://packing.test/assets/shape-planner.js', mode: 'cors' }, respondWith: (promise: Promise<{ path: string }>) => { cachedRoute = promise; } });
     await expect(cachedRoute).resolves.toHaveProperty('path', '/assets/shape-planner.js');
+    let cached3dModule: Promise<{ path: string }> | undefined;
+    listeners.get('fetch')!({ request: { method: 'GET', url: 'https://packing.test/three/assets/three-core.js', mode: 'cors' }, respondWith: (promise: Promise<{ path: string }>) => { cached3dModule = promise; } });
+    await expect(cached3dModule).resolves.toHaveProperty('path', '/three/assets/three-core.js');
   });
 
   it('ignores unrelated same-origin GET requests instead of caching them', () => {
