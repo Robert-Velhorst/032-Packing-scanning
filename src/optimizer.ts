@@ -615,8 +615,8 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
                 lookaheadCache.set(key,penalty);
               }
               lookahead=penalty;
-            } else if(future){const prior=[...bagPlacements,placement],possible=futureProbes.some(next=>
-              !placementSeparationError(next,prior,rules,itemById)&&fitsGeometrySpaceInValidatedContainer(next,container,future,blockedSpaces.get(container.id))&&!prior.some(p=>geometryIntersects(next,p,itemById))&&hasPackingAndTravelSupport(next,prior,itemById,mode==='fragile_protection'?1:.65,container)&&hasVerticalEntry(next,prior,itemById,container,blockedSpaces.get(container.id))
+            } else if(future){const prior=[...bagPlacements,placement],candidateObstacles=placementBoxes(placement,item),entryObstacles=verticalEntryObstacles?.get(container.id),entryPrefix=verticalEntryObstaclePrefixMaxRights.get(container.id),possible=futureProbes.some(next=>
+              !placementSeparationError(next,prior,rules,itemById)&&fitsGeometrySpaceInValidatedContainer(next,container,future,blockedSpaces.get(container.id))&&hasVerticalEntry(next,[],itemById,container,blockedSpaces.get(container.id),entryObstacles,true,undefined,entryPrefix,candidateObstacles)&&hasPackingAndTravelSupport(next,prior,itemById,mode==='fragile_protection'?1:.65,container)
                 // An isolated probe cannot change the already-checked stack graph.
                 && (!hasStackContact(next,prior,itemById,container)||!assessStackLoads([...prior,next],itemById,[container],stackLoadContactCache).some(load=>load.status==='conflict')));
               if(!possible)lookahead=future.volumeMm3*20;}

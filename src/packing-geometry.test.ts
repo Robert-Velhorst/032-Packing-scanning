@@ -40,6 +40,16 @@ describe('adopted occupied-cell planning',()=>{
    expect(indexed).toBe(ordinary);expect(prefixIndexed).toBe(ordinary);
   }
  });
+ it('checks a trial placement against cached entry obstacles without rebuilding the full list',()=>{
+  const shaped=shape(),arch=item('U',shaped.fittedDimensionsMm,shaped),small=item('small'),items=new Map([[arch.id+'#1',arch],[small.id+'#1',small]]),blocker=placement('U'),blockerBoxes=placementBoxes(blocker,arch);
+  const overhead=placement('small',{x:40,y:35,z:30,length:40,width:20,height:20}),overheadBoxes=placementBoxes(overhead,small);
+  for(const [probe,obstacles] of [[placement('small',{x:40,y:10,z:0,length:40,width:20,height:20}),blockerBoxes],[placement('small',{x:40,y:35,z:0,length:40,width:20,height:20}),blockerBoxes],[placement('small',{x:40,y:35,z:0,length:40,width:20,height:20}),overheadBoxes]] as const){
+   const placed=obstacles===overheadBoxes?overhead:blocker;
+   const ordinary=hasVerticalEntry(probe,[placed],items,bag,[]);
+   const indexed=hasVerticalEntry(probe,[],items,bag,[],[],true,undefined,[],obstacles);
+   expect(indexed).toBe(ordinary);
+  }
+ });
  it('skips x-sorted entry obstacles beyond the maximum obstacle reach',()=>{
   const small=item('small'),items=new Map([[small.id+'#1',small]]),obstacles=[
    {x:0,y:0,z:10,length:20,width:100,height:30},
