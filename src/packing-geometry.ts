@@ -121,7 +121,7 @@ export function placementSurface(p:Placement,item:ShapeItem):SolidSurface|undefi
   return {...compiled.surface,verticesMm,volumeMm3:compiled.volume};
 }
 export function boxesIntersect(a:GeometryBox,b:GeometryBox):boolean {
-  return a.x<b.x+b.length-EPS&&a.x+a.length>b.x+EPS&&a.y<b.y+b.width-EPS&&a.y+a.width>b.y+EPS&&a.z<b.z+b.height-EPS&&a.z+a.height>b.z+EPS;
+  return a.z<b.z+b.height-EPS&&a.z+a.height>b.z+EPS&&a.x<b.x+b.length-EPS&&a.x+a.length>b.x+EPS&&a.y<b.y+b.width-EPS&&a.y+a.width>b.y+EPS;
 }
 function translatedBoxesIntersect(a:GeometryBox,ax:number,ay:number,az:number,b:GeometryBox,bx:number,by:number,bz:number):boolean {
   const leftX=ax+a.x,leftY=ay+a.y,leftZ=az+a.z,rightX=bx+b.x,rightY=by+b.y,rightZ=bz+b.z;
