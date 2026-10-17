@@ -63,9 +63,10 @@ export function voxelSurface(solid: Pick<ReconstructedSolid,'grid'|'resolutionMm
   const vertexCapacity=(grid.x+1)*(grid.y+1)*(grid.z+1),vertexRowStride=grid.x+1,vertexPlaneStride=vertexRowStride*(grid.y+1);
   // The sentinel-filled dense grid avoids repeated Map lookups and bounds memory by grid volume.
   const verticesMm:number[]=[],triangles:number[]=[],vertexIds=new Int32Array(vertexCapacity);vertexIds.fill(-1);
-  // Count and winding balance fit in one small integer, avoiding a heap object
-  // for every boundary edge on a dense scan.
-  const edges=new Map<number,number>();
+  // Three state bytes per grid vertex track its positive-axis edges; the list
+  // stays bounded by four edge visits per exposed face.
+  const edgeStates=new Uint8Array(vertexCapacity*3),maxFaceCount=Math.min(20_000,occupiedCells.length*6),touchedEdges=new Uint32Array(maxFaceCount*4);
+  let touchedEdgeCount=0;
   // A vertex link only connects its six axis-neighbor directions; byte masks
   // avoid per-face tuples plus a Map and Set for every surface vertex.
   const linkNeighbors=new Uint8Array(vertexCapacity*6),linkSeen=new Uint8Array(vertexCapacity),linkedVertices:number[]=[];
@@ -109,10 +110,13 @@ export function voxelSurface(solid: Pick<ReconstructedSolid,'grid'|'resolutionMm
       const vertex0=vertexIds[ids[0]],vertex1=vertexIds[ids[1]],vertex2=vertexIds[ids[2]],vertex3=vertexIds[ids[3]];
       triangles.push(vertex0,vertex1,vertex2,vertex0,vertex2,vertex3);
       for(let i=0;i<4;i++){
-        const a=ids[i],b=ids[(i+1)%4],key=Math.min(a,b)*262144+Math.max(a,b); // Vertex keys stay below 2^18 for the validated 46-cell grid limit.
-        edges.set(key,(edges.get(key)??8)+16+(a<b?1:-1));
+        const a=ids[i],b=ids[(i+1)%4];
         const previousDirection=linkDirection(ids[(i+3)%4]-a,vertexRowStride,vertexPlaneStride),nextDirection=linkDirection(b-a,vertexRowStride,vertexPlaneStride),vertexIndex=i===0?vertex0:i===1?vertex1:i===2?vertex2:vertex3;
         if(previousDirection<0||nextDirection<0)return fail();
+        const edgeIndex=Math.min(a,b)*3+(nextDirection>>1),orientation=a<b?1:2,state=edgeStates[edgeIndex];
+        if(state===0){edgeStates[edgeIndex]=orientation;touchedEdges[touchedEdgeCount++]=edgeIndex;}
+        else if(state===3||state===orientation)return fail();
+        else edgeStates[edgeIndex]=3;
         if(!linkSeen[vertexIndex]){linkSeen[vertexIndex]=1;linkedVertices.push(vertexIndex);}
         const base=vertexIndex*6,previousBit=1<<previousDirection,nextBit=1<<nextDirection;
         if((linkNeighbors[base+previousDirection]&nextBit)===0){
@@ -122,7 +126,7 @@ export function voxelSurface(solid: Pick<ReconstructedSolid,'grid'|'resolutionMm
       }
     }
   }
-  for(const edge of edges.values())if(edge!==40)return fail();
+  for(let index=0;index<touchedEdgeCount;index++)if(edgeStates[touchedEdges[index]]!==3)return fail();
   const linkQueue=new Uint8Array(6),linkVisited=new Uint8Array(6);
   for(const vertex of linkedVertices){
     const base=vertex*6;let start=-1,nodeCount=0;
