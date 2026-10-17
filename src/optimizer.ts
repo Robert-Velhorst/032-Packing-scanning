@@ -574,7 +574,6 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             // bypass those checks and still need the exact geometry gate here.
             if(rules.length>0&&!contactCollisionObstacles&&bagPlacements.some(p=>geometryIntersects(placement,p,itemById)))continue;
             if(!(supportIndex?hasPackingAndTravelSupport(placement,bagPlacements,itemById,mode==='fragile_protection'?1:.65,container,supportIndex):hasPackingAndTravelSupport(placement,bagPlacements,itemById,mode==='fragile_protection'?1:.65,container)))continue;
-            if(hasShapes&&!hasVerticalEntry(placement,bagPlacements,itemById,container,blockedSpaces.get(container.id),verticalEntryObstacles?.get(container.id),true,undefined,verticalEntryObstaclePrefixMaxRights.get(container.id)))continue;
             const separationError = rules.length?placementSeparationError(placement,[...placements,...savedMassPositions],rules,itemById):undefined;
             if(separationError){separationFailure=separationError;continue;}
             if (rejected.some((failed) => samePlacementGeometry(failed, placement))) continue;
@@ -619,7 +618,9 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
             const compareAffinity = best && affinity!==best.affinity;
             const compareWeight = best && container.id !== best.container.id && lookahead === 0 && best.lookahead === 0
               && weightCost !== undefined && priorCost !== undefined && Math.abs(weightCost - priorCost) > 1e-12;
-            if (!best || (compareAffinity ? affinity : compareWeight ? weightCost! < priorCost! : score < best.score)) {
+            const improvesBest = !best || (compareAffinity ? affinity : compareWeight ? weightCost! < priorCost! : score < best.score);
+            if (improvesBest && hasShapes && !hasVerticalEntry(placement,bagPlacements,itemById,container,blockedSpaces.get(container.id),verticalEntryObstacles?.get(container.id),true,undefined,verticalEntryObstaclePrefixMaxRights.get(container.id)))continue;
+            if (improvesBest) {
               best = { placement, container, score, lookahead, affinity };
             }
           }
