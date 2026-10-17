@@ -146,7 +146,12 @@ export function placementSurface(p:Placement,item:ShapeItem):SolidSurface|undefi
   if(!item.packingShape)return;
   const shape=item.packingShape,compiled=compile(shape),r=rotations.find(r=>r.code===p.rotation);if(!r)throw Error('Unsupported rotation.');
   const scale=shape.fittedDimensionsMm.length/shape.sourceEnvelopeMm.length,dimensions=axes.map(a=>compiled.bounds[a]),v=compiled.surface.verticesMm,verticesMm:number[]=[];
-  for(let i=0;i<v.length;i+=3){const point=v.slice(i,i+3).map(n=>n*scale),out=r.axis.map((a,j)=>r.sign[j]>0?point[a]:dimensions[a]-point[a]);verticesMm.push(out[0]+p.x,out[1]+p.y,out[2]+p.z);}
+  const axis0=r.axis[0],axis1=r.axis[1],axis2=r.axis[2],sign0=r.sign[0],sign1=r.sign[1],sign2=r.sign[2];
+  for(let i=0;i<v.length;i+=3){
+    const sourceX=v[i]*scale,sourceY=v[i+1]*scale,sourceZ=v[i+2]*scale;
+    const value0=axis0===0?sourceX:axis0===1?sourceY:sourceZ,value1=axis1===0?sourceX:axis1===1?sourceY:sourceZ,value2=axis2===0?sourceX:axis2===1?sourceY:sourceZ;
+    verticesMm.push((sign0>0?value0:dimensions[axis0]-value0)+p.x,(sign1>0?value1:dimensions[axis1]-value1)+p.y,(sign2>0?value2:dimensions[axis2]-value2)+p.z);
+  }
   return {...compiled.surface,verticesMm,volumeMm3:compiled.volume};
 }
 export function boxesIntersect(a:GeometryBox,b:GeometryBox):boolean {

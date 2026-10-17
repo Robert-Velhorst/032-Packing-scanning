@@ -15,6 +15,7 @@
     "benchmark:optimizer:profile": "node scripts/optimizer-performance.mjs --profile=true",
     "benchmark:optimizer:shapes": "node scripts/optimizer-performance.mjs --counts=20 --shapes=4",
     "benchmark:three-view": "node scripts/three-view-data-performance.mjs",
+    "benchmark:three-surface": "node scripts/three-surface-performance.mjs",
     "benchmark:sequence": "node scripts/packing-sequence-performance.mjs",
     "benchmark:reconstruction": "node --expose-gc scripts/reconstruction-performance.mjs",
     "benchmark:interior": "node --expose-gc scripts/interior-cavity-performance.mjs",

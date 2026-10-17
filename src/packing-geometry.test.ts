@@ -154,7 +154,7 @@ describe('adopted occupied-cell planning',()=>{
  });
  it('uses 24 proper rotations, four upright rotations, and outward volume without mirroring',()=>{
   const s=shape(),i=item('U',s.fittedDimensionsMm,s),all=geometryOrientations({...i,keepUpright:false});expect(all).toHaveLength(24);expect(geometryOrientations(i)).toHaveLength(4);
-  for(const o of all){const surface=placementSurface(placement('U',{...o}),i)!;let volume=0;const v=surface.verticesMm;
+  for(const o of all){const surface=placementSurface(placement('U',{...o}),i)!,origin=placementSurface(placement('U',{...o,x:0,y:0,z:0}),i)!,translated=placementSurface(placement('U',{...o,x:17,y:23,z:31}),i)!;expect(translated.verticesMm).toEqual(origin.verticesMm.map((value,index)=>value+[17,23,31][index%3]));let volume=0;const v=surface.verticesMm;
    for(let n=0;n<surface.triangles.length;n+=3){const [a,b,c]=surface.triangles.slice(n,n+3).map(index=>index*3);volume+=(v[a]*(v[b+1]*v[c+2]-v[b+2]*v[c+1])+v[a+1]*(v[b+2]*v[c]-v[b]*v[c+2])+v[a+2]*(v[b]*v[c+1]-v[b+1]*v[c]))/6;}
    expect(volume).toBeCloseTo(552000,5);expect(surface.verticesMm.every(Number.isFinite)).toBe(true);
   }
