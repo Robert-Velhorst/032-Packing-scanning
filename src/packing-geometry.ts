@@ -143,7 +143,7 @@ export function placementBoxes(placement:GeometryBox&{rotation?:number},item?:Sh
   if(!item?.packingShape)return [placement];
   return localGeometry(item.packingShape,placement.rotation??0).boxes.map(b=>({...b,x:b.x+placement.x,y:b.y+placement.y,z:b.z+placement.z}));
 }
-export function placementSurface(p:Placement,item:ShapeItem):SolidSurface|undefined {
+export function placementSurfaceLocal(p:Placement,item:ShapeItem):SolidSurface|undefined {
   if(!item.packingShape)return;
   const shape=item.packingShape,compiled=compile(shape),r=rotations.find(r=>r.code===p.rotation);if(!r)throw Error('Unsupported rotation.');
   const scale=shape.fittedDimensionsMm.length/shape.sourceEnvelopeMm.length,dimensions=axes.map(a=>compiled.bounds[a]),v=compiled.surface.verticesMm,verticesMm:number[]=[];
@@ -151,9 +151,15 @@ export function placementSurface(p:Placement,item:ShapeItem):SolidSurface|undefi
   for(let i=0;i<v.length;i+=3){
     const sourceX=v[i]*scale,sourceY=v[i+1]*scale,sourceZ=v[i+2]*scale;
     const value0=axis0===0?sourceX:axis0===1?sourceY:sourceZ,value1=axis1===0?sourceX:axis1===1?sourceY:sourceZ,value2=axis2===0?sourceX:axis2===1?sourceY:sourceZ;
-    verticesMm.push((sign0>0?value0:dimensions[axis0]-value0)+p.x,(sign1>0?value1:dimensions[axis1]-value1)+p.y,(sign2>0?value2:dimensions[axis2]-value2)+p.z);
+    verticesMm.push(sign0>0?value0:dimensions[axis0]-value0,sign1>0?value1:dimensions[axis1]-value1,sign2>0?value2:dimensions[axis2]-value2);
   }
   return {...compiled.surface,verticesMm,volumeMm3:compiled.volume};
+}
+export function placementSurface(p:Placement,item:ShapeItem):SolidSurface|undefined {
+  const local=placementSurfaceLocal(p,item);if(!local)return;
+  const verticesMm:number[]=[],x=p.x,y=p.y,z=p.z,v=local.verticesMm;
+  for(let i=0;i<v.length;i+=3)verticesMm.push(v[i]+x,v[i+1]+y,v[i+2]+z);
+  return {...local,verticesMm};
 }
 export function boxesIntersect(a:GeometryBox,b:GeometryBox):boolean {
   return a.z<b.z+b.height-EPS&&a.z+a.height>b.z+EPS&&a.x<b.x+b.length-EPS&&a.x+a.length>b.x+EPS&&a.y<b.y+b.width-EPS&&a.y+a.width>b.y+EPS;

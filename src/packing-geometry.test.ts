@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest';
 import {buildPlan} from './optimizer';
 import {assessStackLoads} from './stack-load';
 import {orderPackingSteps} from './packing-sequence';
-import {boxesIntersect,contactPositions,createContactPositionScratch,geometryContactArea,geometryIntersects,geometryOrientations,geometrySupportArea,hasGeometrySupport,hasVerticalEntry,insertObstaclePrefixMaxRight,obstaclePrefixMaxRight,packingShapeError,placementBoxes,placementSurface,RectangularSupportIndex,shapeDimensions,shapeKey,shapeVolume,uniqueGeometryOrientations} from './packing-geometry';
+import {boxesIntersect,contactPositions,createContactPositionScratch,geometryContactArea,geometryIntersects,geometryOrientations,geometrySupportArea,hasGeometrySupport,hasVerticalEntry,insertObstaclePrefixMaxRight,obstaclePrefixMaxRight,packingShapeError,placementBoxes,placementSurface,placementSurfaceLocal,RectangularSupportIndex,shapeDimensions,shapeKey,shapeVolume,uniqueGeometryOrientations} from './packing-geometry';
 import type {Container,LibraryItem,PackingShape,Placement,PlanItem,Trip} from './types';
 const date='2026-10-01T00:00:00Z',evidence={source:'estimated' as const,confidence:.5,collectedAt:date};
 function shape(portal=false):PackingShape {
@@ -157,6 +157,16 @@ describe('adopted occupied-cell planning',()=>{
   for(const o of all){const surface=placementSurface(placement('U',{...o}),i)!,origin=placementSurface(placement('U',{...o,x:0,y:0,z:0}),i)!,translated=placementSurface(placement('U',{...o,x:17,y:23,z:31}),i)!;expect(translated.verticesMm).toEqual(origin.verticesMm.map((value,index)=>value+[17,23,31][index%3]));let volume=0;const v=surface.verticesMm;
    for(let n=0;n<surface.triangles.length;n+=3){const [a,b,c]=surface.triangles.slice(n,n+3).map(index=>index*3);volume+=(v[a]*(v[b+1]*v[c+2]-v[b+2]*v[c+1])+v[a+1]*(v[b+2]*v[c]-v[b]*v[c+2])+v[a+2]*(v[b]*v[c+1]-v[b+1]*v[c]))/6;}
    expect(volume).toBeCloseTo(552000,5);expect(surface.verticesMm.every(Number.isFinite)).toBe(true);
+  }
+ });
+ it('keeps local surface vertices reusable across translated instances',()=>{
+  const s=shape(),i=item('U',s.fittedDimensionsMm,s);
+  for(const orientation of geometryOrientations({...i,keepUpright:false})){
+   const atOrigin=placementSurface(placement('U',{...orientation,x:0,y:0,z:0}),i)!;
+   const translated=placement('U',{...orientation,x:17,y:23,z:31});
+   const local=placementSurfaceLocal(translated,i)!;
+   expect(local.verticesMm).toEqual(atOrigin.verticesMm);
+   expect(placementSurface(translated,i)!.verticesMm).toEqual(local.verticesMm.map((value,index)=>value+[17,23,31][index%3]));
   }
  });
  it('retains cell-rounding allowance under uniform scaling and rejects stale or distorted dimensions',()=>{

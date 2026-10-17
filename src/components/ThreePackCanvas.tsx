@@ -5,7 +5,7 @@ import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { PackingPlan, Placement } from '../types';
 import { coveredPlacementLabelIds, type ThreeViewContainer, type ThreeViewItem, type ThreeViewPlan } from '../three-view-data';
 import { containerBlockedBoxes, containerSpaceError } from '../container-space';
-import { placementBoxes,placementSurface } from '../packing-geometry';
+import { placementBoxes,placementSurfaceLocal } from '../packing-geometry';
 
 interface Props {
   container?: ThreeViewContainer;
@@ -98,6 +98,7 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
     let itemBoxEdges: ThreeApi.EdgesGeometry | undefined;
     const itemMaterials = new Map<string, ThreeApi.MeshStandardMaterial>();
     const itemEdgeMaterials = new Map<string, ThreeApi.LineBasicMaterial>();
+    const shapeGeometries = new Map<string, { geometry: ThreeApi.BufferGeometry; edges: ThreeApi.EdgesGeometry }>();
     const boxMaterials = new Map<string, ThreeApi.MeshStandardMaterial>();
     const boxInstances = new Map<ThreeApi.MeshStandardMaterial, { boxes: { instanceId: string; size: [number, number, number]; position: [number, number, number]; color: string }[] }>();
     const boxEdgePositions = new Map<string, number[]>();
@@ -198,17 +199,27 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
       if (placement.containerId !== container.id) continue;
       const item = packingItemForPlacement(itemLookup.get(placement.itemId),placement);
       if (!item) continue;
-      const surface=placementSurface(placement,item);
-      if(surface){
+      let sharedShapeGeometry: { geometry: ThreeApi.BufferGeometry; edges: ThreeApi.EdgesGeometry } | undefined;
+      if(item.packingShape){
+        const key=`${item.id}:${placement.packingFormId??'original'}:${placement.rotation??0}`;
+        sharedShapeGeometry=shapeGeometries.get(key);
+        if(!sharedShapeGeometry){
+          const surface=placementSurfaceLocal(placement,item);
+          if(surface){
+            const geometry=new THREE.BufferGeometry(),positions=new Float32Array(surface.verticesMm.length),indices=new Uint32Array(surface.triangles.length);
+            for(let i=0;i<positions.length;i+=3){positions[i]=surface.verticesMm[i]*scale;positions[i+1]=surface.verticesMm[i+2]*scale;positions[i+2]=surface.verticesMm[i+1]*scale;}
+            for(let i=0;i<indices.length;i+=3){indices[i]=surface.triangles[i];indices[i+1]=surface.triangles[i+2];indices[i+2]=surface.triangles[i+1];}
+            geometry.setAttribute('position',new THREE.BufferAttribute(positions,3));geometry.setIndex(new THREE.BufferAttribute(indices,1));geometry.computeVertexNormals();
+            sharedShapeGeometry={geometry,edges:new THREE.EdgesGeometry(geometry)};shapeGeometries.set(key,sharedShapeGeometry);
+          }
+        }
+      }
+      if(sharedShapeGeometry){
         const material = itemMaterial(item.category, item.flexibility, false);
         const selectedMaterial = itemMaterial(item.category, item.flexibility, true);
-        const geometry=new THREE.BufferGeometry(),positions=new Float32Array(surface.verticesMm.length),indices=new Uint32Array(surface.triangles.length);
-        for(let i=0;i<positions.length;i+=3){positions[i]=surface.verticesMm[i]*scale;positions[i+1]=surface.verticesMm[i+2]*scale;positions[i+2]=surface.verticesMm[i+1]*scale;}
-        for(let i=0;i<indices.length;i+=3){indices[i]=surface.triangles[i];indices[i+1]=surface.triangles[i+2];indices[i+2]=surface.triangles[i+1];}
-        geometry.setAttribute('position',new THREE.BufferAttribute(positions,3));geometry.setIndex(new THREE.BufferAttribute(indices,1));geometry.computeVertexNormals();
-        const mesh=new THREE.Mesh(geometry,material);scene.add(mesh);
+        const mesh=new THREE.Mesh(sharedShapeGeometry.geometry,material);mesh.position.set(placement.x*scale,placement.z*scale,placement.y*scale);scene.add(mesh);
         const edgeMaterial=new THREE.LineBasicMaterial({color:'#64756d',transparent:true,opacity:.75});
-        const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geometry),edgeMaterial);edges.renderOrder=2;scene.add(edges);
+        const edges=new THREE.LineSegments(sharedShapeGeometry.edges,edgeMaterial);edges.position.copy(mesh.position);edges.renderOrder=2;scene.add(edges);
         selectionTargets.set(placement.instanceId,{setItemSelection:selected=>{
           mesh.material=selected?selectedMaterial:material;
           edgeMaterial.color.set(selected?'#006b3f':'#64756d');
