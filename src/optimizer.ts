@@ -828,12 +828,12 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
       continue;
     }
     next??=spaces.slice(0,index);
-    if (used.x > space.x + EPSILON) next.push({ ...space, length: used.x - space.x });
-    if (usedRight < right - EPSILON) next.push({ ...space, x: usedRight, length: right - usedRight });
-    if (used.y > space.y + EPSILON) next.push({ ...space, width: used.y - space.y });
-    if (usedBack < back - EPSILON) next.push({ ...space, y: usedBack, width: back - usedBack });
-    if (used.z > space.z + EPSILON) next.push({ ...space, height: used.z - space.z });
-    if (usedTop < top - EPSILON) next.push({ ...space, z: usedTop, height: top - usedTop });
+    if (used.x > space.x + EPSILON) next.push({ compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: space.x, y: space.y, z: space.z, length: used.x - space.x, width: space.width, height: space.height });
+    if (usedRight < right - EPSILON) next.push({ compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: usedRight, y: space.y, z: space.z, length: right - usedRight, width: space.width, height: space.height });
+    if (used.y > space.y + EPSILON) next.push({ compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: space.x, y: space.y, z: space.z, length: space.length, width: used.y - space.y, height: space.height });
+    if (usedBack < back - EPSILON) next.push({ compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: space.x, y: usedBack, z: space.z, length: space.length, width: back - usedBack, height: space.height });
+    if (used.z > space.z + EPSILON) next.push({ compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: space.x, y: space.y, z: space.z, length: space.length, width: space.width, height: used.z - space.z });
+    if (usedTop < top - EPSILON) next.push({ compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: space.x, y: space.y, z: usedTop, length: space.length, width: space.width, height: top - usedTop });
   }
   if(!next)return spaces;
   // Filter and deduplicate in one pass; preserve the first record for each geometry.
