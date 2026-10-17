@@ -1,0 +1,87 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '21 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  packages: read
+  pull-requests: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: javascript-typescript
+            runner: ubuntu-latest
+            build-mode: none
+          - language: python
+            runner: ubuntu-latest
+            build-mode: none
+          - language: java-kotlin
+            runner: ubuntu-latest
+            build-mode: autobuild
+          - language: swift
+            runner: macos-latest
+            build-mode: manual
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Set up Node.js for Capacitor
+        if: matrix.language == 'swift'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 26.12.0
+          cache: npm
+
+      - name: Install JavaScript dependencies
+        if: matrix.language == 'swift'
+        run: npm ci
+
+      - name: Generate web assets and Capacitor iOS project
+        if: matrix.language == 'swift'
+        run: |
+          npm run build
+          npm run cap:sync
+
+      - name: Build iOS app for Swift analysis
+        if: matrix.language == 'swift'
+        run: >-
+          xcodebuild build
+          -project ios/App/App.xcodeproj
+          -target App
+          CODE_SIGNING_REQUIRED=NO
+          CODE_SIGNING_ALLOWED=NO
+          COMPILATION_CACHE_ENABLE_CACHING=NO
+          SWIFT_ENABLE_COMPILE_CACHE=NO
+          SWIFT_USE_INTEGRATED_DRIVER=NO
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}
