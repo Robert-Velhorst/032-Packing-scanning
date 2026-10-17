@@ -74,8 +74,14 @@ public final class ScanEnvelope {
         return new ScanEnvelope(validatedSorted(input),identity(),0,"capture_aligned_legacy");
     }
     public double[] projectMm(float[] point) {
-        double[] offset={point[0]-origin[0],point[1]-origin[1],point[2]-origin[2]};
-        return new double[]{dot(offset,axes[0])*1000,dot(offset,axes[1])*1000,dot(offset,axes[2])*1000};
+        double[] projected=new double[3];projectMmInto(point,projected);return projected;
+    }
+    private void projectMmInto(float[] point,double[] projected) {
+        if(point==null||point.length<3||projected==null||projected.length<3)throw new IllegalArgumentException("Invalid point projection buffer.");
+        double x=point[0]-origin[0],y=point[1]-origin[1],z=point[2]-origin[2];
+        projected[0]=(x*axes[0][0]+y*axes[0][1]+z*axes[0][2])*1000;
+        projected[1]=(x*axes[1][0]+y*axes[1][1]+z*axes[1][2])*1000;
+        projected[2]=(x*axes[2][0]+y*axes[2][1]+z*axes[2][2])*1000;
     }
     public double[] rawDimensionsMm() {return new double[]{rawSides[0]*1000,rawSides[1]*1000,rawSides[2]*1000};}
     public double[][] axes() {return copy(axes);}
