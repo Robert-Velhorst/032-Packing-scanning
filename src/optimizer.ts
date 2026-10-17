@@ -806,24 +806,26 @@ function rememberFreeSpace(seen: Map<number, FreeSpace | FreeSpace[]>, space: Fr
 }
 
 function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVolumes = false, previousSpacesScratch?: Set<FreeSpace>): FreeSpace[] {
-  const next: FreeSpace[] = [];
+  let next: FreeSpace[] | undefined;
   const usedRight=used.x+used.length,usedBack=used.y+used.width,usedTop=used.z+used.height;
-  for (const space of spaces) {
+  for (let index=0;index<spaces.length;index++) {
+    const space=spaces[index];
     const right=space.x+space.length;
     if(space.x>=usedRight-EPSILON||right<=used.x+EPSILON){
-      next.push(space);
+      next?.push(space);
       continue;
     }
     const back = space.y + space.width;
     if(space.y>=usedBack-EPSILON||back<=used.y+EPSILON){
-      next.push(space);
+      next?.push(space);
       continue;
     }
     const top = space.z + space.height;
     if(space.z>=usedTop-EPSILON||top<=used.z+EPSILON){
-      next.push(space);
+      next?.push(space);
       continue;
     }
+    next??=spaces.slice(0,index);
     if (used.x > space.x + EPSILON) next.push({ ...space, length: used.x - space.x });
     if (usedRight < right - EPSILON) next.push({ ...space, x: usedRight, length: right - usedRight });
     if (used.y > space.y + EPSILON) next.push({ ...space, width: used.y - space.y });
@@ -831,6 +833,7 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
     if (used.z > space.z + EPSILON) next.push({ ...space, height: used.z - space.z });
     if (usedTop < top - EPSILON) next.push({ ...space, z: usedTop, height: top - usedTop });
   }
+  if(!next)return spaces;
   // Filter and deduplicate in one pass; preserve the first record for each geometry.
   let unique:FreeSpace[];
   if(cacheCandidateVolumes){
