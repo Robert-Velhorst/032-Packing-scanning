@@ -310,9 +310,19 @@ export class RectangularSupportIndex {
     if(sourceCount===1)return shapeLower??shapeCenter??shapeUpper??rectangleLower??rectangleCenter??rectangleUpper!;
     const cached=this.candidateCache.get(group)?.get(plane);if(cached)return cached;
     const sources=[shapeLower,shapeCenter,shapeUpper,rectangleLower,rectangleCenter,rectangleUpper];
-    const candidates:Placement[]=[],seen=new Set<Placement>();
-    for(const source of sources)for(const candidate of source??[])if(!seen.has(candidate)){seen.add(candidate);candidates.push(candidate);}
-    candidates.sort((left,right)=>(this.order.get(left.instanceId)??0)-(this.order.get(right.instanceId)??0));
+    const cursors=[0,0,0,0,0,0],candidates:Placement[]=[];
+    // Every bucket is already in global insertion order. Merge the six short
+    // plane lists directly, advancing duplicate shaped placements together.
+    while(true){
+      let next:Placement|undefined,nextOrder=Number.POSITIVE_INFINITY;
+      for(let index=0;index<sources.length;index++){
+        const candidate=sources[index]?.[cursors[index]];
+        if(candidate){const order=this.order.get(candidate.instanceId)??0;if(order<nextOrder){next=candidate;nextOrder=order;}}
+      }
+      if(!next)break;
+      candidates.push(next);
+      for(let index=0;index<sources.length;index++)if(sources[index]?.[cursors[index]]===next)cursors[index]++;
+    }
     let byPlane=this.candidateCache.get(group);if(!byPlane){byPlane=new Map();this.candidateCache.set(group,byPlane);}if(byPlane.size>=64)byPlane.clear();byPlane.set(plane,candidates);
     return candidates;
   }
