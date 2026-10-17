@@ -828,12 +828,14 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
       continue;
     }
     next??=spaces.slice(0,index);
-    if (used.x > space.x + EPSILON) next.push({ compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: space.x, y: space.y, z: space.z, length: used.x - space.x, width: space.width, height: space.height });
-    if (usedRight < right - EPSILON) next.push({ compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: usedRight, y: space.y, z: space.z, length: right - usedRight, width: space.width, height: space.height });
-    if (used.y > space.y + EPSILON) next.push({ compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: space.x, y: space.y, z: space.z, length: space.length, width: used.y - space.y, height: space.height });
-    if (usedBack < back - EPSILON) next.push({ compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: space.x, y: usedBack, z: space.z, length: space.length, width: back - usedBack, height: space.height });
-    if (used.z > space.z + EPSILON) next.push({ compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: space.x, y: space.y, z: space.z, length: space.length, width: space.width, height: used.z - space.z });
-    if (usedTop < top - EPSILON) next.push({ compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: space.x, y: space.y, z: usedTop, length: space.length, width: space.width, height: top - usedTop });
+    // Keep ordinary rectangles compact while preserving compartment/search annotations.
+    const hasMetadata = space.compartmentId !== undefined || space.shapeSearch !== undefined;
+    if (used.x > space.x + EPSILON) next.push(hasMetadata ? { compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: space.x, y: space.y, z: space.z, length: used.x - space.x, width: space.width, height: space.height } : { x: space.x, y: space.y, z: space.z, length: used.x - space.x, width: space.width, height: space.height });
+    if (usedRight < right - EPSILON) next.push(hasMetadata ? { compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: usedRight, y: space.y, z: space.z, length: right - usedRight, width: space.width, height: space.height } : { x: usedRight, y: space.y, z: space.z, length: right - usedRight, width: space.width, height: space.height });
+    if (used.y > space.y + EPSILON) next.push(hasMetadata ? { compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: space.x, y: space.y, z: space.z, length: space.length, width: used.y - space.y, height: space.height } : { x: space.x, y: space.y, z: space.z, length: space.length, width: used.y - space.y, height: space.height });
+    if (usedBack < back - EPSILON) next.push(hasMetadata ? { compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: space.x, y: usedBack, z: space.z, length: space.length, width: back - usedBack, height: space.height } : { x: space.x, y: usedBack, z: space.z, length: space.length, width: back - usedBack, height: space.height });
+    if (used.z > space.z + EPSILON) next.push(hasMetadata ? { compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: space.x, y: space.y, z: space.z, length: space.length, width: space.width, height: used.z - space.z } : { x: space.x, y: space.y, z: space.z, length: space.length, width: space.width, height: used.z - space.z });
+    if (usedTop < top - EPSILON) next.push(hasMetadata ? { compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: space.x, y: space.y, z: usedTop, length: space.length, width: space.width, height: top - usedTop } : { x: space.x, y: space.y, z: usedTop, length: space.length, width: space.width, height: top - usedTop });
   }
   if(!next)return spaces;
   // Filter and deduplicate in one pass; preserve the first record for each geometry.
