@@ -125,9 +125,9 @@ export function boxesIntersect(a:GeometryBox,b:GeometryBox):boolean {
 }
 function translatedBoxesIntersect(a:GeometryBox,ax:number,ay:number,az:number,b:GeometryBox,bx:number,by:number,bz:number):boolean {
   const leftX=ax+a.x,leftY=ay+a.y,leftZ=az+a.z,rightX=bx+b.x,rightY=by+b.y,rightZ=bz+b.z;
-  return leftX<rightX+b.length-EPS&&leftX+a.length>rightX+EPS
-    &&leftY<rightY+b.width-EPS&&leftY+a.width>rightY+EPS
-    &&leftZ<rightZ+b.height-EPS&&leftZ+a.height>rightZ+EPS;
+  return leftZ<rightZ+b.height-EPS&&leftZ+a.height>rightZ+EPS
+    &&leftX<rightX+b.length-EPS&&leftX+a.length>rightX+EPS
+    &&leftY<rightY+b.width-EPS&&leftY+a.width>rightY+EPS;
 }
 export function geometryIntersects(a:Placement,b:Placement,items:Map<string,ShapeItem>):boolean {
   if(!boxesIntersect(a,b))return false;
