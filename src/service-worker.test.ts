@@ -70,22 +70,30 @@ function workerHarness(initialCaches: Record<string, MemoryCache> = {}, sources:
 }
 
 describe('offline app cache', () => {
-  it('pre-caches the deferred packing workspace module so offline unlock can open it', async () => {
+  it('pre-caches the deferred workspace and its transitive modules for offline unlock', async () => {
     const mainScript = '/assets/index-shell.js';
     const sources = {
       '/index.html': `<script type="module" src="${mainScript}"></script>`,
       [mainScript]: 'const dependencies=["assets/PackingApp-core.js","assets/native-storage.js"];',
+      '/assets/PackingApp-core.js': 'import "assets/workspace-route.js";',
+      '/assets/workspace-route.js': 'import("assets/shape-planner.js");',
+      '/assets/shape-planner.js': 'export const ready = true;',
     };
     const { listeners, cacheStore } = workerHarness({}, sources);
     let installation: Promise<void> | undefined;
     listeners.get('install')!({ waitUntil: (promise: Promise<void>) => { installation = promise; } });
     await installation;
-    const cachedPaths = (await cacheStore.get('packing-shell-v5')!.keys()).map((request) => new URL(request.url).pathname);
+    const cachedPaths = (await cacheStore.get('packing-shell-v6')!.keys()).map((request) => new URL(request.url).pathname);
     expect(cachedPaths).toContain('/assets/PackingApp-core.js');
+    expect(cachedPaths).toContain('/assets/workspace-route.js');
+    expect(cachedPaths).toContain('/assets/shape-planner.js');
     expect(cachedPaths).toContain('/assets/native-storage.js');
     let cachedModule: Promise<{ path: string }> | undefined;
     listeners.get('fetch')!({ request: { method: 'GET', url: 'https://packing.test/assets/PackingApp-core.js', mode: 'cors' }, respondWith: (promise: Promise<{ path: string }>) => { cachedModule = promise; } });
     await expect(cachedModule).resolves.toHaveProperty('path', '/assets/PackingApp-core.js');
+    let cachedRoute: Promise<{ path: string }> | undefined;
+    listeners.get('fetch')!({ request: { method: 'GET', url: 'https://packing.test/assets/shape-planner.js', mode: 'cors' }, respondWith: (promise: Promise<{ path: string }>) => { cachedRoute = promise; } });
+    await expect(cachedRoute).resolves.toHaveProperty('path', '/assets/shape-planner.js');
   });
 
   it('ignores unrelated same-origin GET requests instead of caching them', () => {
@@ -100,11 +108,11 @@ describe('offline app cache', () => {
     const current = new MemoryCache();
     await oldCache.addAll(['/assets/old.js']);
     await current.addAll(['/index.html', '/assets/app.js', '/private-export.json']);
-    const { listeners, cacheStore, claim } = workerHarness({ 'packing-shell-v4': oldCache, 'packing-shell-v5': current, 'other-app-v1': new MemoryCache() });
+    const { listeners, cacheStore, claim } = workerHarness({ 'packing-shell-v5': oldCache, 'packing-shell-v6': current, 'other-app-v1': new MemoryCache() });
     let activation: Promise<void> | undefined;
     listeners.get('activate')!({ waitUntil: (promise: Promise<void>) => { activation = promise; } });
     await activation;
-    expect([...cacheStore.keys()].sort()).toEqual(['other-app-v1', 'packing-shell-v5']);
+    expect([...cacheStore.keys()].sort()).toEqual(['other-app-v1', 'packing-shell-v6']);
     expect((await current.keys()).map((request) => new URL(request.url).pathname)).toEqual(['/index.html', '/assets/app.js']);
     expect(claim).toHaveBeenCalledOnce();
   });
