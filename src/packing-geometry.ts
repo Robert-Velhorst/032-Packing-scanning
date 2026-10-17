@@ -382,16 +382,17 @@ export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string
 }
 
 export function contactPositions(bag:Container,orientation:DimensionsMm&{rotation:number},item:ShapeItem,placed:Placement[],items:Map<string,ShapeItem>,region:GeometryBox={x:0,y:0,z:0,...bag.inside,height:usableContainerHeight(bag)},blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[],maxPositions=20000,collisionObstacles?:readonly GeometryBox[],collisionObstaclePrefixMaxRight?:readonly number[]) {
-  const local=placementBoxes({x:0,y:0,z:0,...orientation},item),obstacles=cachedObstacles??[...placed.flatMap(p=>placementBoxes(p,items.get(p.instanceId))),...blockedSpaces];
+  const local=item.packingShape?localGeometry(item.packingShape,orientation.rotation).boxes:[{x:0,y:0,z:0,length:orientation.length,width:orientation.width,height:orientation.height}],obstacles=cachedObstacles??[...placed.flatMap(p=>placementBoxes(p,items.get(p.instanceId))),...blockedSpaces];
   let indexedCollisionObstacles=collisionObstacles,indexedCollisionPrefix=collisionObstaclePrefixMaxRight;
   if(collisionObstacles&&!indexedCollisionPrefix){indexedCollisionObstacles=[...collisionObstacles].sort((a,b)=>a.x-b.x);indexedCollisionPrefix=obstaclePrefixMaxRight(indexedCollisionObstacles);}
-  const values=[new Set([region.x,region.x+region.length-orientation.length]),new Set([region.y,region.y+region.width-orientation.width]),new Set([region.z])],mins=['x','y','z'] as const;
-  for(const b of obstacles)for(const c of local)for(let axis=0;axis<3;axis++){
-    values[axis].add(b[mins[axis]]+b[axes[axis]]-c[mins[axis]]);
-    if(axis<2)values[axis].add(b[mins[axis]]-c[mins[axis]]-c[axes[axis]]);
-  }
   const minimum=[region.x,region.y,region.z],maximum=[region.x+region.length-orientation.length,region.y+region.width-orientation.width,region.z+region.height-orientation.height];
-  const coords=values.map((set,i)=>[...set].filter(v=>v>=minimum[i]-EPS&&v<=maximum[i]+EPS).map(v=>Math.max(minimum[i],v)).sort((a,b)=>a-b));
+  const values=[new Set([minimum[0],maximum[0]]),new Set([minimum[1],maximum[1]]),new Set([minimum[2]])],mins=['x','y','z'] as const;
+  const addCoordinate=(axis:number,value:number)=>{if(value>=minimum[axis]-EPS&&value<=maximum[axis]+EPS)values[axis].add(Math.max(minimum[axis],value));};
+  for(const b of obstacles)for(const c of local)for(let axis=0;axis<3;axis++){
+    addCoordinate(axis,b[mins[axis]]+b[axes[axis]]-c[mins[axis]]);
+    if(axis<2)addCoordinate(axis,b[mins[axis]]-c[mins[axis]]-c[axes[axis]]);
+  }
+  const coords=values.map(set=>[...set].sort((a,b)=>a-b));
   const positions:Array<{x:number;y:number;z:number}>=[];let limited=false,examined=0;
   outer:for(const z of coords[2])for(const y of coords[1])for(const x of coords[0]){
     if(examined>=maxPositions){limited=true;break outer;}
