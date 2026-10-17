@@ -893,14 +893,20 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
   const ordered=unique.map((space,index)=>({space,index,right:space.x+space.length,back:space.y+space.width,top:space.z+space.height,volume:cacheCandidateVolumes?spaceVolume(space):undefined}))
     .sort((left,right)=>left.space.x-right.space.x||left.index-right.index);
   const candidatesByVolume=ordered;
-  let blockMaximumVolumes:number[]|undefined;
+  let containmentBlocks:Array<{volume:number;length:number;width:number;height:number;minY:number;maxBack:number;minZ:number;maxTop:number}>|undefined;
   // Skip x-ordered candidate blocks that cannot contain a large new region.
   if(cacheCandidateVolumes&&ordered.length>=128){
-    blockMaximumVolumes=[];
+    containmentBlocks=[];
     for(let start=0;start<ordered.length;start+=containmentBlockSize){
-      let maximum=0;
-      for(let index=start;index<Math.min(start+containmentBlockSize,ordered.length);index++)maximum=Math.max(maximum,ordered[index].volume!);
-      blockMaximumVolumes.push(maximum);
+      const block={volume:0,length:0,width:0,height:0,minY:Number.POSITIVE_INFINITY,maxBack:Number.NEGATIVE_INFINITY,minZ:Number.POSITIVE_INFINITY,maxTop:Number.NEGATIVE_INFINITY};
+      for(let index=start;index<Math.min(start+containmentBlockSize,ordered.length);index++){
+        const candidate=ordered[index],space=candidate.space;
+        block.volume=Math.max(block.volume,candidate.volume!);
+        block.length=Math.max(block.length,space.length);block.width=Math.max(block.width,space.width);block.height=Math.max(block.height,space.height);
+        block.minY=Math.min(block.minY,space.y);block.maxBack=Math.max(block.maxBack,space.y+space.width);
+        block.minZ=Math.min(block.minZ,space.z);block.maxTop=Math.max(block.maxTop,space.z+space.height);
+      }
+      containmentBlocks.push(block);
     }
   }
   const keep=new Array<boolean>(unique.length).fill(true);
@@ -911,6 +917,7 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
     if(previousSpaces.has(inner.space))continue;
     // EPSILON containment allows at most 2*EPSILON less extent per axis.
     const minimumContainingVolume=Math.max(0,inner.space.length-2*EPSILON)*Math.max(0,inner.space.width-2*EPSILON)*Math.max(0,inner.space.height-2*EPSILON);
+    const minimumLength=Math.max(0,inner.space.length-2*EPSILON),minimumWidth=Math.max(0,inner.space.width-2*EPSILON),minimumHeight=Math.max(0,inner.space.height-2*EPSILON);
     let scan=candidatesByVolume;
     let scanCount=candidatesByVolume.length;
     const volumeThreshold=minimumContainingVolume*(1-1e-12);
@@ -922,7 +929,12 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
       scan=ordered;scanCount=low;scanByX=true;
     }
     for(let candidateIndex=0;candidateIndex<scanCount;candidateIndex++){
-      if(blockMaximumVolumes&&candidateIndex%containmentBlockSize===0&&blockMaximumVolumes[candidateIndex/containmentBlockSize]<volumeThreshold){candidateIndex+=containmentBlockSize-1;continue;}
+      if(containmentBlocks&&candidateIndex%containmentBlockSize===0){
+        const block=containmentBlocks[candidateIndex/containmentBlockSize];
+        if(block.volume<volumeThreshold||block.length<minimumLength||block.width<minimumWidth||block.height<minimumHeight
+          ||block.minY>inner.space.y+EPSILON||block.maxBack<inner.space.y+inner.space.width-EPSILON
+          ||block.minZ>inner.space.z+EPSILON||block.maxTop<inner.space.z+inner.space.height-EPSILON){candidateIndex+=containmentBlockSize-1;continue;}
+      }
       const candidate=scan[candidateIndex];
       const outer=candidate.space;
       if(cacheCandidateVolumes&&scanByX&&candidate.volume!<volumeThreshold)continue;
