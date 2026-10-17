@@ -473,7 +473,8 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
 
   const supportIndexThreshold=shapeItems.length?SHAPED_SUPPORT_INDEX_THRESHOLD:containers.length===1?SINGLE_CONTAINER_SUPPORT_INDEX_THRESHOLD:SUPPORT_INDEX_THRESHOLD;
   const supportIndexes=items.length>=supportIndexThreshold?new Map<string,RectangularSupportIndex>():undefined;
-  if(supportIndexes)for(const bag of containers){const current=placementsByContainer.get(bag.id)??[];if(current.length>=supportIndexThreshold)supportIndexes.set(bag.id,new RectangularSupportIndex(itemById,current));}
+  const shapedInstanceIds=supportIndexes?new Set(shapeItems.map(item=>item.instanceId)):undefined;
+  if(supportIndexes)for(const bag of containers){const current=placementsByContainer.get(bag.id)??[];if(current.length>=supportIndexThreshold)supportIndexes.set(bag.id,new RectangularSupportIndex(itemById,current,shapedInstanceIds));}
   const verticalEntryObstaclePrefixMaxRights=new Map<string,number[]>();
   const verticalEntryObstacles=useShapeSequence?new Map(containers.map(bag=>{
     const obstacles:GeometryBox[]=[...(blockedSpaces.get(bag.id)??[])];
@@ -720,7 +721,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     if(entryObstacles)insertObstaclePrefixMaxRight(entryObstacles,verticalEntryObstaclePrefixMaxRights.get(best.container.id)!,placementBoxes(best.placement,item));
     const bagPlacements=placementsByContainer.get(best.container.id)!;
     if(supportIndexes?.has(best.container.id))supportIndexes.get(best.container.id)!.add(best.placement);
-    else if(supportIndexes&&bagPlacements.length>=supportIndexThreshold)supportIndexes.set(best.container.id,new RectangularSupportIndex(itemById,bagPlacements));
+    else if(supportIndexes&&bagPlacements.length>=supportIndexThreshold)supportIndexes.set(best.container.id,new RectangularSupportIndex(itemById,bagPlacements,shapedInstanceIds));
     massByContainer.set(best.container.id, (massByContainer.get(best.container.id) ?? best.container.tareGrams ?? 0) + (item.upperMassGrams ?? 0));
     if (item.upperMassGrams === undefined) unweighedByContainer.set(best.container.id, (unweighedByContainer.get(best.container.id) ?? 0) + 1);
     placedIds.add(item.instanceId);

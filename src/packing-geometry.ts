@@ -284,12 +284,14 @@ export class RectangularSupportIndex {
   private readonly candidateCache=new Map<SupportPlaneGroup,Map<number,Placement[]>>();
   private nextOrder=0;
   private readonly items:Map<string,ShapeItem>;
-  constructor(items:Map<string,ShapeItem>,placements:Placement[]=[]){this.items=items;for(const placement of placements)this.add(placement);}
+  private readonly shapedIds?:ReadonlySet<string>;
+  constructor(items:Map<string,ShapeItem>,placements:Placement[]=[],shapedIds?:ReadonlySet<string>){this.items=items;this.shapedIds=shapedIds;for(const placement of placements)this.add(placement);}
+  hasPackingShape(instanceId:string){return this.shapedIds?.has(instanceId)??!!this.items.get(instanceId)?.packingShape;}
   add(placement:Placement){
     let compartments=this.groups.get(placement.containerId);if(!compartments){compartments=new Map();this.groups.set(placement.containerId,compartments);}
     let group=compartments.get(placement.compartmentId);if(!group){group={shapesByTopPlane:new Map(),rectangles:new Map()};compartments.set(placement.compartmentId,group);}
     this.order.set(placement.instanceId,this.nextOrder++);
-    const shape=this.items.get(placement.instanceId)?.packingShape;
+    const shape=this.hasPackingShape(placement.instanceId)?this.items.get(placement.instanceId)?.packingShape:undefined;
     if(shape){
       const planes=new Set(localGeometry(shape,placement.rotation??0).top.map(face=>Math.floor((placement.z+face.z)/(2*EPS))));
       for(const plane of planes)this.invalidateCandidatePlane(group,plane);
@@ -332,13 +334,13 @@ export class RectangularSupportIndex {
   }
 }
 export function hasGeometrySupport(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,fraction:number,up:GravityUp=packingUp,floor=0,supportIndex?:RectangularSupportIndex):boolean {
-  if(up.axis===2&&up.sign===1&&!items.get(p.instanceId)?.packingShape){
+  if(up.axis===2&&up.sign===1&&!(supportIndex?.hasPackingShape(p.instanceId)??!!items.get(p.instanceId)?.packingShape)){
     const area=p.length*p.width;if(area<=0)return false;if(Math.abs(p.z-floor)<=EPS)return true;
     const required=area*fraction;let supported=0;
     const indexedCandidates=supportIndex?.candidates(p);
     for(const lower of indexedCandidates??placed){
       if(!indexedCandidates&&(lower.containerId!==p.containerId||lower.compartmentId!==p.compartmentId))continue;
-      if(items.get(lower.instanceId)?.packingShape){
+      if(supportIndex?.hasPackingShape(lower.instanceId)??!!items.get(lower.instanceId)?.packingShape){
         if(up.axis===2&&up.sign===1&&!maySharePackingSupportFace(p,lower))continue;
         supported+=geometrySupportArea(p,lower,items,up);
       }
