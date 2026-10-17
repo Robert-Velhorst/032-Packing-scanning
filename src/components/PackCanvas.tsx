@@ -65,7 +65,12 @@ function ThreePackFrame({ container, plan, items, selectedInstanceId, placementL
       selectedInstanceId,
       placementLabels,
     }, location.origin);
-  }, [frameLoaded, container, viewData, selectedInstanceId, placementLabels]);
+  }, [frameLoaded, container, viewData, placementLabels]);
+
+  useEffect(() => {
+    if (!frameLoaded) return;
+    frameRef.current?.contentWindow?.postMessage({ type: 'packing-scanning:selection', selectedInstanceId }, location.origin);
+  }, [frameLoaded, selectedInstanceId]);
 
   return <div className="packing-viewer">
     <div className="pack-canvas" ref={viewportRef}>

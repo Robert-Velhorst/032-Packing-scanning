@@ -31,7 +31,9 @@ const colors: Record<string, string> = {
 export function ThreePackCanvas({ container, plan, items, selectedInstanceId, view, layer, placementLabels }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
-  const apiRef = useRef<{ camera: ThreeApi.PerspectiveCamera; controls: OrbitControls; renderer: ThreeApi.WebGLRenderer } | undefined>(undefined);
+  const selectedInstanceRef = useRef(selectedInstanceId);
+  selectedInstanceRef.current = selectedInstanceId;
+  const apiRef = useRef<{ camera: ThreeApi.PerspectiveCamera; controls: OrbitControls; renderer: ThreeApi.WebGLRenderer; setSelection: (instanceId?: string) => void } | undefined>(undefined);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -97,8 +99,12 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
     const itemMaterials = new Map<string, ThreeApi.MeshStandardMaterial>();
     const itemEdgeMaterials = new Map<string, ThreeApi.LineBasicMaterial>();
     const boxMaterials = new Map<string, ThreeApi.MeshStandardMaterial>();
-    const boxInstances = new Map<ThreeApi.MeshStandardMaterial, { boxes: { size: [number, number, number]; position: [number, number, number]; color: string }[] }>();
+    const boxInstances = new Map<ThreeApi.MeshStandardMaterial, { boxes: { instanceId: string; size: [number, number, number]; position: [number, number, number]; color: string }[] }>();
     const boxEdgePositions = new Map<string, number[]>();
+    const selectionTargets = new Map<string, { setItemSelection?: (selected: boolean) => void; setLabelSelection?: (selected: boolean) => void }>();
+    const selectedBoxEdgeMaterial = new THREE.LineBasicMaterial({ color: '#006b3f', transparent: true, opacity: 0.95 });
+    let selectedBoxEdge: ThreeApi.LineSegments | undefined;
+    let activeSelection: string | undefined;
     const itemMaterial = (category: string, flexibility: string | undefined, selected: boolean) => {
       const key = `${category}:${flexibility ?? ''}:${selected}`;
       let material = itemMaterials.get(key);
@@ -114,8 +120,8 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
       }
       return material;
     };
-    const boxMaterial = (flexibility: string | undefined, selected: boolean) => {
-      const key = `${flexibility ?? ''}:${selected}`;
+    const boxMaterial = (flexibility: string | undefined) => {
+      const key = `${flexibility ?? ''}`;
       let material = boxMaterials.get(key);
       if (!material) {
         material = new THREE.MeshStandardMaterial({
@@ -123,21 +129,19 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
           vertexColors: true,
           roughness: flexibility === 'rigid' ? 0.72 : 0.93,
           metalness: 0.01,
-          emissive: selected ? '#12452f' : '#000000',
-          emissiveIntensity: selected ? 0.2 : 0,
         });
         boxMaterials.set(key, material);
       }
       return material;
     };
-    const makeItemBox = (size: [number, number, number], position: [number, number, number], material: ThreeApi.MeshStandardMaterial, edgeColor: string, color: string) => {
+    const makeItemBox = (instanceId: string, size: [number, number, number], position: [number, number, number], material: ThreeApi.MeshStandardMaterial, edgeColor: string, color: string) => {
       if (!itemBoxGeometry) {
         itemBoxGeometry = new THREE.BoxGeometry(1, 1, 1);
         itemBoxGeometry.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(itemBoxGeometry.getAttribute('position').count * 3).fill(1), 3));
       }
       itemBoxEdges ??= new THREE.EdgesGeometry(itemBoxGeometry);
       const batch = boxInstances.get(material) ?? { boxes: [] };
-      batch.boxes.push({ size, position, color });
+      batch.boxes.push({ instanceId, size, position, color });
       boxInstances.set(material, batch);
       const edgePositions = boxEdgePositions.get(edgeColor) ?? [];
       const vertices = itemBoxEdges.getAttribute('position');
@@ -194,22 +198,28 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
       if (placement.containerId !== container.id) continue;
       const item = packingItemForPlacement(itemLookup.get(placement.itemId),placement);
       if (!item) continue;
-      const isSelected = selectedInstanceId === placement.instanceId;
-      const material = itemMaterial(item.category, item.flexibility, isSelected);
       const surface=placementSurface(placement,item);
       if(surface){
+        const material = itemMaterial(item.category, item.flexibility, false);
+        const selectedMaterial = itemMaterial(item.category, item.flexibility, true);
         const geometry=new THREE.BufferGeometry(),positions=new Float32Array(surface.verticesMm.length),indices=new Uint32Array(surface.triangles.length);
         for(let i=0;i<positions.length;i+=3){positions[i]=surface.verticesMm[i]*scale;positions[i+1]=surface.verticesMm[i+2]*scale;positions[i+2]=surface.verticesMm[i+1]*scale;}
         for(let i=0;i<indices.length;i+=3){indices[i]=surface.triangles[i];indices[i+1]=surface.triangles[i+2];indices[i+2]=surface.triangles[i+1];}
         geometry.setAttribute('position',new THREE.BufferAttribute(positions,3));geometry.setIndex(new THREE.BufferAttribute(indices,1));geometry.computeVertexNormals();
         const mesh=new THREE.Mesh(geometry,material);scene.add(mesh);
-        const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geometry),new THREE.LineBasicMaterial({color:isSelected?'#006b3f':'#64756d',transparent:true,opacity:.75}));edges.renderOrder=2;scene.add(edges);
+        const edgeMaterial=new THREE.LineBasicMaterial({color:'#64756d',transparent:true,opacity:.75});
+        const edges=new THREE.LineSegments(new THREE.EdgesGeometry(geometry),edgeMaterial);edges.renderOrder=2;scene.add(edges);
+        selectionTargets.set(placement.instanceId,{setItemSelection:selected=>{
+          mesh.material=selected?selectedMaterial:material;
+          edgeMaterial.color.set(selected?'#006b3f':'#64756d');
+        }});
       }else makeItemBox(
+        placement.instanceId,
         [placement.length * scale, placement.height * scale, placement.width * scale],
         [(placement.x + placement.length / 2) * scale, (placement.z + placement.height / 2) * scale, (placement.y + placement.width / 2) * scale],
-        boxMaterial(item.flexibility,isSelected),
-        isSelected ? '#006b3f' : '#64756d',
-        isSelected ? '#348665' : colors[item.category] ?? colors.other,
+        boxMaterial(item.flexibility),
+        '#64756d',
+        colors[item.category] ?? colors.other,
       );
       const number = placementLabels?.[placement.instanceId];
       const labelBox=placementBoxes(placement,item).reduce((best,b)=>b.length*b.width>best.length*best.width?b:best);
@@ -221,18 +231,44 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
           && other.x + other.length >= placement.x + placement.length / 2 && other.y <= placement.y + placement.width / 2
           && other.y + other.width >= placement.y + placement.width / 2) { covered = true; break; }
       }
-      if (number && (isSelected || !covered)) {
-        const labelCanvas = document.createElement('canvas'); labelCanvas.width = labelCanvas.height = 96;
-        const drawing = labelCanvas.getContext('2d');
-        if (drawing) {
-          drawing.fillStyle = '#fff'; drawing.strokeStyle = '#172a20'; drawing.lineWidth = isSelected ? 9 : 3.75;
+      if (number) {
+        const visibleWithoutSelection = !covered;
+        let marker: ThreeApi.Sprite | undefined;
+        let drawing: CanvasRenderingContext2D | null | undefined;
+        let texture: ThreeApi.CanvasTexture | undefined;
+        const updateLabel = (selected: boolean) => {
+          if (!visibleWithoutSelection && !selected) {
+            if (marker) {
+              scene.remove(marker);
+              marker.material.map?.dispose();
+              marker.material.dispose();
+              marker = undefined;
+              drawing = undefined;
+              texture = undefined;
+            }
+            return;
+          }
+          if (!marker) {
+            const labelCanvas = document.createElement('canvas'); labelCanvas.width = labelCanvas.height = 96;
+            drawing = labelCanvas.getContext('2d');
+            if (!drawing) return;
+            texture = new THREE.CanvasTexture(labelCanvas);
+            marker = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false }));
+            const size = Math.min(length, width) * 0.15;
+            marker.position.set((labelBox.x + labelBox.length / 2) * scale, (labelBox.z + labelBox.height) * scale + size / 2, (labelBox.y + labelBox.width / 2) * scale);
+            marker.scale.set(size, size, 1); marker.renderOrder = 4; scene.add(marker);
+          }
+          if (!drawing || !texture) return;
+          drawing.clearRect(0, 0, 96, 96);
+          drawing.fillStyle = '#fff'; drawing.strokeStyle = '#172a20'; drawing.lineWidth = selected ? 9 : 3.75;
           drawing.beginPath(); drawing.arc(48, 48, 40.5, 0, Math.PI * 2); drawing.fill(); drawing.stroke();
           drawing.fillStyle = '#172a20'; drawing.font = 'bold 48px sans-serif'; drawing.textAlign = 'center'; drawing.textBaseline = 'middle'; drawing.fillText(number, 48, 49.5, 72);
-          const marker = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(labelCanvas), depthTest: false }));
-          const size = Math.min(length, width) * 0.15;
-          marker.position.set((labelBox.x + labelBox.length / 2) * scale, (labelBox.z + labelBox.height) * scale + size / 2, (labelBox.y + labelBox.width / 2) * scale);
-          marker.scale.set(size, size, 1); marker.renderOrder = 4; scene.add(marker);
-        }
+          texture.needsUpdate = true;
+        };
+        updateLabel(false);
+        const target = selectionTargets.get(placement.instanceId) ?? {};
+        target.setLabelSelection = updateLabel;
+        selectionTargets.set(placement.instanceId, target);
       }
     }
 
@@ -250,6 +286,21 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
       if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;
       mesh.castShadow=true;
       scene.add(mesh);
+      batch.boxes.forEach((box,index)=>{
+        const target=selectionTargets.get(box.instanceId)??{};
+        target.setItemSelection=selected=>{
+          mesh.setColorAt(index,instanceColor.set(selected?'#348665':box.color));
+          if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;
+          if(selected){
+            if(selectedBoxEdge)scene.remove(selectedBoxEdge);
+            if(itemBoxEdges){
+              selectedBoxEdge=new THREE.LineSegments(itemBoxEdges,selectedBoxEdgeMaterial);
+              selectedBoxEdge.position.set(...box.position);selectedBoxEdge.scale.set(...box.size);selectedBoxEdge.renderOrder=3;scene.add(selectedBoxEdge);
+            }
+          }else if(selectedBoxEdge){scene.remove(selectedBoxEdge);selectedBoxEdge=undefined;}
+        };
+        selectionTargets.set(box.instanceId,target);
+      });
     }
     for (const [edgeColor,positions] of boxEdgePositions) {
       let material=itemEdgeMaterials.get(edgeColor);
@@ -258,9 +309,13 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
       geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
       const edges=new THREE.LineSegments(geometry,material);edges.renderOrder=2;scene.add(edges);
     }
-    itemBoxEdges?.dispose();
-    itemBoxEdges=undefined;
-
+    const setSelection=(instanceId?:string)=>{
+      if(activeSelection===instanceId)return;
+      if(activeSelection){const previous=selectionTargets.get(activeSelection);previous?.setItemSelection?.(false);previous?.setLabelSelection?.(false);}
+      activeSelection=instanceId;
+      if(instanceId){const next=selectionTargets.get(instanceId);next?.setItemSelection?.(true);next?.setLabelSelection?.(true);}
+      renderer.render(scene,camera);
+    };
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.target.copy(target);
     controls.update();
@@ -285,7 +340,8 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
     resize();
     setStatus('ready');
 
-    apiRef.current = { camera, controls, renderer };
+    apiRef.current = { camera, controls, renderer, setSelection };
+    setSelection(selectedInstanceRef.current);
     cleanup = () => {
       observer.disconnect();
       controls.dispose();
@@ -302,6 +358,8 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
           if (!materials.has(object.material)) { materials.add(object.material); object.material.dispose(); }
         }
       });
+      if(itemBoxEdges&&!geometries.has(itemBoxEdges))itemBoxEdges.dispose();
+      if(!materials.has(selectedBoxEdgeMaterial))selectedBoxEdgeMaterial.dispose();
       renderer.domElement.removeEventListener('webglcontextlost', contextLost);
       renderer.domElement.removeEventListener('webglcontextrestored', resizeAfterRestore);
       renderer.dispose();
@@ -315,7 +373,9 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
       setStatus('unavailable');
     });
     return () => { active = false; cleanup?.(); };
-  }, [container, plan, items, selectedInstanceId, view, layer, placementLabels]);
+  }, [container, plan, items, view, layer, placementLabels]);
+
+  useEffect(() => { apiRef.current?.setSelection(selectedInstanceId); }, [selectedInstanceId]);
 
   useEffect(() => {
     const api = apiRef.current;
