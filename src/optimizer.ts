@@ -844,7 +844,7 @@ function rememberFreeSpace(seen: Map<number, FreeSpace | FreeSpace[]>, space: Fr
 }
 
 function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVolumes = false, previousSpacesScratch?: Set<FreeSpace>, containmentBlockScratch?:FreeSpaceContainmentBlock[]): FreeSpace[] {
-  const containmentBlockSize=16;
+  const containmentBlockSize=8;
   let next: FreeSpace[] | undefined;
   const usedRight=used.x+used.length,usedBack=used.y+used.width,usedTop=used.z+used.height;
   for (let index=0;index<spaces.length;index++) {
