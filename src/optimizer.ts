@@ -881,7 +881,7 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
     }
   }
   if(unique.length<2)return unique;
-  if(unique.length<32)return unique.filter((space,index)=>!unique.some((other,otherIndex)=>otherIndex!==index&&containsSpace(other,space)&&(!containsSpace(space,other)||otherIndex<index)));
+  if(unique.length<16)return unique.filter((space,index)=>!unique.some((other,otherIndex)=>otherIndex!==index&&containsSpace(other,space)&&(!containsSpace(space,other)||otherIndex<index)));
   const previousSpaces = previousSpacesScratch ?? new Set<FreeSpace>();
   previousSpaces.clear();
   for(const space of spaces)previousSpaces.add(space);
