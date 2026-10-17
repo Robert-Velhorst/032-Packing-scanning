@@ -9,9 +9,11 @@ const value = (name, fallback) => {
 };
 const gridSize = Number(value('grid', '46'));
 const runs = Number(value('runs', '7'));
+const iterations = Number(value('iterations', '1'));
 const sourceRef = value('source-ref', '');
 if (!Number.isInteger(gridSize) || gridSize < 1 || gridSize > 46) throw new Error('Use --grid= with a size from 1 to 46.');
 if (!Number.isInteger(runs) || runs < 1 || runs > 20) throw new Error('Use --runs= with a count from 1 to 20.');
+if (!Number.isInteger(iterations) || iterations < 1 || iterations > 100) throw new Error('Use --iterations= with a count from 1 to 100.');
 
 const plugins = sourceRef ? [{
   name: 'reconstruction-benchmark-source',
@@ -39,16 +41,20 @@ try {
   const expectedFingerprint = fingerprint(warmup);
   const expectedFaces = 6 * gridSize ** 2;
   if (warmup.faceCount !== expectedFaces) throw new Error(`Expected ${expectedFaces} boundary faces, got ${warmup.faceCount}.`);
+  for (let iteration = 1; iteration < iterations; iteration += 1) {
+    if (fingerprint(voxelSurface(solid)) !== expectedFingerprint) throw new Error(`Warm-up iteration ${iteration + 1} changed the reconstructed surface.`);
+  }
 
   const samplesSeconds = [], samplesCpuSeconds = [];
   for (let run = 0; run < runs; run += 1) {
     global.gc?.();
     const cpuStart = process.cpuUsage();
     const start = performance.now();
-    const surface = voxelSurface(solid);
-    samplesSeconds.push((performance.now() - start) / 1000);
+    let surface;
+    for (let iteration = 0; iteration < iterations; iteration += 1) surface = voxelSurface(solid);
+    samplesSeconds.push((performance.now() - start) / 1000 / iterations);
     const cpu = process.cpuUsage(cpuStart);
-    samplesCpuSeconds.push((cpu.user + cpu.system) / 1_000_000);
+    samplesCpuSeconds.push((cpu.user + cpu.system) / 1_000_000 / iterations);
     if (fingerprint(surface) !== expectedFingerprint) throw new Error(`Run ${run + 1} changed the reconstructed surface.`);
   }
   const median = (values) => [...values].sort((left, right) => left - right)[Math.floor(values.length / 2)];
@@ -58,6 +64,7 @@ try {
     occupiedCells: total,
     faceCount: expectedFaces,
     runs,
+    iterationsPerSample: iterations,
     sourceRef: sourceRef || 'working tree',
     node: process.version,
     medianSeconds: median(samplesSeconds),
