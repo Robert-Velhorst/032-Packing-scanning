@@ -10,12 +10,13 @@ const value = (name, fallback) => {
 };
 const counts = value('counts', '50,100,250').split(',').map(Number);
 const runs = Number(value('runs', '3'));
-const warmupRunsPerSize = 3;
+const warmupRunsPerSize = Number(value('warmup-runs', '3'));
 const shapeCount = Number(value('shapes', '0'));
 const bagCount = Number(value('bags', '1'));
 const compartmentCount = Number(value('compartments', '0'));
 const optimizerRef = value('optimizer-ref', '');
 const compareOptimizerRef = value('compare-optimizer-ref', '');
+const comparePackingGeometryRef = value('compare-packing-geometry-ref', '');
 const stackLoadRef = value('stack-load-ref', '');
 const packingGeometryRef = value('packing-geometry-ref', '');
 const bagWeightsRef = value('bag-weights-ref', '');
@@ -27,7 +28,9 @@ const workerShapeCache = value('worker-shape-cache', 'false') === 'true';
 const compareWorkerShapeCache = value('compare-worker-shape-cache', 'false') === 'true';
 if (compareWorkerShapeCache && !cloneWorkerInput) throw new Error('Use --compare-worker-shape-cache=true with --clone-worker-input=true.');
 if (compareOptimizerRef && !cloneWorkerInput) throw new Error('Use --compare-optimizer-ref= with --clone-worker-input=true.');
-if (compareOptimizerRef && (optimizerRef || compareWorkerShapeCache)) throw new Error('Use --compare-optimizer-ref= by itself for source comparison.');
+if (comparePackingGeometryRef && !cloneWorkerInput) throw new Error('Use --compare-packing-geometry-ref= with --clone-worker-input=true.');
+if (compareOptimizerRef && (optimizerRef || compareWorkerShapeCache || comparePackingGeometryRef)) throw new Error('Use --compare-optimizer-ref= by itself for source comparison.');
+if (comparePackingGeometryRef && (optimizerRef || packingGeometryRef || compareWorkerShapeCache)) throw new Error('Use --compare-packing-geometry-ref= by itself for source comparison.');
 const mode = value('mode', '');
 if (mode && !['balanced', 'maximum_capacity', 'easy_access', 'fragile_protection'].includes(mode)) {
   throw new Error('Use --mode=balanced,maximum_capacity,easy_access, or fragile_protection.');
@@ -56,6 +59,7 @@ if (!counts.length || counts.some((count) => !Number.isInteger(count) || count <
   throw new Error('Use --counts= with comma-separated item counts from 1 to 500.');
 }
 if (!Number.isInteger(runs) || runs < 1 || runs > 10) throw new Error('Use --runs= with a count from 1 to 10.');
+if (!Number.isInteger(warmupRunsPerSize) || warmupRunsPerSize < 1 || warmupRunsPerSize > 10) throw new Error('Use --warmup-runs= with a count from 1 to 10.');
 if (!Number.isInteger(shapeCount) || shapeCount < 0 || shapeCount > 500) throw new Error('Use --shapes= with a count from 0 to 500.');
 if (!Number.isInteger(bagCount) || bagCount < 1 || bagCount > 10) throw new Error('Use --bags= with a count from 1 to 10.');
 if (!Number.isInteger(compartmentCount) || compartmentCount < 0 || compartmentCount > 10) throw new Error('Use --compartments= with a count from 0 to 10.');
@@ -117,6 +121,24 @@ if (compareOptimizerRef) benchmarkOverrides.push({
     return execFileSync('git', ['show', `${compareOptimizerRef}:src/optimizer.ts`], { encoding: 'utf8' });
   },
 });
+if (comparePackingGeometryRef) {
+  benchmarkOverrides.push({
+    name: 'packing-geometry-comparison-optimizer-source',
+    enforce: 'pre',
+    transform(source, id) {
+      if (!id.replaceAll('\\', '/').endsWith('/src/optimizer.ts?benchmark-packing-geometry-baseline')) return null;
+      return source.replaceAll("from './packing-geometry'", "from './packing-geometry?benchmark-packing-geometry-baseline'");
+    },
+  });
+  benchmarkOverrides.push({
+    name: 'packing-geometry-comparison-source',
+    enforce: 'pre',
+    transform(_source, id) {
+      if (!id.replaceAll('\\', '/').endsWith('/src/packing-geometry.ts?benchmark-packing-geometry-baseline')) return null;
+      return execFileSync('git', ['show', `${comparePackingGeometryRef}:src/packing-geometry.ts`], { encoding: 'utf8' });
+    },
+  });
+}
 if (stackLoadRef) benchmarkOverrides.push({
   name: 'stack-load-benchmark-source',
   enforce: 'pre',
@@ -156,6 +178,9 @@ const vite = await createServer({
 try {
   const { createInitialData } = await vite.ssrLoadModule('/src/seed.ts');
   const { buildPlan } = await vite.ssrLoadModule('/src/optimizer.ts');
+  const buildPlanPackingGeometryReference = comparePackingGeometryRef
+    ? (await vite.ssrLoadModule('/src/optimizer.ts?benchmark-packing-geometry-baseline')).buildPlan
+    : undefined;
   const buildPlanReference = compareOptimizerRef
     ? (await vite.ssrLoadModule('/src/optimizer.ts?benchmark-baseline')).buildPlan
     : undefined;
@@ -234,18 +259,21 @@ try {
   for (const count of counts) {
     const input = fixture(count);
     let reusableShapes = new Map();
-    const planRequest = (useWorkerShapeCache = workerShapeCache, useReferenceOptimizer = false) => {
+    const planRequest = (useWorkerShapeCache = workerShapeCache, useReferenceOptimizer = false, useReferencePackingGeometry = false) => {
       const request = cloneWorkerInput ? structuredClone(input) : input;
       if (useWorkerShapeCache) reusableShapes = reconcilePackingShapes(request.items, reusableShapes);
-      return (useReferenceOptimizer ? buildPlanReference : buildPlan)(request.trip, request.items, request.bags);
+      const planBuilder = useReferenceOptimizer ? buildPlanReference : useReferencePackingGeometry ? buildPlanPackingGeometryReference : buildPlan;
+      return planBuilder(request.trip, request.items, request.bags);
     };
     const planVariant = (variant) => compareOptimizerRef
       ? planRequest(workerShapeCache, variant)
+      : comparePackingGeometryRef ? planRequest(workerShapeCache, false, variant)
       : planRequest(variant);
     const fingerprint = (plan) => createHash('sha256').update(JSON.stringify(plan.placements.map(({ instanceId, containerId, compartmentId, x, y, z, length, width, height, rotation, layer, insertionOrder, shapeKey }) =>
       ({ instanceId, containerId, compartmentId, x, y, z, length, width, height, rotation, layer, insertionOrder, shapeKey })))).digest('hex');
     const warmup = compareWorkerShapeCache ? planRequest(false)
       : compareOptimizerRef ? planRequest(workerShapeCache, true)
+        : comparePackingGeometryRef ? planRequest(workerShapeCache, false, true)
         : planRequest(workerShapeCache);
     if (warmup.placements.length !== count) throw new Error(`Warm-up placed ${warmup.placements.length} of ${count} items.`);
     assertRectangularPlacementsDoNotOverlap(warmup);
@@ -262,10 +290,16 @@ try {
         throw new Error('Working-tree optimizer warm-up changed the reference placements.');
       }
     }
+    if (comparePackingGeometryRef) {
+      const plan = planRequest(workerShapeCache, false, false);
+      if (plan.placements.length !== count || fingerprint(plan) !== expectedFingerprint) {
+        throw new Error('Working-tree packing geometry changed the reference placements.');
+      }
+    }
     for (let warmupRun = 1; warmupRun < warmupRunsPerSize; warmupRun += 1) {
       const variants = compareWorkerShapeCache
         ? warmupRun % 2 ? [true, false] : [false, true]
-        : compareOptimizerRef ? warmupRun % 2 ? [false, true] : [true, false]
+        : compareOptimizerRef || comparePackingGeometryRef ? warmupRun % 2 ? [false, true] : [true, false]
           : [workerShapeCache];
       for (const variant of variants) {
         const plan = planVariant(variant);
@@ -274,7 +308,7 @@ try {
         }
       }
     }
-    const comparisonVariants = compareWorkerShapeCache || compareOptimizerRef ? [false, true] : [workerShapeCache];
+    const comparisonVariants = compareWorkerShapeCache || compareOptimizerRef || comparePackingGeometryRef ? [false, true] : [workerShapeCache];
     const samplesByCache = new Map(comparisonVariants.map(variant => [variant, { samples: [], cpuSamples: [] }]));
     const retrievalSamplesByCache = new Map(comparisonVariants.map(variant => [variant, []]));
     const retrievalItems = retrievalChecks ? new Map(warmup.placements.map(placement => [placement.instanceId,
@@ -283,7 +317,7 @@ try {
     for (let run = 0; run < runs; run += 1) {
       const variants = compareWorkerShapeCache
         ? run % 2 ? [true, false] : [false, true]
-        : compareOptimizerRef ? run % 2 ? [false, true] : [true, false]
+        : compareOptimizerRef || comparePackingGeometryRef ? run % 2 ? [false, true] : [true, false]
           : [workerShapeCache];
       for (const variant of variants) {
         const cpuStart = process.cpuUsage();
@@ -335,7 +369,8 @@ try {
       const sorted = [...samples].sort((left, right) => left - right), sortedCpu = [...cpuSamples].sort((left, right) => left - right);
       const retrievalSamples = retrievalSamplesByCache.get(variant), sortedRetrieval = [...retrievalSamples].sort((left, right) => left - right);
       results.push({ itemCount: count,
-        ...(compareWorkerShapeCache ? { workerShapeCache: variant } : compareOptimizerRef ? { optimizerRef: variant ? compareOptimizerRef : 'working tree' } : {}),
+        ...(compareWorkerShapeCache ? { workerShapeCache: variant } : compareOptimizerRef ? { optimizerRef: variant ? compareOptimizerRef : 'working tree' }
+          : comparePackingGeometryRef ? { packingGeometryRef: variant ? comparePackingGeometryRef : 'working tree' } : {}),
         medianSeconds: sorted[Math.floor(sorted.length / 2)], samplesSeconds: samples,
         medianCpuSeconds: sortedCpu[Math.floor(sortedCpu.length / 2)], samplesCpuSeconds: cpuSamples,
         ...(retrievalChecks ? { retrievalMedianSeconds: sortedRetrieval[Math.floor(sortedRetrieval.length / 2)], retrievalSamplesSeconds: retrievalSamples } : {}),
@@ -349,6 +384,7 @@ try {
       : '48-200 x 36-162 x 18-120 mm, deterministic per item index',
     mode: mode || seed.trips[0].mode,
     optimizerRef: compareOptimizerRef ? `alternating against ${compareOptimizerRef}` : optimizerRef || 'working tree',
+    packingGeometryComparison: comparePackingGeometryRef ? `alternating against ${comparePackingGeometryRef}` : undefined,
     stackLoadRef: stackLoadRef || 'working tree',
     packingGeometryRef: packingGeometryRef || 'working tree',
     bagWeightsRef: bagWeightsRef || 'working tree',

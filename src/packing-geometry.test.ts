@@ -108,6 +108,22 @@ describe('adopted occupied-cell planning',()=>{
   expect(upperIndex.candidates(shapedUpper)).toEqual([rectangularSupport]);
   expect(hasGeometrySupport(shapedUpper,upperPlacements,upperItems,.65,undefined,0,upperIndex)).toBe(hasGeometrySupport(shapedUpper,upperPlacements,upperItems,.65));
  });
+ it('retains cached support planes unaffected by a new placement',()=>{
+  const lower=placement('lower',{height:60}),nearby=placement('nearby',{height:59.997}),farLower=placement('far-lower',{z:100,height:60}),farNearby=placement('far-nearby',{z:100,height:59.997}),upper=placement('upper',{z:60}),farUpper=placement('far-upper',{z:160});
+  const placed=[lower,nearby,farLower,farNearby],items=new Map<string,LibraryItem>([...placed,upper,farUpper].map(p=>[p.instanceId,item(p.itemId)])),index=new RectangularSupportIndex(items,placed);
+  const nearCandidates=index.candidates(upper),farCandidates=index.candidates(farUpper),added=placement('added',{height:60});items.set(added.instanceId,item(added.itemId));index.add(added);
+  expect(index.candidates(upper)).not.toBe(nearCandidates);expect(index.candidates(upper)).toEqual([lower,nearby,added]);
+  expect(index.candidates(farUpper)).toBe(farCandidates);
+ });
+ it('invalidates every affected plane when adding a shaped support',()=>{
+  const stepped=shape(),shapedSupport=placement('shaped-support',{height:60}),nearby=placement('nearby',{height:59.997}),farLower=placement('far-lower',{z:100,height:60}),farNearby=placement('far-nearby',{z:100,height:59.997}),upper=placement('upper',{z:60}),farUpper=placement('far-upper',{z:160});
+  const placed=[shapedSupport,nearby,farLower,farNearby],items=new Map<string,LibraryItem>([...placed,upper,farUpper].map(p=>[p.instanceId,item(p.itemId)]));
+  items.set(shapedSupport.instanceId,item(shapedSupport.itemId,stepped.fittedDimensionsMm,stepped));
+  const index=new RectangularSupportIndex(items,placed),nearCandidates=index.candidates(upper),farCandidates=index.candidates(farUpper),added=placement('added-shape',{height:60});
+  items.set(added.instanceId,item(added.itemId,stepped.fittedDimensionsMm,stepped));index.add(added);
+  expect(index.candidates(upper)).not.toBe(nearCandidates);expect(index.candidates(upper)).toContain(added);
+  expect(index.candidates(farUpper)).toBe(farCandidates);
+ });
  it('indexes stepped shape supports by their actual top-surface planes',()=>{
   const stepped=customShape({x:8,y:8,z:6},(x,_y,z)=>x>=4||z<3);
   const lower=placement('stepped',{length:80,width:80,height:60}),remote=placement('remote',{z:100,length:120,width:100,height:60});

@@ -279,16 +279,21 @@ export class RectangularSupportIndex {
   add(placement:Placement){
     let compartments=this.groups.get(placement.containerId);if(!compartments){compartments=new Map();this.groups.set(placement.containerId,compartments);}
     let group=compartments.get(placement.compartmentId);if(!group){group={shapesByTopPlane:new Map(),rectangles:new Map()};compartments.set(placement.compartmentId,group);}
-    this.candidateCache.delete(group);
     this.order.set(placement.instanceId,this.nextOrder++);
     const shape=this.items.get(placement.instanceId)?.packingShape;
     if(shape){
       const planes=new Set(localGeometry(shape,placement.rotation??0).top.map(face=>Math.floor((placement.z+face.z)/(2*EPS))));
+      for(const plane of planes)this.invalidateCandidatePlane(group,plane);
       for(const plane of planes){const bucket=group.shapesByTopPlane.get(plane)??[];bucket.push(placement);group.shapesByTopPlane.set(plane,bucket);}
       return;
     }
     const plane=Math.floor((placement.z+placement.height)/(2*EPS)),bucket=group.rectangles.get(plane)??[];
+    this.invalidateCandidatePlane(group,plane);
     bucket.push(placement);group.rectangles.set(plane,bucket);
+  }
+  private invalidateCandidatePlane(group:SupportPlaneGroup,plane:number){
+    const cached=this.candidateCache.get(group);if(!cached)return;
+    cached.delete(plane-1);cached.delete(plane);cached.delete(plane+1);
   }
   candidates(placement:Placement){
     const group=this.groups.get(placement.containerId)?.get(placement.compartmentId);if(!group)return [];
