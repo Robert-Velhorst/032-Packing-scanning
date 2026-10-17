@@ -48,8 +48,10 @@ export function parseInteriorCavity(value:unknown,source:SavedGeometryPreview,re
     }
   }
   if(opening.length!==cavity.opening.cells.length||opening.some((cell,i)=>cell!==cavity.opening.cells[i]))return fail();
-  const seed=coordinates.map((coordinate,i)=>Math.min(dimensions[i]-1,Math.floor(review.seedMm[coordinate]/bounds[axes[i]]*dimensions[i])));
-  if(!cavity.freeCells.includes(seed[0]+nx*(seed[1]+ny*seed[2])))return fail();
+  const seed=coordinates.map((coordinate,i)=>Math.min(dimensions[i]-1,Math.floor(review.seedMm[coordinate]/bounds[axes[i]]*dimensions[i]))),seedCell=seed[0]+nx*(seed[1]+ny*seed[2]);
+  let low=0,high=cavity.freeCells.length;
+  while(low<high){const middle=(low+high)>>>1;if(cavity.freeCells[middle]<seedCell)low=middle+1;else high=middle;}
+  if(cavity.freeCells[low]!==seedCell)return fail();
   for(let i=0;i<source.pointsMm.length;i+=4){
     const x=Math.min(dimensions[0]-1,Math.max(0,Math.floor(source.pointsMm[i]/bounds.length*dimensions[0])));
     const y=Math.min(dimensions[1]-1,Math.max(0,Math.floor(source.pointsMm[i+1]/bounds.width*dimensions[1])));
