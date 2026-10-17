@@ -14,18 +14,24 @@ self.addEventListener('install', (event) => {
     const documents = await Promise.all(['/index.html', '/three/three-view.html']
       .map((path) => cache.match(path)));
     if (documents.some(Boolean)) {
-      const bundles = new Set();
-      for (const document of documents) {
+      const documentPaths = ['/index.html', '/three/three-view.html'];
+      const bundles = new Map();
+      for (let index = 0; index < documents.length; index += 1) {
+        const document = documents[index];
         if (!document) continue;
+        const basePath = new URL(documentPaths[index], self.location.origin).pathname.replace(/[^/]*$/, '');
         const html = await document.text();
         for (const match of html.matchAll(/(?:src|href)=["']([^"']+\.(?:js|css))(?:\?[^"']*)?["']/g)) {
-          bundles.add(match[1]);
+          const bundle = new URL(match[1], self.location.origin).pathname;
+          bundles.set(bundle, basePath);
         }
       }
-      await cache.addAll([...bundles]);
-      let pendingBundles = [...bundles].filter((path) => path.endsWith('.js'));
+      await cache.addAll([...bundles.keys()]);
+      let pendingBundles = [...bundles.keys()].filter((path) => path.endsWith('.js'));
       const inspectedBundles = new Set();
-      const moduleAsset = /["'](\/?(?:assets|three\/assets)\/[A-Za-z0-9._-]+\.js)["']/g;
+      const bundleBases = new Map(bundles);
+      const knownAssets = new Set(bundles.keys());
+      const moduleAsset = /["']((?:\/?(?:assets|three\/assets)\/[A-Za-z0-9._-]+|\.{1,2}\/[A-Za-z0-9._-]+)\.(?:js|css))["']/g;
       while (pendingBundles.length) {
         const currentBundles = [...new Set(pendingBundles.map((bundle) => new URL(bundle, self.location.origin).pathname))]
           .filter((bundle) => !inspectedBundles.has(bundle));
@@ -33,17 +39,25 @@ self.addEventListener('install', (event) => {
         for (const bundle of currentBundles) inspectedBundles.add(bundle);
         const scripts = await Promise.all(currentBundles.map(async (bundle) => {
           const script = await cache.match(new URL(bundle, self.location.origin).href);
-          return script ? script.text() : '';
+          return { bundle, source: script ? await script.text() : '' };
         }));
         const dependencies = new Set();
-        for (const source of scripts) {
-          for (const match of source.matchAll(moduleAsset)) {
-            const dependency = new URL(`/${match[1].replace(/^\/+/, '')}`, self.location.origin).pathname;
-            if (!inspectedBundles.has(dependency)) dependencies.add(dependency);
+        for (const script of scripts) {
+          const basePath = bundleBases.get(script.bundle) ?? (script.bundle.startsWith('/three/') ? '/three/' : '/');
+          for (const match of script.source.matchAll(moduleAsset)) {
+            const reference = match[1];
+            const dependency = reference.startsWith('/') || reference.startsWith('./') || reference.startsWith('../')
+              ? new URL(reference, new URL(script.bundle, self.location.origin)).pathname
+              : new URL(`${basePath}${reference}`, self.location.origin).pathname;
+            if (!knownAssets.has(dependency)) {
+              knownAssets.add(dependency);
+              dependencies.add(dependency);
+              if (dependency.endsWith('.js')) bundleBases.set(dependency, basePath);
+            }
           }
         }
-        pendingBundles = [...dependencies];
-        if (pendingBundles.length) await cache.addAll(pendingBundles);
+        pendingBundles = [...dependencies].filter((path) => path.endsWith('.js'));
+        if (dependencies.size) await cache.addAll([...dependencies]);
       }
     }
     await self.skipWaiting();

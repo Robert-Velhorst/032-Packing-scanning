@@ -77,10 +77,12 @@ describe('offline app cache', () => {
       '/three/three-view.html': '<script type="module" src="/three/assets/three-view.js"></script><link rel="stylesheet" href="/three/assets/three-view.css">',
       [mainScript]: 'const dependencies=["assets/PackingApp-core.js","assets/native-storage.js"];',
       '/assets/PackingApp-core.js': 'import "assets/workspace-route.js";',
-      '/assets/workspace-route.js': 'import("assets/shape-planner.js");',
-      '/assets/shape-planner.js': 'export const ready = true;',
-      '/three/assets/three-view.js': 'import("three/assets/three-scene.js");',
-      '/three/assets/three-scene.js': 'import "three/assets/three-core.js";',
+      '/assets/workspace-route.js': 'import("assets/shape-planner.js"); const css = "assets/workspace-route.css";',
+      '/assets/shape-planner.js': 'export const ready = true; const css = "assets/shape-planner.css";',
+      '/assets/workspace-route.css': '.route { display: block; }',
+      '/assets/shape-planner.css': '.planner { display: grid; }',
+      '/three/assets/three-view.js': 'const dependencies=["assets/three-scene.js"];',
+      '/three/assets/three-scene.js': 'import "./three-core.js";',
       '/three/assets/three-core.js': 'export const ready = true;',
       '/three/assets/three-view.css': '.scene { display: block; }',
     };
@@ -92,6 +94,8 @@ describe('offline app cache', () => {
     expect(cachedPaths).toContain('/assets/PackingApp-core.js');
     expect(cachedPaths).toContain('/assets/workspace-route.js');
     expect(cachedPaths).toContain('/assets/shape-planner.js');
+    expect(cachedPaths).toContain('/assets/workspace-route.css');
+    expect(cachedPaths).toContain('/assets/shape-planner.css');
     expect(cachedPaths).toContain('/assets/native-storage.js');
     expect(cachedPaths).toContain('/three/assets/three-view.js');
     expect(cachedPaths).toContain('/three/assets/three-scene.js');
@@ -103,6 +107,9 @@ describe('offline app cache', () => {
     let cachedRoute: Promise<{ path: string }> | undefined;
     listeners.get('fetch')!({ request: { method: 'GET', url: 'https://packing.test/assets/shape-planner.js', mode: 'cors' }, respondWith: (promise: Promise<{ path: string }>) => { cachedRoute = promise; } });
     await expect(cachedRoute).resolves.toHaveProperty('path', '/assets/shape-planner.js');
+    let cachedStyle: Promise<{ path: string }> | undefined;
+    listeners.get('fetch')!({ request: { method: 'GET', url: 'https://packing.test/assets/shape-planner.css', mode: 'cors' }, respondWith: (promise: Promise<{ path: string }>) => { cachedStyle = promise; } });
+    await expect(cachedStyle).resolves.toHaveProperty('path', '/assets/shape-planner.css');
     let cached3dModule: Promise<{ path: string }> | undefined;
     listeners.get('fetch')!({ request: { method: 'GET', url: 'https://packing.test/three/assets/three-core.js', mode: 'cors' }, respondWith: (promise: Promise<{ path: string }>) => { cached3dModule = promise; } });
     await expect(cached3dModule).resolves.toHaveProperty('path', '/three/assets/three-core.js');
