@@ -5,7 +5,7 @@ import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { PackingPlan, Placement } from '../types';
 import { coveredPlacementLabelIds, type ThreeViewContainer, type ThreeViewItem, type ThreeViewPlan } from '../three-view-data';
 import { containerBlockedBoxes, containerSpaceError } from '../container-space';
-import { placementBoxes,placementSurfaceLocal } from '../packing-geometry';
+import { placementBoxes,placementSurfaceLocal,shapeKey } from '../packing-geometry';
 
 interface Props {
   container?: ThreeViewContainer;
@@ -99,23 +99,23 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
     const itemMaterials = new Map<string, ThreeApi.MeshStandardMaterial>();
     const itemEdgeMaterials = new Map<string, ThreeApi.LineBasicMaterial>();
     const shapeGeometries = new Map<string, { geometry: ThreeApi.BufferGeometry; edges: ThreeApi.EdgesGeometry }>();
+    const shapeInstances = new Map<string, { geometry: ThreeApi.BufferGeometry; material: ThreeApi.MeshStandardMaterial; instances: { instanceId: string; position: [number, number, number]; color: string; edges: ThreeApi.EdgesGeometry }[] }>();
     const boxMaterials = new Map<string, ThreeApi.MeshStandardMaterial>();
     const boxInstances = new Map<ThreeApi.MeshStandardMaterial, { boxes: { instanceId: string; size: [number, number, number]; position: [number, number, number]; color: string }[] }>();
     const boxEdgePositions = new Map<string, number[]>();
     const selectionTargets = new Map<string, { setItemSelection?: (selected: boolean) => void; setLabelSelection?: (selected: boolean) => void }>();
     const selectedBoxEdgeMaterial = new THREE.LineBasicMaterial({ color: '#006b3f', transparent: true, opacity: 0.95 });
-    let selectedBoxEdge: ThreeApi.LineSegments | undefined;
+    let selectedPlacementEdge: ThreeApi.LineSegments | undefined;
     let activeSelection: string | undefined;
-    const itemMaterial = (category: string, flexibility: string | undefined, selected: boolean) => {
-      const key = `${category}:${flexibility ?? ''}:${selected}`;
+    const itemMaterial = (flexibility: string | undefined) => {
+      const key = flexibility ?? '';
       let material = itemMaterials.get(key);
       if (!material) {
         material = new THREE.MeshStandardMaterial({
-          color: selected ? '#348665' : colors[category] ?? colors.other,
+          color: '#ffffff',
+          vertexColors: true,
           roughness: flexibility === 'rigid' ? 0.72 : 0.93,
           metalness: 0.01,
-          emissive: selected ? '#12452f' : '#000000',
-          emissiveIntensity: selected ? 0.2 : 0,
         });
         itemMaterials.set(key, material);
       }
@@ -201,7 +201,7 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
       if (!item) continue;
       let sharedShapeGeometry: { geometry: ThreeApi.BufferGeometry; edges: ThreeApi.EdgesGeometry } | undefined;
       if(item.packingShape){
-        const key=`${item.id}:${placement.packingFormId??'original'}:${placement.rotation??0}`;
+        const key=`${shapeKey(item.packingShape)}:${placement.rotation??0}`;
         sharedShapeGeometry=shapeGeometries.get(key);
         if(!sharedShapeGeometry){
           const surface=placementSurfaceLocal(placement,item);
@@ -215,15 +215,14 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
         }
       }
       if(sharedShapeGeometry){
-        const material = itemMaterial(item.category, item.flexibility, false);
-        const selectedMaterial = itemMaterial(item.category, item.flexibility, true);
-        const mesh=new THREE.Mesh(sharedShapeGeometry.geometry,material);mesh.position.set(placement.x*scale,placement.z*scale,placement.y*scale);scene.add(mesh);
-        const edgeMaterial=new THREE.LineBasicMaterial({color:'#64756d',transparent:true,opacity:.75});
-        const edges=new THREE.LineSegments(sharedShapeGeometry.edges,edgeMaterial);edges.position.copy(mesh.position);edges.renderOrder=2;scene.add(edges);
-        selectionTargets.set(placement.instanceId,{setItemSelection:selected=>{
-          mesh.material=selected?selectedMaterial:material;
-          edgeMaterial.color.set(selected?'#006b3f':'#64756d');
-        }});
+        const material=itemMaterial(item.flexibility),key=`${shapeKey(item.packingShape)}:${placement.rotation??0}:${item.flexibility??''}`;
+        let batch=shapeInstances.get(key);
+        if(!batch){batch={geometry:sharedShapeGeometry.geometry,material,instances:[]};shapeInstances.set(key,batch);}
+        const position:[number,number,number]=[placement.x*scale,placement.z*scale,placement.y*scale];
+        batch.instances.push({instanceId:placement.instanceId,position,color:colors[item.category]??colors.other,edges:sharedShapeGeometry.edges});
+        const edgePositions=boxEdgePositions.get('#64756d')??[],vertices=sharedShapeGeometry.edges.getAttribute('position');
+        for(let index=0;index<vertices.count;index++)edgePositions.push(position[0]+vertices.getX(index),position[1]+vertices.getY(index),position[2]+vertices.getZ(index));
+        boxEdgePositions.set('#64756d',edgePositions);
       }else makeItemBox(
         placement.instanceId,
         [placement.length * scale, placement.height * scale, placement.width * scale],
@@ -276,6 +275,25 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
     }
 
     const matrix = new THREE.Matrix4(), instancePosition = new THREE.Vector3(), instanceScale = new THREE.Vector3(), instanceRotation = new THREE.Quaternion(), instanceColor = new THREE.Color();
+    for(const batch of shapeInstances.values()){
+      const mesh=new THREE.InstancedMesh(batch.geometry,batch.material,batch.instances.length);
+      batch.instances.forEach((instance,index)=>{
+        instancePosition.set(...instance.position);instanceScale.set(1,1,1);matrix.compose(instancePosition,instanceRotation,instanceScale);mesh.setMatrixAt(index,matrix);
+        mesh.setColorAt(index,instanceColor.set(instance.color));
+      });
+      mesh.instanceMatrix.needsUpdate=true;if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;scene.add(mesh);
+      batch.instances.forEach((instance,index)=>{
+        const target=selectionTargets.get(instance.instanceId)??{};
+        target.setItemSelection=selected=>{
+          mesh.setColorAt(index,instanceColor.set(selected?'#348665':instance.color));if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;
+          if(selected){
+            if(selectedPlacementEdge)scene.remove(selectedPlacementEdge);
+            selectedPlacementEdge=new THREE.LineSegments(instance.edges,selectedBoxEdgeMaterial);selectedPlacementEdge.position.set(...instance.position);selectedPlacementEdge.renderOrder=3;scene.add(selectedPlacementEdge);
+          }else if(selectedPlacementEdge){scene.remove(selectedPlacementEdge);selectedPlacementEdge=undefined;}
+        };
+        selectionTargets.set(instance.instanceId,target);
+      });
+    }
     for (const [material, batch] of boxInstances) {
       const mesh = new THREE.InstancedMesh(itemBoxGeometry!, material, batch.boxes.length);
       batch.boxes.forEach((box,index) => {
@@ -295,12 +313,12 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
           mesh.setColorAt(index,instanceColor.set(selected?'#348665':box.color));
           if(mesh.instanceColor)mesh.instanceColor.needsUpdate=true;
           if(selected){
-            if(selectedBoxEdge)scene.remove(selectedBoxEdge);
+            if(selectedPlacementEdge)scene.remove(selectedPlacementEdge);
             if(itemBoxEdges){
-              selectedBoxEdge=new THREE.LineSegments(itemBoxEdges,selectedBoxEdgeMaterial);
-              selectedBoxEdge.position.set(...box.position);selectedBoxEdge.scale.set(...box.size);selectedBoxEdge.renderOrder=3;scene.add(selectedBoxEdge);
+              selectedPlacementEdge=new THREE.LineSegments(itemBoxEdges,selectedBoxEdgeMaterial);
+              selectedPlacementEdge.position.set(...box.position);selectedPlacementEdge.scale.set(...box.size);selectedPlacementEdge.renderOrder=3;scene.add(selectedPlacementEdge);
             }
-          }else if(selectedBoxEdge){scene.remove(selectedBoxEdge);selectedBoxEdge=undefined;}
+          }else if(selectedPlacementEdge){scene.remove(selectedPlacementEdge);selectedPlacementEdge=undefined;}
         };
         selectionTargets.set(box.instanceId,target);
       });
