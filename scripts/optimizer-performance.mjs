@@ -22,6 +22,8 @@ const retrievalChecks = value('retrieval-checks', 'false') === 'true';
 const profile = value('profile', 'false') === 'true';
 const cloneWorkerInput = value('clone-worker-input', 'false') === 'true';
 const workerShapeCache = value('worker-shape-cache', 'false') === 'true';
+const compareWorkerShapeCache = value('compare-worker-shape-cache', 'false') === 'true';
+if (compareWorkerShapeCache && !cloneWorkerInput) throw new Error('Use --compare-worker-shape-cache=true with --clone-worker-input=true.');
 const mode = value('mode', '');
 if (mode && !['balanced', 'maximum_capacity', 'easy_access', 'fragile_protection'].includes(mode)) {
   throw new Error('Use --mode=balanced,maximum_capacity,easy_access, or fragile_protection.');
@@ -201,44 +203,60 @@ try {
   for (const count of counts) {
     const input = fixture(count);
     let reusableShapes = new Map();
-    const planRequest = () => {
+    const planRequest = (useWorkerShapeCache = workerShapeCache) => {
       const request = cloneWorkerInput ? structuredClone(input) : input;
-      if (workerShapeCache) reusableShapes = reconcilePackingShapes(request.items, reusableShapes);
+      if (useWorkerShapeCache) reusableShapes = reconcilePackingShapes(request.items, reusableShapes);
       return buildPlan(request.trip, request.items, request.bags);
     };
     const fingerprint = (plan) => createHash('sha256').update(JSON.stringify(plan.placements.map(({ instanceId, containerId, compartmentId, x, y, z, length, width, height, rotation, layer, insertionOrder, shapeKey }) =>
       ({ instanceId, containerId, compartmentId, x, y, z, length, width, height, rotation, layer, insertionOrder, shapeKey })))).digest('hex');
-    const warmup = planRequest();
+    const warmup = planRequest(compareWorkerShapeCache ? false : workerShapeCache);
     if (warmup.placements.length !== count) throw new Error(`Warm-up placed ${warmup.placements.length} of ${count} items.`);
     assertRectangularPlacementsDoNotOverlap(warmup);
     const expectedFingerprint = fingerprint(warmup);
-    for (let warmupRun = 1; warmupRun < warmupRunsPerSize; warmupRun += 1) {
-      const plan = planRequest();
+    if (compareWorkerShapeCache) {
+      const plan = planRequest(true);
       if (plan.placements.length !== count || fingerprint(plan) !== expectedFingerprint) {
-        throw new Error(`Warm-up ${warmupRun + 1} changed the placement result.`);
+        throw new Error('Shape-cache warm-up changed the placement result.');
       }
     }
-    const samples = [];
-    const cpuSamples = [];
+    for (let warmupRun = 1; warmupRun < warmupRunsPerSize; warmupRun += 1) {
+      const variants = compareWorkerShapeCache
+        ? warmupRun % 2 ? [true, false] : [false, true]
+        : [workerShapeCache];
+      for (const useWorkerShapeCache of variants) {
+        const plan = planRequest(useWorkerShapeCache);
+        if (plan.placements.length !== count || fingerprint(plan) !== expectedFingerprint) {
+          throw new Error(`Warm-up ${warmupRun + 1} changed the placement result with shape cache ${useWorkerShapeCache}.`);
+        }
+      }
+    }
+    const samplesByCache = new Map((compareWorkerShapeCache ? [false, true] : [workerShapeCache]).map(useCache => [useCache, { samples: [], cpuSamples: [] }]));
+    const retrievalSamplesByCache = new Map((compareWorkerShapeCache ? [false, true] : [workerShapeCache]).map(useCache => [useCache, []]));
     const retrievalItems = retrievalChecks ? new Map(warmup.placements.map(placement => [placement.instanceId,
       input.items.find(item => item.id === placement.itemId)]).filter((entry) => entry[1])) : undefined;
     const expectedRetrieval = retrievalChecks ? JSON.stringify(assessRetrieval(warmup.placements, input.bags, retrievalItems)) : '';
-    const retrievalSamples = [];
     for (let run = 0; run < runs; run += 1) {
-      const cpuStart = process.cpuUsage();
-      const start = performance.now();
-      const plan = planRequest();
-      samples.push((performance.now() - start) / 1000);
-      const cpu = process.cpuUsage(cpuStart);
-      cpuSamples.push((cpu.user + cpu.system) / 1_000_000);
-      if (plan.placements.length !== count) throw new Error(`Run ${run + 1} placed ${plan.placements.length} of ${count} items.`);
-      if (fingerprint(plan) !== expectedFingerprint) throw new Error(`Run ${run + 1} changed the warm-up placements.`);
-      assertRectangularPlacementsDoNotOverlap(plan);
-      if (retrievalChecks) {
-        const retrievalStart = performance.now();
-        const review = assessRetrieval(warmup.placements, input.bags, retrievalItems);
-        retrievalSamples.push((performance.now() - retrievalStart) / 1000);
-        if (JSON.stringify(review) !== expectedRetrieval) throw new Error(`Run ${run + 1} changed retrieval review results.`);
+      const variants = compareWorkerShapeCache
+        ? run % 2 ? [true, false] : [false, true]
+        : [workerShapeCache];
+      for (const useWorkerShapeCache of variants) {
+        const cpuStart = process.cpuUsage();
+        const start = performance.now();
+        const plan = planRequest(useWorkerShapeCache);
+        const measurement = samplesByCache.get(useWorkerShapeCache);
+        measurement.samples.push((performance.now() - start) / 1000);
+        const cpu = process.cpuUsage(cpuStart);
+        measurement.cpuSamples.push((cpu.user + cpu.system) / 1_000_000);
+        if (plan.placements.length !== count) throw new Error(`Run ${run + 1} placed ${plan.placements.length} of ${count} items.`);
+        if (fingerprint(plan) !== expectedFingerprint) throw new Error(`Run ${run + 1} changed the warm-up placements with shape cache ${useWorkerShapeCache}.`);
+        assertRectangularPlacementsDoNotOverlap(plan);
+        if (retrievalChecks) {
+          const retrievalStart = performance.now();
+          const review = assessRetrieval(warmup.placements, input.bags, retrievalItems);
+          retrievalSamplesByCache.get(useWorkerShapeCache).push((performance.now() - retrievalStart) / 1000);
+          if (JSON.stringify(review) !== expectedRetrieval) throw new Error(`Run ${run + 1} changed retrieval review results.`);
+        }
       }
     }
     let profileFunctions;
@@ -268,13 +286,14 @@ try {
         session.disconnect();
       }
     }
-    const sorted = [...samples].sort((left, right) => left - right);
-    const sortedCpu = [...cpuSamples].sort((left, right) => left - right);
-    const sortedRetrieval = [...retrievalSamples].sort((left, right) => left - right);
-    results.push({ itemCount: count, medianSeconds: sorted[Math.floor(sorted.length / 2)], samplesSeconds: samples,
-      medianCpuSeconds: sortedCpu[Math.floor(sortedCpu.length / 2)], samplesCpuSeconds: cpuSamples,
-      ...(retrievalChecks ? { retrievalMedianSeconds: sortedRetrieval[Math.floor(sortedRetrieval.length / 2)], retrievalSamplesSeconds: retrievalSamples } : {}),
-      placed: count, placementFingerprint: expectedFingerprint });
+    for (const [useCache, { samples, cpuSamples }] of samplesByCache) {
+      const sorted = [...samples].sort((left, right) => left - right), sortedCpu = [...cpuSamples].sort((left, right) => left - right);
+      const retrievalSamples = retrievalSamplesByCache.get(useCache), sortedRetrieval = [...retrievalSamples].sort((left, right) => left - right);
+      results.push({ itemCount: count, ...(compareWorkerShapeCache ? { workerShapeCache: useCache } : {}), medianSeconds: sorted[Math.floor(sorted.length / 2)], samplesSeconds: samples,
+        medianCpuSeconds: sortedCpu[Math.floor(sortedCpu.length / 2)], samplesCpuSeconds: cpuSamples,
+        ...(retrievalChecks ? { retrievalMedianSeconds: sortedRetrieval[Math.floor(sortedRetrieval.length / 2)], retrievalSamplesSeconds: retrievalSamples } : {}),
+        placed: count, placementFingerprint: expectedFingerprint });
+    }
     if (profileFunctions) results.at(-1).profileFunctions = profileFunctions;
   }
   console.log(JSON.stringify({
@@ -292,7 +311,7 @@ try {
     peakRssKiB: process.resourceUsage().maxRSS,
     shapeCount,
     cloneWorkerInput,
-    workerShapeCache,
+    workerShapeCache: compareWorkerShapeCache ? 'alternating comparison' : workerShapeCache,
     warmupRunsPerSize,
     measuredRuns: runs,
     results,
