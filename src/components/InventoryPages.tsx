@@ -5,7 +5,7 @@ import { uprightInstruction, uprightTag } from '../upright';
 import { ContainerSpaceNotes } from './ContainerSpaceNotes';
 import { HandlingPropertyNotes, OpeningEvidenceNotes } from './HandlingPropertyNotes';
 import { LocalPhoto } from './LocalPhoto';
-import type { AppData, Container, Evidence, LibraryItem, Trip, UnitSystem } from '../types';
+import type { Container, Evidence, LibraryItem, Trip, UnitSystem } from '../types';
 
 export type InventoryFormatters = {
   mmToDisplay: (value: number, unit: UnitSystem) => string;
@@ -17,15 +17,15 @@ export type InventoryFormatters = {
   uprightTag: typeof uprightTag;
 };
 
-export const LibraryPage = memo(function LibraryPage({ items, data, activeTrip, search, setSearch, getPhoto, unit, onAdd, onEdit, onDelete, onAddEntry, formatters }: { items:LibraryItem[]; data:AppData; activeTrip?:Trip; search:string; setSearch:(value:string)=>void; getPhoto:(id:string)=>Promise<Blob|undefined>; unit:UnitSystem; onAdd:()=>void; onEdit:(item:LibraryItem)=>void; onDelete:(item:LibraryItem)=>void; onAddEntry:(item:LibraryItem)=>void; formatters:InventoryFormatters }) {
+export const LibraryPage = memo(function LibraryPage({ items, itemCount, trips, activeTrip, search, setSearch, getPhoto, unit, onAdd, onEdit, onDelete, onAddEntry, formatters }: { items:LibraryItem[]; itemCount:number; trips:Trip[]; activeTrip?:Trip; search:string; setSearch:(value:string)=>void; getPhoto:(id:string)=>Promise<Blob|undefined>; unit:UnitSystem; onAdd:()=>void; onEdit:(item:LibraryItem)=>void; onDelete:(item:LibraryItem)=>void; onAddEntry:(item:LibraryItem)=>void; formatters:InventoryFormatters }) {
   const activeItemIds = useMemo(() => new Set(activeTrip?.entries.map((entry) => entry.itemId) ?? []), [activeTrip?.entries]);
   const usedItemIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const trip of data.trips) for (const entry of trip.entries) ids.add(entry.itemId);
+    for (const trip of trips) for (const entry of trip.entries) ids.add(entry.itemId);
     return ids;
-  }, [data.trips]);
+  }, [trips]);
   return <main className="secondary-page"><div className="page-heading"><div><p className="eyebrow">REUSABLE INVENTORY</p><h1>My items</h1><p className="page-subtitle">Keep a record of the things you pack often. Photos and measurements stay on this device.</p></div><button className="button button-primary" onClick={onAdd}><Plus size={16}/> Add item</button></div>
-    <div className="library-tools"><label className="search-box"><Search size={17}/><input placeholder="Search your items" value={search} onChange={(event) => setSearch(event.target.value)}/>{search && <button className="icon-button" onClick={() => setSearch('')}><X size={15}/></button>}</label><span>{data.libraryItems.length} saved {data.libraryItems.length === 1 ? 'item' : 'items'}</span></div>
+    <div className="library-tools"><label className="search-box"><Search size={17}/><input placeholder="Search your items" value={search} onChange={(event) => setSearch(event.target.value)}/>{search && <button className="icon-button" onClick={() => setSearch('')}><X size={15}/></button>}</label><span>{itemCount} saved {itemCount === 1 ? 'item' : 'items'}</span></div>
     {!items.length ? <div className="library-empty"><div className="empty-icon"><Package size={22}/></div><h2>{search ? 'No matching items' : 'Your item library is empty'}</h2><p>{search ? 'Try another name or category.' : 'Add an item with dimensions to reuse it across your packing lists.'}</p>{!search && <button className="button button-primary" onClick={onAdd}><Plus size={16}/> Add your first item</button>}</div> : <div className="library-list">{items.map((item) => {
       const inPack = activeItemIds.has(item.id);
       const usedInAnyTrip = usedItemIds.has(item.id);
