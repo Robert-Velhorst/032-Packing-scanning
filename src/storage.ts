@@ -3,6 +3,7 @@ import { createInitialData } from './seed';
 import type { AppData } from './types';
 import { isCarrierCatalog } from './carrier-catalog';
 import type {ProtectedSession} from './protected-storage';
+import { estimatePhotoArrayJsonBytes } from './backup-photo-budget';
 
 const DATABASE_NAME = 'packing-scanning-local';
 const DATABASE_VERSION = 1;
@@ -103,12 +104,15 @@ export async function prunePhotos(olderThanDays: number): Promise<number> {
   return removed;
 }
 
-export async function exportPhotos(): Promise<Array<{ id: string; dataUrl: string; createdAt: string }>> {
+export async function exportPhotos(maxSerializedBytes = Number.POSITIVE_INFINITY): Promise<Array<{ id: string; dataUrl: string; createdAt: string }>> {
   const db = await database();
-  return exportPhotoRecords(await db.getAll('photos'));
+  return exportPhotoRecords(await db.getAll('photos'), maxSerializedBytes);
 }
 
-async function exportPhotoRecords(records: Array<{ id: string; blob: Blob; createdAt: string }>) {
+async function exportPhotoRecords(records: Array<{ id: string; blob: Blob; createdAt: string }>, maxSerializedBytes = Number.POSITIVE_INFINITY) {
+  if (estimatePhotoArrayJsonBytes(records) > maxSerializedBytes) {
+    throw new Error('This backup is over 80 MB. Remove unneeded photos before exporting.');
+  }
   const photos: Array<{ id: string; dataUrl: string; createdAt: string }> = [];
   // Bound temporary base64 buffers while keeping two photo reads in flight.
   for (let index = 0; index < records.length; index += 2) {
@@ -159,7 +163,7 @@ export function workspaceStorage(session?:ProtectedSession) {
     savePhoto:(id:string,blob:Blob)=>session.savePhoto(id,blob),getPhoto:(id:string)=>session.photo(id),deletePhoto:(id:string)=>session.deletePhoto(id),
     removeUnreferencedPhotos:(ids:Set<string>)=>session.removePhotos(photo=>ids.has(photo.id)),
     prunePhotos:(days:number)=>session.removePhotos(photo=>Date.parse(photo.createdAt)>=Date.now()-days*86400000),
-    exportPhotos:async()=>exportPhotoRecords(await session.photos()),
+    exportPhotos:async(maxSerializedBytes = Number.POSITIVE_INFINITY)=>exportPhotoRecords(await session.photos(maxSerializedBytes),maxSerializedBytes),
     importPhoto:async(id:string,dataUrl:string,createdAt?:string)=>{await session.savePhoto(id,photoDataUrlBlob(dataUrl),createdAt);},
     photoRecords:()=>session.photos(),
     clearLocalData:()=>session.clear(),
