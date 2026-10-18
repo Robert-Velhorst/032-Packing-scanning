@@ -136,6 +136,7 @@ public final class DepthCaptureActivity extends ComponentActivity implements Cap
         destroyed = true;
         CaptureRuntime.leaveCapture(captureAccess);
         privacyTimer.removeCallbacks(privacyCheck);
+        if (renderer != null) renderer.close();
         if (session != null) { session.close(); session = null; }
         writer.shutdown();
         super.onDestroy();

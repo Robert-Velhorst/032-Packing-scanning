@@ -1,7 +1,7 @@
+import './SavedScanPreview.css';
+import './ScanCloudControls.css';
 import type { ReconstructedGeometry } from '../scanning/reconstructed-solid';
-import { memo, useEffect, useRef, useState } from 'react';
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { lazy, memo, Suspense, useEffect, useRef, useState } from 'react';
 import { canPreviewSavedGeometry } from '../scanning/native';
 import { useDeviceWorkspace } from './DeviceWorkspace';
 import type { SavedGeometryPreview } from '../scanning/saved-geometry';
@@ -10,16 +10,29 @@ import type { PackingInterior } from '../types';
 import type { ReconstructedInterior } from '../scanning/interior-cavity';
 import { InteriorScanReview } from './InteriorScanReview';
 import {captureGuidanceNotes} from '../scanning/capture-guidance';
+import { observeNearViewport } from '../viewport-observer';
+
+const ScanCloudCanvas=lazy(()=>import('./ScanCloudCanvas').then(module=>({default:module.ScanCloudCanvas})));
 
 export function SavedScanPreview({ record,onAdopt,onAdoptInterior }: { record: ScanRecord;onAdopt?:(geometry:ReconstructedGeometry,source:SavedGeometryPreview)=>void;onAdoptInterior?:(geometry:ReconstructedInterior,travelUp:PackingInterior['travelUp'])=>void }) {
   const {readSavedGeometry,reconstructSavedCapture}=useDeviceWorkspace().capture;
   const [reconstruction,setReconstruction]=useState<ReconstructedGeometry>();
   const [surfaceMode,setSurfaceMode]=useState(false);
+  const [sourceTopViewOpened,setSourceTopViewOpened]=useState(false);
+  const [reconstructedTopViewOpened,setReconstructedTopViewOpened]=useState(false);
   const [preview,setPreview]=useState<SavedGeometryPreview>();
+  const [viewerNearViewport,setViewerNearViewport]=useState(false);
+  const [show3d,setShow3d]=useState(false);
   const [busy,setBusy]=useState(false), [error,setError]=useState('');
   const active=useRef(true), request=useRef(0);
+  const viewerRef=useRef<HTMLDivElement>(null);
   useEffect(() => {active.current=true;return()=>{active.current=false;request.current++;};},[]);
-  useEffect(() => {request.current++;setPreview(undefined);setReconstruction(undefined);setSurfaceMode(false);setError('');setBusy(false);},[record.id]);
+  useEffect(() => {request.current++;setPreview(undefined);setShow3d(false);setViewerNearViewport(false);setReconstruction(undefined);setSurfaceMode(false);setError('');setBusy(false);},[record.id]);
+  useEffect(() => {
+    const element=viewerRef.current;
+    if(!preview||!show3d||!element)return;
+    return observeNearViewport(element,isNearViewport=>{if(isNearViewport)setViewerNearViewport(true);},'160px 0px');
+  },[preview,show3d]);
   const load=async()=>{
     if(busy)return;
     const token=++request.current;setBusy(true);setError('');
@@ -48,68 +61,38 @@ export function SavedScanPreview({ record,onAdopt,onAdoptInterior }: { record: S
         <h3>Reconstruct an estimated surface</h3><p>This reads the full saved source, not the displayed sample. Open voxel shells and disconnected shapes are rejected. A mathematically closed surface does not prove the object was completely scanned. Use it in the plan only after reviewing the source and its scale.</p>
         <button className="button button-secondary" type="button" disabled={busy} onClick={()=>void reconstruct()}>{busy?'Reading source…':reconstruction?'Rebuild estimated surface':'Reconstruct saved surface'}</button>
         {reconstruction&&onAdopt&&<button className="button button-secondary" type="button" disabled={busy} onClick={()=>{try{onAdopt(reconstruction,preview);setError('');}catch(reason){setError(reason instanceof Error?reason.message:'The shape could not be adopted.');}}}>Use estimated shape in plan</button>}
-        {reconstruction&&<><p className="reconstruction-summary">{reconstruction.solid.occupiedCells.length.toLocaleString()} occupied cells · {reconstruction.solid.resolutionMm} mm cell spacing · {(reconstruction.surface.volumeMm3/1e6).toFixed(3)} litres of reconstructed cells. This is estimated occupied volume, not measured capacity or usable bag space.</p><div className="surface-view-switch"><button type="button" aria-pressed={!surfaceMode} onClick={()=>setSurfaceMode(false)}>Original points</button><button type="button" aria-pressed={surfaceMode} onClick={()=>setSurfaceMode(true)}>Reconstructed surface</button></div>{reconstruction.solid.warnings.map(w=><p className="scan-geometry-caution" key={w}>{w}</p>)}<details><summary>Reconstructed top view and details</summary><SolidTopView geometry={reconstruction}/><p>{reconstruction.surface.faceCount.toLocaleString()} outward boundary faces; closed edge and vertex-fan checks passed. Those checks establish mesh topology, not physical completeness. Top view projects occupied cells at every height; check the 3D view for vertical recesses.</p></details></>}
+        {reconstruction&&<><p className="reconstruction-summary">{reconstruction.solid.occupiedCells.length.toLocaleString()} occupied cells · {reconstruction.solid.resolutionMm} mm cell spacing · {(reconstruction.surface.volumeMm3/1e6).toFixed(3)} litres of reconstructed cells. This is estimated occupied volume, not measured capacity or usable bag space.</p><div className="surface-view-switch"><button type="button" aria-pressed={!surfaceMode} onClick={()=>setSurfaceMode(false)}>Original points</button><button type="button" aria-pressed={surfaceMode} onClick={()=>setSurfaceMode(true)}>Reconstructed surface</button></div>{reconstruction.solid.warnings.map(w=><p className="scan-geometry-caution" key={w}>{w}</p>)}<details onToggle={event=>{if(event.currentTarget.open)setReconstructedTopViewOpened(true);}}><summary>Reconstructed top view and details</summary>{reconstructedTopViewOpened&&<SolidTopView geometry={reconstruction}/>}<p>{reconstruction.surface.faceCount.toLocaleString()} outward boundary faces; closed edge and vertex-fan checks passed. Those checks establish mesh topology, not physical completeness. Top view projects occupied cells at every height; check the 3D view for vertical recesses.</p></details></>}
       </div>}
-      <ScanCloudCanvas preview={preview} reconstruction={surfaceMode?reconstruction:undefined}/>
+      {show3d ? <><button className="text-button" type="button" onClick={()=>setShow3d(false)}>Close interactive 3D view</button>
+      <div className="saved-scan-viewer-slot" ref={viewerRef}>
+        {viewerNearViewport
+          ? <Suspense fallback={<p role="status">Opening 3D scan view…</p>}><ScanCloudCanvas preview={preview} reconstruction={surfaceMode?reconstruction:undefined}/></Suspense>
+          : <p className="saved-scan-viewer-placeholder" role="status">3D scan view will open as you reach it.</p>}
+      </div></> : <button className="button button-secondary" type="button" onClick={()=>setShow3d(true)}>Open interactive 3D view</button>}
       {record.target==='container_interior'&&onAdoptInterior&&<InteriorScanReview key={preview.sourceHash} record={record} source={preview} onAdopt={onAdoptInterior}/>}
-      <details><summary>Top view and source details</summary><ScanCloudTopView preview={preview}/><p>{preview.samplePointCount.toLocaleString()} displayed points from {preview.pointCount.toLocaleString()} saved points. Green points are observed surfaces; the outline is their rectangular envelope.</p><p>{preview.envelope.paddingMm?`${preview.envelope.paddingMm} mm sampling margin on each face; this does not bound sensor error or unseen surfaces.`:'This older capture uses its original camera-aligned envelope, with no added sampling margin.'} Sorted envelope sides do not establish which side must remain upright.</p></details>
+      <details onToggle={event=>{if(event.currentTarget.open)setSourceTopViewOpened(true);}}><summary>Top view and source details</summary>{sourceTopViewOpened&&<ScanCloudTopView preview={preview}/>}<p>{preview.samplePointCount.toLocaleString()} displayed points from {preview.pointCount.toLocaleString()} saved points. Green points are observed surfaces; the outline is their rectangular envelope.</p><p>{preview.envelope.paddingMm?`${preview.envelope.paddingMm} mm sampling margin on each face; this does not bound sensor error or unseen surfaces.`:'This older capture uses its original camera-aligned envelope, with no added sampling margin.'} Sorted envelope sides do not establish which side must remain upright.</p></details>
       {record.target==='container_interior'&&<p className="scan-geometry-caution">Scanned walls do not establish free usable space. Check wheel/handle intrusions, corners, the floor and the opening with physical measurements.</p>}
-      <button className="text-button" type="button" onClick={()=>{request.current++;setPreview(undefined);setReconstruction(undefined);setSurfaceMode(false);setError('');setBusy(false);}}>Close geometry review</button>
+      <button className="text-button" type="button" onClick={()=>{request.current++;setPreview(undefined);setShow3d(false);setViewerNearViewport(false);setReconstruction(undefined);setSurfaceMode(false);setError('');setBusy(false);}}>Close geometry review</button>
     </>}
   </section>;
 }
 
 const ScanCloudTopView=memo(function ScanCloudTopView({preview}:{preview:SavedGeometryPreview}) {
+  const canvasRef=useRef<HTMLCanvasElement>(null);
   const bounds=preview.envelope.dimensionsMm,scale=Math.min(300/bounds.length,180/bounds.width);
-  return <svg className="scan-cloud-top" viewBox="0 0 340 220" role="img" aria-label="Top view of original captured surface points"><rect x={20} y={20} width={bounds.length*scale} height={bounds.width*scale} fill="#f7faf7" stroke="#637267"/>{Array.from({length:preview.samplePointCount},(_,index)=>{const i=index*4;return <circle key={index} cx={20+preview.pointsMm[i]*scale} cy={20+preview.pointsMm[i+1]*scale} r={1} fill="#267052" opacity={0.45}/>;})}</svg>;
-});
-
-function ScanCloudCanvas({preview,reconstruction}:{preview:SavedGeometryPreview;reconstruction?:ReconstructedGeometry}) {
-  const hostRef=useRef<HTMLDivElement>(null);
-  const api=useRef<{camera:THREE.PerspectiveCamera;controls:OrbitControls}|undefined>(undefined);
-  const [state,setState]=useState<'loading'|'ready'|'unavailable'>('loading');
   useEffect(()=>{
-    const host=hostRef.current;if(!host)return;
-    setState('loading');
-    let renderer:THREE.WebGLRenderer;
-    try{renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,powerPreference:'low-power'});}catch{setState('unavailable');return;}
-    renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.5));renderer.setClearColor('#f7faf7',1);
-    renderer.domElement.setAttribute('aria-hidden','true');host.appendChild(renderer.domElement);
-    const scene=new THREE.Scene(),bounds=reconstruction?.solid.dimensionsMm??preview.envelope.dimensionsMm;
-    const l=bounds.length/100,w=bounds.width/100,h=bounds.height/100;
-    const target=new THREE.Vector3(l/2,h/2,w/2),distance=Math.max(l,w,h)*3.8;
-    const camera=new THREE.PerspectiveCamera(35,1,0.01,Math.max(100,distance*10));
-    const controls=new OrbitControls(camera,renderer.domElement);controls.target.copy(target);controls.minDistance=distance*.35;controls.maxDistance=distance*3;controls.enablePan=false;
-    camera.position.set(target.x+distance*.5,target.y+distance*.6,target.z+distance*.6);controls.update();controls.saveState();api.current={camera,controls};
-    const source=reconstruction?.surface.verticesMm;
-    const positions=new Float32Array(source?source.length:preview.samplePointCount*3);
-    if(source){for(let i=0;i<source.length;i+=3){positions[i]=source[i]/100;positions[i+1]=source[i+2]/100;positions[i+2]=source[i+1]/100;}}
-    else for(let i=0;i<preview.samplePointCount;i++){positions[i*3]=preview.pointsMm[i*4]/100;positions[i*3+1]=preview.pointsMm[i*4+2]/100;positions[i*3+2]=preview.pointsMm[i*4+1]/100;}
-    const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.BufferAttribute(positions,3));
-    const material=reconstruction?new THREE.MeshStandardMaterial({color:'#409573',roughness:.8,side:THREE.DoubleSide}):new THREE.PointsMaterial({color:'#287452',size:3,sizeAttenuation:false});
-    if(reconstruction){
-      const triangles=reconstruction.surface.triangles,indices=new Uint32Array(triangles.length);
-      // x,z,y display axes reverse handedness; reverse triangle winding accordingly.
-      for(let i=0;i<triangles.length;i+=3){indices[i]=triangles[i];indices[i+1]=triangles[i+2];indices[i+2]=triangles[i+1];}
-      geometry.setIndex(new THREE.BufferAttribute(indices,1));geometry.computeVertexNormals();scene.add(new THREE.Mesh(geometry,material));
-      scene.add(new THREE.AmbientLight('#ffffff',1.6));const light=new THREE.DirectionalLight('#ffffff',2);light.position.set(distance,distance,distance);scene.add(light);
-    }else scene.add(new THREE.Points(geometry,material));
-    const box=new THREE.BoxGeometry(l,h,w),edges=new THREE.EdgesGeometry(box),lineMaterial=new THREE.LineBasicMaterial({color:'#637267',transparent:true,opacity:.5});
-    const outline=new THREE.LineSegments(edges,lineMaterial);outline.position.copy(target);scene.add(outline);
-    let frame=0,disposed=false;
-    const draw=()=>{frame=0;if(disposed||renderer.getContext().isContextLost())return;const moving=controls.update();renderer.render(scene,camera);if(controls.enableDamping&&moving)scheduleDraw();};
-    const scheduleDraw=()=>{if(!disposed&&!frame)frame=requestAnimationFrame(draw);};
-    const resize=()=>{const width=host.clientWidth,height=host.clientHeight;if(width&&height){renderer.setSize(width,height,false);camera.aspect=width/height;camera.updateProjectionMatrix();scheduleDraw();}};
-    const observer=new ResizeObserver(resize);observer.observe(host);resize();
-    const changed=()=>scheduleDraw(),lost=(event:Event)=>{event.preventDefault();setState('unavailable');},restored=()=>{resize();setState('ready');scheduleDraw();};
-    renderer.domElement.addEventListener('webglcontextlost',lost);renderer.domElement.addEventListener('webglcontextrestored',restored);
-    controls.addEventListener('change',changed);scheduleDraw();setState('ready');
-    return()=>{disposed=true;cancelAnimationFrame(frame);observer.disconnect();controls.removeEventListener('change',changed);controls.dispose();geometry.dispose();material.dispose();box.dispose();edges.dispose();lineMaterial.dispose();renderer.domElement.removeEventListener('webglcontextlost',lost);renderer.domElement.removeEventListener('webglcontextrestored',restored);if(!renderer.getContext().isContextLost())renderer.forceContextLoss();renderer.dispose();renderer.domElement.remove();api.current=undefined;};
-  },[preview,reconstruction]);
-  const rotate=(direction:number)=>{const current=api.current;if(!current)return;const offset=current.camera.position.clone().sub(current.controls.target);offset.applyAxisAngle(new THREE.Vector3(0,1,0),direction*Math.PI/8);current.camera.position.copy(current.controls.target).add(offset);current.controls.update();};
-  const zoom=(factor:number)=>{const current=api.current;if(!current)return;const offset=current.camera.position.clone().sub(current.controls.target);const distance=Math.max(current.controls.minDistance,Math.min(current.controls.maxDistance,offset.length()*factor));offset.setLength(distance);current.camera.position.copy(current.controls.target).add(offset);current.controls.update();};
-  return <div className="scan-cloud-view"><div className="scan-cloud-surface" ref={hostRef} data-webgl={state} aria-label={reconstruction?"Rotatable reconstructed estimated surface":"Rotatable original scan geometry"}/>{state==='unavailable'&&<p role="status">The 3D view is unavailable. Open the top view and source details below.</p>}<div className="scan-cloud-controls"><button type="button" disabled={state!=='ready'} onClick={()=>rotate(-1)}>Rotate scan left</button><button type="button" disabled={state!=='ready'} onClick={()=>rotate(1)}>Rotate scan right</button><button type="button" disabled={state!=='ready'} onClick={()=>zoom(.8)}>Zoom scan in</button><button type="button" disabled={state!=='ready'} onClick={()=>zoom(1.25)}>Zoom scan out</button><button type="button" disabled={state!=='ready'} onClick={()=>api.current?.controls.reset()}>Reset scan view</button></div></div>;
-}
+    const canvas=canvasRef.current,context=canvas?.getContext('2d');if(!canvas||!context)return;
+    context.fillStyle='#f7faf7';context.fillRect(20,20,bounds.length*scale,bounds.width*scale);
+    context.strokeStyle='#637267';context.strokeRect(20,20,bounds.length*scale,bounds.width*scale);
+    context.fillStyle='#267052';context.globalAlpha=.45;context.beginPath();
+    for(let index=0;index<preview.samplePointCount;index++){
+      const i=index*4,x=20+preview.pointsMm[i]*scale,y=20+preview.pointsMm[i+1]*scale;
+      context.moveTo(x+1,y);context.arc(x,y,1,0,Math.PI*2);
+    }
+    context.fill();context.globalAlpha=1;
+  },[preview,bounds.length,bounds.width,scale]);
+  return <canvas ref={canvasRef} className="scan-cloud-top" width={340} height={220} role="img" aria-label="Top view of original captured surface points"/>;
+});
 
 const SolidTopView=memo(function SolidTopView({geometry}:{geometry:ReconstructedGeometry}) {
   const {grid,resolutionMm,dimensionsMm,occupiedCells}=geometry.solid,projection=[...new Set(occupiedCells.map(cell=>cell%(grid.x*grid.y)))];

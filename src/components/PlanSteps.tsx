@@ -1,4 +1,5 @@
-import { SeparationNotes } from './SeparationRules';
+import './PlanSteps.css';
+import { SeparationNotes } from './SeparationNotes';
 import { compartmentFor } from '../compartments';
 import { packingFormInstruction } from '../packing-forms';
 import { PackingFormNotes } from './PackingFormNotes';
@@ -10,7 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Lock, Mic, MicOff, PackageCheck, SkipForward, Volume2, XCircle } from 'lucide-react';
 import { PackCanvas } from './PackCanvas';
 import { PackingDiagram } from './PackingDiagram';
-import { nextUnpackedStep, orderPackingSteps, packingStepPreview, packingStepRelation, resumePackingStep } from '../packing-sequence';
+import { createPackingStepRelationIndex, nextUnpackedStep, orderPackingSteps, packingStepPreview, packingStepRelation, resumePackingStep } from '../packing-sequence';
 import { uprightInstruction } from '../upright';
 import { usePackingVoice } from '../voice/usePackingVoice';
 import { useDeviceWorkspace } from './DeviceWorkspace';
@@ -45,18 +46,21 @@ export function PlanSteps({ getPhoto, trip, plan, containers, items, onExit, onC
   const readingGeneration = useRef(0);
   const advancingFrom = useRef<string | undefined>(undefined);
   const itemById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
+  const containerById = useMemo(() => new Map(containers.map((container) => [container.id, container])), [containers]);
   const ordered = useMemo(() => orderPackingSteps(plan.placements, containers), [plan.placements, containers]);
-  const selectedIndex = ordered.findIndex((step) => step.instanceId === selection.id);
+  const unresolved = useMemo(() => plan.excluded.filter((entry) => entry.reason !== 'Marked unavailable for this plan.'), [plan.excluded]);
+  const relationIndex = useMemo(() => createPackingStepRelationIndex(ordered,items), [ordered,items]);
+  const selectedIndex = relationIndex.firstPlacementIndex.get(selection.id) ?? -1;
   const safeIndex = selectedIndex >= 0 ? selectedIndex : Math.min(selection.index, Math.max(0, ordered.length - 1));
   const placement = ordered[safeIndex];
   const item = placement ? packingItemForPlacement(itemById.get(placement.itemId),placement) : undefined;
   const packingForm=item?.packingForms?.find(form=>form.id===placement?.packingFormId);
   const bag = placement ? containers.find((container) => container.id === placement.containerId) : undefined;
   const compartment=bag?compartmentFor(bag,placement?.compartmentId):undefined;
-  const completed = new Set(trip.completedInstanceIds);
-  const doneCount = ordered.filter((step) => completed.has(step.instanceId)).length;
+  const completed = useMemo(() => new Set(trip.completedInstanceIds), [trip.completedInstanceIds]);
+  const doneCount = useMemo(() => ordered.filter((step) => completed.has(step.instanceId)).length, [ordered,completed]);
   const locked = !!placement && trip.lockedPlacements.some((saved) => saved.instanceId === placement.instanceId);
-  const preview = useMemo(() => packingStepPreview(ordered, safeIndex, trip.completedInstanceIds), [ordered, safeIndex, trip.completedInstanceIds]);
+  const preview = useMemo(() => packingStepPreview(ordered, safeIndex, trip.completedInstanceIds,completed), [ordered, safeIndex, trip.completedInstanceIds,completed]);
   const previewPlan = useMemo(() => ({ ...plan, placements: preview }), [plan, preview]);
   const numbers = useMemo(() => Object.fromEntries(ordered.map((step, index) => [step.instanceId, String(index + 1)])), [ordered]);
   const baseKey = JSON.stringify([trip.id, trip.updatedAt, safeIndex, placement]);
@@ -114,7 +118,7 @@ export function PlanSteps({ getPhoto, trip, plan, containers, items, onExit, onC
     const generation = ++readingGeneration.current;
     voice.pause(); setReading(true); setMessage('Reading this step with an on-device voice…');
     try {
-      await readLocalStep('Step ' + (safeIndex + 1) + '. Place ' + item.name + ' in ' + bag.name + (compartment?', compartment '+compartment.name:'') + ', layer ' + placement.layer + '. ' + packingFormInstruction(packingForm) + ' ' + (item.fragile ? 'This item is fragile. Nothing may rest on it. ' : '') + uprightInstruction(item,bag) + ' ' + (!item.fragile && item.maxTopLoadGrams !== undefined ? 'The recorded additional weight allowed above is ' + item.maxTopLoadGrams + ' grams. This does not verify pressure or impact protection. ' : '') + packingStepRelation(placement,ordered,items,bag) + ' Position from the bag inside corner: '+Math.round(placement.x)+', '+Math.round(placement.y)+', '+Math.round(placement.z)+' millimetres. These dimensions are a planning estimate. Confirm that it physically fits.');
+      await readLocalStep('Step ' + (safeIndex + 1) + '. Place ' + item.name + ' in ' + bag.name + (compartment?', compartment '+compartment.name:'') + ', layer ' + placement.layer + '. ' + packingFormInstruction(packingForm) + ' ' + (item.fragile ? 'This item is fragile. Nothing may rest on it. ' : '') + uprightInstruction(item,bag) + ' ' + (!item.fragile && item.maxTopLoadGrams !== undefined ? 'The recorded additional weight allowed above is ' + item.maxTopLoadGrams + ' grams. This does not verify pressure or impact protection. ' : '') + packingStepRelation(placement,ordered,items,bag,relationIndex) + ' Position from the bag inside corner: '+Math.round(placement.x)+', '+Math.round(placement.y)+', '+Math.round(placement.z)+' millimetres. These dimensions are a planning estimate. Confirm that it physically fits.');
       if (generation === readingGeneration.current) setMessage('Step read aloud.');
     } catch (error) { if (generation === readingGeneration.current) setMessage(error instanceof Error ? error.message : 'Spoken steps are unavailable.'); }
     finally { if (generation === readingGeneration.current) { setReading(false); voice.resume(); } }
@@ -170,8 +174,8 @@ export function PlanSteps({ getPhoto, trip, plan, containers, items, onExit, onC
         <section className="step-model" aria-label="Current placement view">
           <p><strong>Step {safeIndex + 1}: {item.name}</strong>. Earlier planned positions and any confirmed items are shown as context.</p>
           <button className="button button-secondary" onClick={() => setDiagramOnly(!diagramOnly)}>{diagramOnly ? 'Show 3D view' : 'Show top-view diagram'}</button>
-          {diagramOnly ? <PackingDiagram bag={bag} placements={preview} currentId={placement.instanceId} numbers={numbers} items={items}/> : <PackCanvas container={bag} plan={previewPlan} items={items} selectedInstanceId={placement.instanceId} placementLabels={numbers} view="3d"/>}
-          <p>{packingStepRelation(placement, ordered, items, bag)} The solid dot marks the reference corner.</p><p className="step-model-legend">{preview.map((step) => `${numbers[step.instanceId]}. ${itemById.get(step.itemId)?.name ?? 'Item'}${step.instanceId === placement.instanceId ? ' (current step)' : completed.has(step.instanceId) ? ' (confirmed packed)' : ' (earlier planned step)'}`).join(' · ')}</p>
+          {diagramOnly ? <PackingDiagram bag={bag} placements={preview} currentId={placement.instanceId} numbers={numbers} items={items} itemIndex={itemById}/> : <PackCanvas container={bag} plan={previewPlan} items={items} selectedInstanceId={placement.instanceId} placementLabels={numbers} view="3d"/>}
+          <p>{packingStepRelation(placement, ordered, items, bag, relationIndex)} The solid dot marks the reference corner.</p><p className="step-model-legend">{preview.map((step) => `${numbers[step.instanceId]}. ${itemById.get(step.itemId)?.name ?? 'Item'}${step.instanceId === placement.instanceId ? ' (current step)' : completed.has(step.instanceId) ? ' (confirmed packed)' : ' (earlier planned step)'}`).join(' · ')}</p>
         </section>
         <div className="step-placement"><div><span>Position</span><strong>{Math.round(placement.x)} × {Math.round(placement.y)} × {Math.round(placement.z)} mm from the inside corner</strong></div><div><span>Orientation</span><strong>Length × width × height: {Math.round(placement.length)} × {Math.round(placement.width)} × {Math.round(placement.height)} mm</strong></div></div>
         <PackingFormNotes form={packingForm}/>
@@ -193,8 +197,8 @@ export function PlanSteps({ getPhoto, trip, plan, containers, items, onExit, onC
         </div>
         {pending && <section className="packing-confirm" aria-label="Confirm packing change"><p>{pending.command === 'does_not_fit' ? 'Reject this placement of ' + item.name + ' and try an alternative? Other locked positions stay in place.' : 'Mark ' + item.name + ' unavailable for this pack? Its current packed confirmation and lock will be removed.'}</p><div><button ref={confirmation} className="button button-primary" onClick={confirmPending}>Confirm {pending.command === 'does_not_fit' ? 'failed placement' : 'item unavailable'}</button><button className="button button-secondary" onClick={() => setPending(undefined)}>Cancel change</button></div><small>Or say “Packing, confirm” or “Packing, cancel”.</small></section>}
       </section>
-      <div className="step-list"><strong>Pack in this order</strong>{ordered.map((step,index) => <button key={step.instanceId} className={'step-list-item ' + (index === safeIndex ? 'active ' : '') + (completed.has(step.instanceId) ? 'complete' : '')} aria-current={index === safeIndex ? 'step' : undefined} disabled={!!pending} onClick={() => select(index)}><span className="step-list-number">{completed.has(step.instanceId) ? <Check size={16} aria-label="Packed"/> : String(index + 1).padStart(2,'0')}</span><span>{itemById.get(step.itemId)?.name ?? 'Item'}<small>{containers.find((candidate) => candidate.id === step.containerId)?.name} · layer {step.layer}</small></span>{step.locked && <Lock size={16} aria-label="Placement locked"/>}</button>)}</div>
+      <div className="step-list"><strong>Pack in this order</strong>{ordered.map((step,index) => <button key={step.instanceId} className={'step-list-item ' + (index === safeIndex ? 'active ' : '') + (completed.has(step.instanceId) ? 'complete' : '')} aria-current={index === safeIndex ? 'step' : undefined} disabled={!!pending} onClick={() => select(index)}><span className="step-list-number">{completed.has(step.instanceId) ? <Check size={16} aria-label="Packed"/> : String(index + 1).padStart(2,'0')}</span><span>{itemById.get(step.itemId)?.name ?? 'Item'}<small>{containerById.get(step.containerId)?.name} · layer {step.layer}</small></span>{step.locked && <Lock size={16} aria-label="Placement locked"/>}</button>)}</div>
     </> : <section className="steps-empty"><PackageCheck size={38} aria-hidden="true"/><h1>No placement steps available</h1><p>Add a bag and measured items, or review unresolved items below.</p><button className="button button-primary" onClick={onExit}>Review plan</button></section>}
-    {plan.excluded.filter((entry) => entry.reason !== 'Marked unavailable for this plan.').length > 0 && <section className="packing-unresolved"><h2>Still needs a decision</h2>{plan.excluded.filter((entry) => entry.reason !== 'Marked unavailable for this plan.').map((entry) => <p key={entry.instanceId}><strong>{entry.name}{entry.required ? ' · required' : ''}</strong><br/>{entry.reason}</p>)}<button className="button button-secondary" onClick={onExit}>Review items and bags</button></section>}
+    {unresolved.length > 0 && <section className="packing-unresolved"><h2>Still needs a decision</h2>{unresolved.map((entry) => <p key={entry.instanceId}><strong>{entry.name}{entry.required ? ' · required' : ''}</strong><br/>{entry.reason}</p>)}<button className="button button-secondary" onClick={onExit}>Review items and bags</button></section>}
   </main>;
 }

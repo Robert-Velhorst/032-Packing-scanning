@@ -1,4 +1,5 @@
-import { SeparationNotes } from './SeparationRules';
+import './PackingSequence.css';
+import { SeparationNotes } from './SeparationNotes';
 import { compartmentFor } from '../compartments';
 import { RetrievalNotes } from './RetrievalNotes';
 import { BagWeightNotes } from './BagWeightNotes';
@@ -11,34 +12,82 @@ import { uprightInstruction } from '../upright';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { WeatherNotes } from './WeatherLookup';
 import { ArrowLeft, Printer } from 'lucide-react';
-import { orderPackingSteps, packingStepPreview, packingStepRelation } from '../packing-sequence';
+import { createPackingStepRelationIndex, orderPackingSteps, packingStepPreview, packingStepRelation } from '../packing-sequence';
 import { PackingDiagram } from './PackingDiagram';
 import { ContainerSpaceNotes } from './ContainerSpaceNotes';
 import { printingAvailable, printPackingSequence } from '../printing';
 import { LocalPhoto } from './LocalPhoto';
 import type { Container, LibraryItem, PackingPlan, Trip } from '../types';
+import { observeNearViewport } from '../viewport-observer';
+
+function useSequenceViewport<T extends Element>(eager: boolean) {
+  const ref = useRef<T>(null);
+  const [nearViewport, setNearViewport] = useState(false);
+  useEffect(() => {
+    if (eager) return;
+    const element = ref.current;
+    if (!element) {
+      setNearViewport(true);
+      return;
+    }
+    return observeNearViewport(element, setNearViewport, '700px 0px');
+  }, [eager]);
+  return { ref, shouldRender: eager || nearViewport };
+}
+
+function DeferredSequenceDiagram({ ordered, index, completed, completedSet, previewIndex, step, itemName, bag, numbers, items, itemIndex, eager }: {
+  ordered: ReturnType<typeof orderPackingSteps>; index: number; completed: string[]; completedSet: ReadonlySet<string>; previewIndex: ReturnType<typeof createPackingStepRelationIndex>; step: ReturnType<typeof orderPackingSteps>[number];
+  itemName: string; bag: Container; numbers: Record<string,string>; items: LibraryItem[]; itemIndex: ReadonlyMap<string,LibraryItem>; eager: boolean;
+}) {
+  const { ref, shouldRender } = useSequenceViewport<HTMLDivElement>(eager);
+  const placements = useMemo(() => shouldRender ? packingStepPreview(ordered,index,completed,completedSet,previewIndex) : undefined, [shouldRender,ordered,index,completed,completedSet,previewIndex]);
+  const padding = Math.max(bag.inside.length,bag.inside.width)*.06;
+  return <div ref={ref} className="sequence-diagram-slot">
+    {placements
+      ? <PackingDiagram bag={bag} placements={placements} currentId={step.instanceId} numbers={numbers} notes={false} items={items} itemIndex={itemIndex}/>
+      : <div className="packing-diagram-deferred sequence-diagram-placeholder" role="img" aria-label={`Top view of ${bag.name} for ${itemName}. The diagram loads as this step approaches the screen.`} style={{aspectRatio:`${bag.inside.length+padding*2} / ${bag.inside.width+padding*2}`}}>Diagram loads as you scroll to this step.</div>}
+  </div>;
+}
+
+function DeferredSequenceRelation({ ordered, items, bag, step, relationIndex, eager }: {
+  ordered: ReturnType<typeof orderPackingSteps>; items: LibraryItem[]; bag: Container; step: ReturnType<typeof orderPackingSteps>[number];
+  relationIndex: ReturnType<typeof createPackingStepRelationIndex>; eager: boolean;
+}) {
+  const { ref, shouldRender } = useSequenceViewport<HTMLParagraphElement>(eager);
+  const relation = useMemo(() => shouldRender ? packingStepRelation(step,ordered,items,bag,relationIndex) : undefined, [shouldRender,step,ordered,items,bag,relationIndex]);
+  return <p ref={ref}>{relation ?? 'Support guidance loads as this step approaches the screen.'}</p>;
+}
 
 export function PackingSequence({ trip, plan, containers, items, getPhoto, onExit }: { trip: Trip; plan: PackingPlan; containers: Container[]; items: LibraryItem[]; getPhoto:(id:string)=>Promise<Blob|undefined>; onExit: () => void }) {
   const ordered = useMemo(() => orderPackingSteps(plan.placements, containers), [plan.placements, containers]);
+  const relationIndex = useMemo(() => createPackingStepRelationIndex(ordered,items), [ordered,items]);
   const heading = useRef<HTMLHeadingElement>(null);
   const [printing, setPrinting] = useState(false);
   const [printMessage, setPrintMessage] = useState('');
+  const itemById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
+  const bagById = useMemo(() => new Map(containers.map((bag) => [bag.id, bag])), [containers]);
+  const entryById = useMemo(() => new Map(trip.entries.map((entry) => [entry.id, entry])), [trip.entries]);
+  const travellerById = useMemo(() => new Map(trip.travellers.map((traveller) => [traveller.id, traveller])), [trip.travellers]);
+  const numbers = useMemo(() => Object.fromEntries(ordered.map((step, index) => [step.instanceId, String(index + 1)])), [ordered]);
+  const completed = useMemo(() => new Set(trip.completedInstanceIds), [trip.completedInstanceIds]);
+  const sequenceIds = useMemo(() => new Set(ordered.map((step) => step.instanceId)), [ordered]);
+  const outsidePackedCount = useMemo(() => completed.size - [...completed].filter((id) => sequenceIds.has(id)).length, [completed,sequenceIds]);
+  const completedInSequence = useMemo(() => ordered.filter(step=>completed.has(step.instanceId)).length, [ordered,completed]);
   useEffect(() => { heading.current?.focus(); }, []);
   async function print() {
     setPrinting(true); setPrintMessage('');
-    try { await printPackingSequence(); setPrintMessage('Print dialog requested. Choose your printer or save as PDF.'); }
+    try {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      await printPackingSequence();
+      setPrintMessage('Print dialog requested. Choose your printer or save as PDF.');
+    }
     catch (error) { setPrintMessage(error instanceof Error ? error.message : 'Printing could not start.'); }
     finally { setPrinting(false); }
   }
-  const itemById = new Map(items.map((item) => [item.id, item]));
-  const bagById = new Map(containers.map((bag) => [bag.id, bag]));
-  const numbers = Object.fromEntries(ordered.map((step, index) => [step.instanceId, String(index + 1)]));
-  const sequenceIds = new Set(ordered.map((step) => step.instanceId));
-  const outsidePackedCount = [...new Set(trip.completedInstanceIds)].filter((id) => !sequenceIds.has(id)).length;
   return <main className="packing-sequence-page">
     <div className="sequence-toolbar"><button className="button button-secondary" onClick={onExit}><ArrowLeft size={18}/> Back to packing</button><button className="button button-primary" disabled={printing || !printingAvailable()} onClick={() => void print()}><Printer size={18}/>{printing ? 'Preparing print…' : 'Print or save PDF'}</button></div>
     <p className="sequence-print-status" role="status">{printMessage || (!printingAvailable() ? 'Printing is unavailable on this device. The sequence remains available offline.' : '')}</p>
-    <header><p className="eyebrow">OFFLINE PACKING SEQUENCE</p><h1 ref={heading} tabIndex={-1}>{trip.name}</h1><p>{ordered.length} items in this sequence · {ordered.filter((step) => trip.completedInstanceIds.includes(step.instanceId)).length} confirmed in this sequence</p>{outsidePackedCount > 0 && <p>{outsidePackedCount} saved packed {outsidePackedCount === 1 ? 'confirmation is' : 'confirmations are'} outside this sequence. Their contents may still be in the bags; review the conflicts before changing packed positions.</p>}<p>Packing record updated {new Date(trip.updatedAt).toLocaleString()}. This copy will not update after printing.</p></header>
+    <header><p className="eyebrow">OFFLINE PACKING SEQUENCE</p><h1 ref={heading} tabIndex={-1}>{trip.name}</h1><p>{ordered.length} items in this sequence · {completedInSequence} confirmed in this sequence</p>{outsidePackedCount > 0 && <p>{outsidePackedCount} saved packed {outsidePackedCount === 1 ? 'confirmation is' : 'confirmations are'} outside this sequence. Their contents may still be in the bags; review the conflicts before changing packed positions.</p>}<p>Packing record updated {new Date(trip.updatedAt).toLocaleString()}. This copy will not update after printing.</p></header>
     <p className="sequence-note">Adopted occupied-cell shapes or rectangular planning estimates. Follow the insertion sequence; confirm real support, opening clearance and bag closure. Numbered shapes are planned positions, not proof that an item has been packed. All positions and dimensions below use millimetres.</p>
     {trip.sample && <p className="sequence-note">Example pack: replace sample dimensions and weights before relying on the plan.</p>}
     <section className="sequence-bags"><h2>Bag contents</h2>{containers.map((bag) => {
@@ -53,8 +102,9 @@ export function PackingSequence({ trip, plan, containers, items, getPhoto, onExi
     <ol className="sequence-cards">{ordered.map((step, index) => {
       const item = packingItemForPlacement(itemById.get(step.itemId),step), bag = bagById.get(step.containerId);
       if (!item || !bag) return null;
-      return <li key={step.instanceId} className="sequence-card"><div className="sequence-step-heading"><strong className="sequence-number">{index + 1}</strong>{item.photoId && <LocalPhoto eager photoId={item.photoId} getPhoto={getPhoto} className="sequence-photo" alt={item.name}/>}<div><h2>{item.name}</h2><p>{bag.name}{step.compartmentId&&` · ${compartmentFor(bag,step.compartmentId)?.name??'Missing compartment'}`} · {trip.travellers.find((traveller) => traveller.id === trip.entries.find((entry) => entry.id === step.entryId)?.travellerId)?.name ?? 'Traveller'} · {trip.completedInstanceIds.includes(step.instanceId) ? 'Confirmed packed' : 'Not confirmed packed'}</p></div></div>
-        <div className="sequence-instruction"><PackingDiagram bag={bag} placements={packingStepPreview(ordered, index, trip.completedInstanceIds)} currentId={step.instanceId} numbers={numbers} notes={false} items={items}/><div><PackingFormNotes form={item.packingForms?.find(form=>form.id===step.packingFormId)}/><p>{packingStepRelation(step, ordered, items, bag)}</p><p><strong>Position:</strong> {Math.round(step.x)} × {Math.round(step.y)} × {Math.round(step.z)} mm from the inside corner.</p><p><strong>Orientation:</strong> length × width × height {Math.round(step.length)} × {Math.round(step.width)} × {Math.round(step.height)} mm.</p><p><strong>Size evidence:</strong> {item.dimensionEvidence.source.replace('_', ' ')} · {Math.round(item.dimensionEvidence.confidence * 100)}% recorded confidence.</p><HandlingPropertyNotes item={item} expanded/><StackLoadNotes plan={plan} items={items} instanceId={step.instanceId}/>{item.fragile && <p>Fragile: do not rest anything on this item. Add cushioning and include its dimensions and weight; impact protection is not simulated.</p>}{item.keepUpright && <p>{uprightInstruction(item,bag)}</p>}<p className="paper-check">□ Physically checked and packed</p></div></div>
+      const travellerId=entryById.get(step.entryId)?.travellerId;
+      return <li key={step.instanceId} className="sequence-card"><div className="sequence-step-heading"><strong className="sequence-number">{index + 1}</strong>{item.photoId && <LocalPhoto eager={printing} photoId={item.photoId} getPhoto={getPhoto} className="sequence-photo" alt={item.name}/>}<div><h2>{item.name}</h2><p>{bag.name}{step.compartmentId&&` · ${compartmentFor(bag,step.compartmentId)?.name??'Missing compartment'}`} · {travellerById.get(travellerId??'')?.name ?? 'Traveller'} · {completed.has(step.instanceId) ? 'Confirmed packed' : 'Not confirmed packed'}</p></div></div>
+        <div className="sequence-instruction"><DeferredSequenceDiagram ordered={ordered} index={index} completed={trip.completedInstanceIds} completedSet={completed} previewIndex={relationIndex} step={step} itemName={item.name} bag={bag} numbers={numbers} items={items} itemIndex={itemById} eager={printing}/><div><PackingFormNotes form={item.packingForms?.find(form=>form.id===step.packingFormId)}/><DeferredSequenceRelation ordered={ordered} items={items} bag={bag} step={step} relationIndex={relationIndex} eager={printing}/><p><strong>Position:</strong> {Math.round(step.x)} × {Math.round(step.y)} × {Math.round(step.z)} mm from the inside corner.</p><p><strong>Orientation:</strong> length × width × height {Math.round(step.length)} × {Math.round(step.width)} × {Math.round(step.height)} mm.</p><p><strong>Size evidence:</strong> {item.dimensionEvidence.source.replace('_', ' ')} · {Math.round(item.dimensionEvidence.confidence * 100)}% recorded confidence.</p><HandlingPropertyNotes item={item} expanded/><StackLoadNotes plan={plan} items={items} instanceId={step.instanceId}/>{item.fragile && <p>Fragile: do not rest anything on this item. Add cushioning and include its dimensions and weight; impact protection is not simulated.</p>}{item.keepUpright && <p>{uprightInstruction(item,bag)}</p>}<p className="paper-check">□ Physically checked and packed</p></div></div>
       </li>;
     })}</ol>
     {!!plan.excluded.length && <section className="sequence-review"><h2>Items outside this sequence</h2>{plan.excluded.map((entry) => <p key={entry.instanceId}><strong>{entry.name}{entry.required ? ' · required' : ''}</strong> — {entry.reason}</p>)}</section>}

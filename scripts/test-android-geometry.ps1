@@ -16,7 +16,7 @@ New-Item -ItemType Directory -Force -Path $taskOutput | Out-Null
 $taskClasspath = @((Resolve-Path -LiteralPath $JUnitJar).Path, (Resolve-Path -LiteralPath $HamcrestJar).Path, (Resolve-Path -LiteralPath $JsonJar).Path) -join ';'
 $taskMain = Join-Path $taskRepo 'android\app\src\main\java\com\packingscanning\app\scanning'
 $taskTests = Join-Path $taskRepo 'android\app\src\test\java\com\packingscanning\app\scanning'
-$taskSources = @('DepthCloud.java', 'DepthProjection.java', 'ScanEnvelope.java', 'VoxelSolid.java', 'VoxelCavity.java', 'CaptureStore.java') | ForEach-Object { Join-Path $taskMain $_ }
+$taskSources = @('CaptureGuidance.java', 'CaptureScopeManager.java', 'DepthCloud.java', 'DepthProjection.java', 'ScanEnvelope.java', 'VoxelSolid.java', 'VoxelCavity.java', 'CaptureStore.java') | ForEach-Object { Join-Path $taskMain $_ }
 $taskSources += @('DepthCloudTest.java', 'ScanEnvelopeTest.java', 'VoxelSolidTest.java', 'VoxelCavityTest.java', 'CaptureStoreTest.java', 'CaptureInteriorTest.java') | ForEach-Object { Join-Path $taskTests $_ }
 & $taskJavac --release 21 -cp $taskClasspath -d $taskOutput @taskSources
 if ($LASTEXITCODE -ne 0) { throw 'Android geometry test compilation failed.' }

@@ -16,6 +16,22 @@ import { topLoadError } from './stack-load.ts';
 import { bagMassRecordError, itemMassError } from './mass-constraints.ts';
 
 export interface PackingBackup { format: 'packing-scanning-backup'; app: AppData; photos: Array<{ id: string; dataUrl: string; createdAt?: string }>; exportedAt?: string; }
+export interface BackupJsonParts { prefix: string; suffix: string; bytesWithoutPhotos: number; }
+
+/** Prepare the fixed backup envelope once so photo export can check its byte budget before encoding. */
+export function prepareBackupJson(app: AppData, exportedAt: string): BackupJsonParts {
+  const shell = JSON.stringify({ format: 'packing-scanning-backup', schemaVersion: app.schemaVersion, exportedAt, app, photos: [] }, null, 2);
+  const emptyPhotos = shell.lastIndexOf('[]');
+  if (emptyPhotos < 0) throw new Error('The backup could not be prepared.');
+  const prefix = shell.slice(0, emptyPhotos), suffix = shell.slice(emptyPhotos + 2);
+  return { prefix, suffix, bytesWithoutPhotos: new Blob([prefix, suffix]).size };
+}
+
+/** Insert the already-bounded photo list without reserializing the app records. */
+export function assembleBackupJson(parts: Pick<BackupJsonParts, 'prefix' | 'suffix'>, photos: PackingBackup['photos']): string {
+  const photoJson = JSON.stringify(photos, null, 2).replace(/\n/g, '\n  ');
+  return parts.prefix + photoJson + parts.suffix;
+}
 
 /** Explicit account uploads retain planning derivatives, never native links or photos. */
 export function accountMetadataBackup(data: AppData): PackingBackup {

@@ -1,3 +1,4 @@
+import './CarrierLookup.css';
 import { useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { carrierCatalogStale, carrierRuleDraft, EASYJET_SOURCE, fetchCarrierCatalog, type AllowanceId, type CarrierCatalog } from '../carrier-catalog';

@@ -1,6 +1,6 @@
 import { separationRuleError, MAX_SEPARATION_RULES } from './separation-rule-records.ts';
 import type { LibraryItem, PackingForm, Placement, Trip } from './types.ts';
-import { topLoadError } from './stack-load.ts';
+import { topLoadError } from './stack-load-records.ts';
 
 const dimensions=['length','width','height'] as const;
 const date=(value:unknown)=>typeof value==='string'&&value.length<=40&&Number.isFinite(Date.parse(value));

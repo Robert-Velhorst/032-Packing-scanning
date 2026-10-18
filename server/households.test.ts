@@ -1,10 +1,10 @@
 import {describe,expect,it} from 'vitest';
-import {mkdtemp,readFile} from 'node:fs/promises';
+import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
-import {tmpdir} from 'node:os';
 import {AccountStore} from './accounts.ts';
 import {sharedPackingRecords} from '../src/shared-packs.ts';
 import {createInitialData} from '../src/seed.ts';
+import {createTestTempDirectory} from '../src/test-temp.ts';
 const credentials={username:'house-owner',name:'Synthetic owner',password:'synthetic household passphrase 032'},key=Buffer.alloc(32,12);
 async function accounts(store:AccountStore){const a=await store.register(credentials,'owner'),b=await store.register({...credentials,username:'house-member',name:'Synthetic member'},'member'),c=await store.register({...credentials,username:'house-outsider',name:'Synthetic outsider'},'outsider');return {a:a.session,b:b.session,c:c.session};}
 describe('private household membership and shared packs',()=>{
@@ -18,7 +18,7 @@ describe('private household membership and shared packs',()=>{
     }finally{store.close();}
   },20000);
   it('encrypts group and selected pack records, persists, rejects stale revisions and isolates the private vault',async()=>{
-    const root=await mkdtemp(join(tmpdir(),'packing-household-')),file=join(root,'accounts.sqlite');let store=new AccountStore(file,key);let packId='',houseId='';try{const {a,b,c}=await accounts(store),house=store.createHousehold(a,{name:'Private synthetic family'}),invite=store.inviteHousehold(a,house.id,{username:b.profile.username});store.joinHousehold(b,{code:invite.code,consent:true},'member');const records=sharedPackingRecords(createInitialData(),'sample-trip');records.trip.name='Private synthetic shared travel';
+    const root=await createTestTempDirectory('packing-household-'),file=join(root,'accounts.sqlite');let store=new AccountStore(file,key);let packId='',houseId='';try{const {a,b,c}=await accounts(store),house=store.createHousehold(a,{name:'Private synthetic family'}),invite=store.inviteHousehold(a,house.id,{username:b.profile.username});store.joinHousehold(b,{code:invite.code,consent:true},'member');const records=sharedPackingRecords(createInitialData(),'sample-trip');records.trip.name='Private synthetic shared travel';
       expect(()=>store.saveSharedPack(a,house.id,{records})).toThrow(/Confirm/);const pack=store.saveSharedPack(a,house.id,{records,consent:true});packId=pack.id;houseId=house.id;expect(store.sharedPack(b,house.id,pack.id).records).toEqual(records);expect(store.vault(b).backup).toBeNull();expect(()=>store.sharedPack(c,house.id,pack.id)).toThrow(/unavailable/);
       const changed=structuredClone(records);changed.trip.name='Second synthetic shared version';store.saveSharedPack(b,house.id,{records:changed,consent:true,revision:1},pack.id);expect(()=>store.saveSharedPack(a,house.id,{records,consent:true,revision:1},pack.id)).toThrow(/changed/);expect(store.sharedPack(a,house.id,pack.id).records).toEqual(changed);
       expect(()=>store.deleteSharedPack(a,house.id,pack.id,{revision:1,confirm:true})).toThrow(/changed/);expect(()=>store.deleteSharedPack(b,house.id,pack.id,{revision:2,confirm:true})).toThrow(/owner/);store.removeMember(a,house.id,b.profile.id);expect(()=>store.saveSharedPack(b,house.id,{records,consent:true,revision:2},pack.id)).toThrow(/unavailable/);

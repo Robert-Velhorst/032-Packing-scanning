@@ -1,0 +1,43 @@
+.steps-page{max-width:1050px;padding:24px 35px 50px;margin:0 auto}.main-column:has(.steps-page){min-height:100vh;background:#f9fbf9}.step-count{text-align:center;margin:32px 0 12px;color:#50735b;font-size:9px;font-weight:700;letter-spacing:1.1px}.step-count span{color:#a4aca5}.step-item-image{height:82px;width:82px;border-radius:20px;background:#edf3ef;margin:0 auto 19px;display:grid;place-items:center;position:relative;color:#426a50;font:600 32px ui-sans-serif,system-ui,sans-serif}.step-description{color:#77837a;font-size:12px;line-height:1.6}.step-description strong{color:#415248}.step-placement{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:20px 0;text-align:left}.step-placement div{display:flex;flex-direction:column;gap:6px;padding:10px;border:1px solid #edf0ed;border-radius:6px}.step-placement span{color:#89948c;font-size:8px;text-transform:uppercase;letter-spacing:.7px}.step-placement strong{font-size:10px;line-height:1.4;color:#425248}.step-care,.step-note{display:flex;flex-direction:column;gap:4px;text-align:left;padding:10px 11px;border-radius:6px;background:#fbf7ee;color:#826d3e;font-size:9px;line-height:1.5}.step-care strong{font-size:10px}.step-note{display:block;background:#fff8e8;color:#917539}.step-actions{display:flex;justify-content:space-between;align-items:center;gap:7px}.step-actions .button{padding:0 10px;min-height:40px;font-size:10px}.step-actions .step-done{min-width:148px}.step-secondary-actions{display:flex;justify-content:space-between;align-items:center;padding-top:15px;margin-top:14px;border-top:1px solid #eef1ee}.step-secondary-actions button{font-size:9px;color:#79867d}.step-secondary-actions .is-locked{color:#31724e}.step-secondary-actions .not-fit{color:#9b685e}.step-list{max-width:570px;margin:19px auto 0;border:1px solid #e8ede8;border-radius:8px;background:#fff;padding:11px 14px}.step-list>strong{display:block;padding:2px 0 8px;color:#6c786f;font-size:9px;letter-spacing:.5px}.step-list-item{width:100%;display:flex;align-items:center;gap:10px;text-align:left;padding:8px 4px;border:0;border-top:1px solid #f0f2f0;background:#fff;color:#536159;font-size:10px;cursor:pointer}.step-list-item.active{color:#246444}.step-list-item>span:nth-child(2){display:flex;flex:1;flex-direction:column;gap:3px}.step-list-item small{color:#98a098;font-size:8px}.step-list-number{height:22px;width:22px;border-radius:50%;background:#f1f4f1;display:grid;place-items:center;font-size:8px}.step-list-item.complete .step-list-number{background:#e9f3eb;color:#35754d}
+@media(max-width:620px){.steps-page{padding:17px 12px 35px}.step-item-image{height:68px;width:68px;font-size:27px}.step-description{font-size:10px}.step-placement{gap:5px}.step-placement div{padding:8px}.step-placement strong{font-size:9px}.step-actions .button{min-height:37px;gap:4px;padding:0 6px;font-size:8px}.step-actions .step-done{min-width:117px}.step-secondary-actions{padding-top:12px;margin-top:12px}}
+.steps-page .button, .steps-page .speak-button, .steps-page .back-button, .steps-page summary { min-height:48px; font-size:13px; }
+.steps-page .step-actions .button { min-height:48px; font-size:13px; padding:10px 14px; min-width:0; }
+.steps-page .step-done { min-width:0; }
+.steps-page .active-step h1 { font-size:30px; overflow-wrap:anywhere; }
+.steps-page .step-description, .steps-page .step-note, .steps-page .step-care span { font-size:14px; line-height:1.6; }
+.steps-page .step-placement span { font-size:11px; }
+.steps-page .step-placement strong { font-size:13px; line-height:1.5; }
+.steps-page .step-care strong { font-size:13px; }
+.steps-page .step-actions { display:grid; grid-template-columns:1fr 1.5fr 1fr; gap:10px; }
+.steps-page .step-secondary-actions { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; margin-top:12px; }
+.steps-page .step-secondary-actions .button { font-size:12px; white-space:normal; }
+.steps-page .step-list-item { min-height:60px; font-size:14px; }
+.steps-page .step-list-item small { font-size:12px; }
+.steps-page .step-item-image img { width:100%; height:100%; object-fit:cover; border-radius:inherit; }
+.steps-page button:focus-visible, .steps-page summary:focus-visible, .steps-page h1:focus-visible { outline:3px solid #17684e; outline-offset:4px; }
+.packing-voice { max-width:650px; margin:22px auto 0; padding:18px; background:#edf5f0; border:1px solid #cbded2; border-radius:12px; display:grid; grid-template-columns:1fr auto; gap:12px; align-items:start; }
+.packing-voice strong { font-size:14px; }
+.packing-voice p, .packing-retry p, .packing-unresolved p, .packing-confirm p { font-size:13px; line-height:1.6; color:#35483d; margin:6px 0; }
+.packing-voice > .voice-status, .packing-voice > details, .voice-download { grid-column:1/-1; }
+.packing-voice summary { cursor:pointer; display:flex; align-items:center; font-weight:600; text-decoration:underline; }
+.voice-status { font-weight:600; }
+.packing-feedback { max-width:650px; min-height:22px; margin:12px auto; font-size:13px; line-height:1.6; color:#35483d; }
+.packing-retry, .packing-unresolved { max-width:650px; margin:16px auto; padding:16px; border:1px solid #decbaa; border-radius:12px; background:#fff9ef; }
+.packing-unresolved h2 { font-size:17px; margin:0 0 12px; }
+.packing-confirm { border:2px solid #17684e; border-radius:10px; padding:16px; margin-top:18px; text-align:left; background:#f4faf5; }
+.packing-confirm > div { display:flex; gap:10px; flex-wrap:wrap; margin:12px 0; }
+.packing-confirm small { font-size:12px; }
+@media(max-width:620px) {
+  .packing-voice { padding:16px; }
+  .steps-page .step-actions { grid-template-columns:1fr 1fr; }
+  .steps-page .step-actions .step-done { grid-column:1/-1; grid-row:1; }
+  .steps-page .step-secondary-actions { grid-template-columns:1fr; }
+  .packing-confirm .button { width:100%; }
+}
+.steps-page .model-controls button { min-height:48px; }
+.packing-voice { display:block; }
+.packing-voice > summary { text-decoration:none; min-height:48px; }
+.step-model { margin:18px 0; text-align:left; padding:12px; border:1px solid #dde5df; border-radius:8px; background:#f8faf8; }
+.step-model p { font-size:13px; line-height:1.6; color:#35483d; overflow-wrap:anywhere; }
+.step-model > .button { margin-bottom:10px; }
+.step-model .pack-canvas { height:260px; min-height:0; }

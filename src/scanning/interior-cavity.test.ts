@@ -3,16 +3,28 @@ import {parseInteriorCavity,type InteriorCavity,type InteriorReview} from './int
 import {voxelSurface,parseReconstructedSolid} from './reconstructed-solid.ts';
 import type {SavedGeometryPreview} from './saved-geometry.ts';
 
-function fixture(){
+function fixture(openingAxis:0|1|2=2,openingSign:1|-1=1){
  const source:SavedGeometryPreview={id:'00000000-0000-0000-0000-000000000001',target:'container_interior',format:'point_cloud_preview',units:'millimetres',sourceHash:'a'.repeat(64),pointCount:8640,samplePointCount:1,pointsMm:[5,5,5,.95],envelope:{method:'oriented_surface_envelope_v1',basis:'capture_aligned',paddingMm:2.5,dimensionsMm:{length:120,width:100,height:80}}};
- const review:InteriorReview={openingAxis:2,openingSign:1,seedMm:{x:85,y:55,z:45}},freeCells:number[]=[];
- for(let z=1;z<8;z++)for(let y=1;y<9;y++)for(let x=1;x<11;x++)freeCells.push(x+12*(y+10*z));
+ const review:InteriorReview={openingAxis,openingSign,seedMm:{x:85,y:55,z:45}},freeCells:number[]=[],dimensions=[12,10,8];
+ for(let z=0;z<8;z++)for(let y=0;y<10;y++)for(let x=0;x<12;x++){
+  const point=[x,y,z],inside=point.every((coordinate,axis)=>coordinate>0&&coordinate<dimensions[axis]-1);
+  const onOpening=point[openingAxis]===(openingSign===1?dimensions[openingAxis]-1:0)
+    &&point.every((coordinate,axis)=>axis===openingAxis||coordinate>0&&coordinate<dimensions[axis]-1);
+  if(inside||onOpening)freeCells.push(x+12*(y+10*z));
+ }
  const grid={x:12,y:10,z:8},surface=voxelSurface({grid,resolutionMm:10,occupiedCells:freeCells});
  const cells=new Set(freeCells),observedCells=Array.from({length:960},(_,i)=>i).filter(cell=>!cells.has(cell));
- const cavity:InteriorCavity={id:source.id,target:'container_interior',format:'voxel_cavity_v1',units:'millimetres',sourceHash:source.sourceHash,sourcePointCount:source.pointCount,method:'seeded_observed_interior_v1',grid,boundsMm:{...source.envelope.dimensionsMm},cellSizeMm:{length:10,width:10,height:10},seedMm:{...review.seedMm},opening:{axis:2,sign:1,planeMm:80,cells:freeCells.filter(c=>Math.floor(c/120)===7)},freeCells,observedCells,wallCellCount:400,surfaceFaceCount:surface.faceCount,estimatedVolumeMm3:560000,warnings:['Synthetic contract fixture; physical interior remains unverified.']};
+ const cavity:InteriorCavity={id:source.id,target:'container_interior',format:'voxel_cavity_v1',units:'millimetres',sourceHash:source.sourceHash,sourcePointCount:source.pointCount,method:'seeded_observed_interior_v1',grid,boundsMm:{...source.envelope.dimensionsMm},cellSizeMm:{length:10,width:10,height:10},seedMm:{...review.seedMm},opening:{axis:openingAxis,sign:openingSign,planeMm:openingSign===1?source.envelope.dimensionsMm[['length','width','height'][openingAxis] as 'length'|'width'|'height']:0,cells:freeCells.filter(c=>{const point=[c%12,Math.floor(c/12)%10,Math.floor(c/120)];return point[openingAxis]===(openingSign===1?dimensions[openingAxis]-1:0);})},freeCells,observedCells,wallCellCount:observedCells.length,surfaceFaceCount:surface.faceCount,estimatedVolumeMm3:freeCells.length*1000,warnings:['Synthetic contract fixture; physical interior remains unverified.']};
  return {source,review,cavity};
 }
 describe('seeded interior contract',()=>{
+ it('validates reviewed openings on all six grid faces',()=>{
+  for(const axis of [0,1,2] as const)for(const sign of [1,-1] as const){
+   const {source,review,cavity}=fixture(axis,sign),result=parseInteriorCavity(cavity,source,review);
+   expect(result.cavity.opening.axis).toBe(axis);expect(result.cavity.opening.sign).toBe(sign);
+   expect(result.cavity.opening.cells.length).toBeGreaterThanOrEqual(4);
+  }
+ });
  it('validates one reachable component and exposes a free-space surface without changing source data',()=>{
   const {source,review,cavity}=fixture(),before=structuredClone({source,review,cavity}),result=parseInteriorCavity(cavity,source,review);
   expect(result.surface.faceCount).toBe(412);expect(result.surface.volumeMm3).toBe(560000);expect(result.cavity.opening.cells).toHaveLength(80);expect({source,review,cavity}).toEqual(before);

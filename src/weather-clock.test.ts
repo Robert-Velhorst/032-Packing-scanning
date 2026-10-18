@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { subscribeWeatherClock } from './weather-clock';
+import { h } from 'preact';
+import { renderToString } from 'preact-render-to-string';
+import { subscribeWeatherClock, useWeatherClock, weatherClockSnapshot } from './weather-clock';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -7,6 +9,12 @@ afterEach(() => {
 });
 
 describe('shared weather clock', () => {
+  it('renders its external-store snapshot with the React-compatible runtime', () => {
+    const Clock = () => h('time', null, useWeatherClock(false));
+
+    expect(renderToString(h(Clock, {}))).toBe(`<time>${weatherClockSnapshot()}</time>`);
+  });
+
   it('does not install a timer or visibility listener when weather does not need freshness', () => {
     vi.useFakeTimers();
     const handlers = new Map<string, EventListenerOrEventListenerObject>();

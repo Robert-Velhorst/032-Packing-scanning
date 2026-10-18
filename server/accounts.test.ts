@@ -1,17 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
 import { AccountStore, validateAccountBackup } from './accounts.ts';
 import { accountMetadataBackup } from '../src/backup.ts';
 import { createInitialData } from '../src/seed.ts';
+import { createTestTempDirectory } from '../src/test-temp.ts';
 
 const input = { username: 'qa-traveller', name: 'Synthetic account', password: 'synthetic passphrase 032 only' };
 const key = Buffer.alloc(32, 7);
 describe('private account store', () => {
   it('keeps private records encrypted, preserves source records, and survives restart with the correct key', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'packing-account-')), file = join(root, 'accounts.sqlite');
+    const root = await createTestTempDirectory('packing-account-'), file = join(root, 'accounts.sqlite');
     let store = new AccountStore(file, key);
     const registered = await store.register(input, 'loopback'), data = createInitialData(), before = structuredClone(data);
     data.libraryItems[0].name = 'Private synthetic medicine kit';
@@ -90,7 +90,7 @@ describe('private account store', () => {
     } finally { store.close(); }
   }, 15000);
   it('does not issue a session when credentials change during asynchronous password verification', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'packing-account-race-')), file = join(root, 'accounts.sqlite');
+    const root = await createTestTempDirectory('packing-account-race-'), file = join(root, 'accounts.sqlite');
     const store = new AccountStore(file, key), writer = new DatabaseSync(file);
     try {
       const first = await store.register(input, 'one');

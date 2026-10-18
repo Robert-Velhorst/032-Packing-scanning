@@ -1,5 +1,6 @@
 import {openDB,type DBSchema,type IDBPDatabase} from 'idb';
 import type {AppData} from './types';
+import { estimatePhotoArrayJsonBytesFromTotals, estimatePhotoJsonEntryBytes } from './backup-photo-budget';
 
 export const PROTECTED_DATABASE='packing-scanning-protected';
 const ITERATIONS=600_000;
@@ -35,7 +36,13 @@ function decodedPhoto(buffer:ArrayBuffer){
   if(typeof header.id!=='string'||typeof header.createdAt!=='string'||typeof header.type!=='string')throw new Error('The encrypted photo is invalid.');
   return {id:header.id,createdAt:header.createdAt,blob:new Blob([buffer.slice(4+size)],{type:header.type})};
 }
-export async function listWorkspaces():Promise<WorkspaceDescriptor[]>{return (await database()).getAll('workspaces');}
+export async function listWorkspaces():Promise<WorkspaceDescriptor[]>{
+  const factory=globalThis.indexedDB;
+  if(typeof factory?.databases==='function'){
+    try{if(!(await factory.databases()).some(info=>info.name===PROTECTED_DATABASE))return [];}catch{/* Fall back to the standard open path if database enumeration is unavailable. */}
+  }
+  return (await database()).getAll('workspaces');
+}
 export function emptyWorkspace(data:AppData):AppData{return {...structuredClone(data),trips:[],libraryItems:[],containers:[],activeTripId:''};}
 export function workspaceCopy(data:AppData):AppData{const copy=structuredClone(data);for(const item of copy.libraryItems)delete item.scan;for(const bag of copy.containers)delete bag.scan;return copy;}
 
@@ -77,10 +84,14 @@ export class ProtectedSession {
   }
   async save(data:AppData){const {isPackingBackup}=await loadBackupValidator();if(!isPackingBackup({format:'packing-scanning-backup',app:data,photos:[]}))throw new Error('Review invalid packing records before saving this protected workspace.');const bytes=encode.encode(JSON.stringify(data));return this.mutate(async key=>({write:[['state',await sealBytes(key,this.descriptor.id,'state',bytes.buffer)]],result:undefined}));}
   savePhoto(id:string,blob:Blob,createdAt=new Date().toISOString()){return this.mutate(async key=>({write:[[`photo:${id}`,await sealBytes(key,this.descriptor.id,`photo:${id}`,await photoBytes(id,blob,createdAt))]],result:undefined}));}
-  async photos():Promise<{id:string;blob:Blob;createdAt:string}[]>{
+  async photos(maxSerializedBytes=Number.POSITIVE_INFINITY):Promise<{id:string;blob:Blob;createdAt:string}[]>{
     const key=this.live(),db=await database(),keys=await db.getAllKeys('records',range(this.descriptor.id));this.live();const result=[];
+    let entryBytes=0;
     for(const id of keys.filter(id=>id.startsWith(`${this.descriptor.id}:photo:`))){const name=id.slice(this.descriptor.id.length+1),record=await db.get('records',id);if(!record)continue;
-      const photo=decodedPhoto(await openBytes(key,this.descriptor.id,name,record));this.live();if(name!==`photo:${photo.id}`)throw new Error('The encrypted photo reference is invalid.');result.push(photo);
+      const photo=decodedPhoto(await openBytes(key,this.descriptor.id,name,record));this.live();if(name!==`photo:${photo.id}`)throw new Error('The encrypted photo reference is invalid.');
+      entryBytes+=estimatePhotoJsonEntryBytes(photo);
+      if(estimatePhotoArrayJsonBytesFromTotals(result.length+1,entryBytes)>maxSerializedBytes)throw new Error('This backup is over 80 MB. Remove unneeded photos before exporting.');
+      result.push(photo);
     }return result;
   }
   async photo(id:string){const key=this.live(),name=`photo:${id}`,record=await (await database()).get('records',`${this.descriptor.id}:${name}`);this.live();if(!record)return undefined;const photo=decodedPhoto(await openBytes(key,this.descriptor.id,name,record));this.live();if(photo.id!==id)throw new Error('The encrypted photo reference is invalid.');return photo.blob;}

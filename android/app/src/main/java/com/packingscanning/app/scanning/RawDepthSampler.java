@@ -15,10 +15,23 @@ import java.util.List;
 
 /** Only fresh raw-depth frames are integrated; each image is closed on every exit path. */
 final class RawDepthSampler {
+    private static final class SupportPlane {
+        Plane plane;
+        Pose worldToLocal;
+        SupportPlane(Plane plane) { update(plane); }
+        void update(Plane plane) { this.plane=plane; this.worldToLocal=plane.getCenterPose().inverse(); }
+        void clear() { plane=null; worldToLocal=null; }
+    }
     private Anchor origin;
     private DepthCloud cloud;
     private long lastDepthTimestamp = -1;
     private long lastSampleTime;
+    private float[] sampleBuffer = new float[0];
+    private final float[] cameraPoint = new float[3], worldPoint = new float[3], relativePoint = new float[3];
+    private final float[] localPoint = new float[3], cameraLocal = new float[3];
+    private final float[] focalLength = new float[2], principalPoint = new float[2];
+    private final int[] imageDimensions = new int[2], diagnostics = new int[2];
+    private final List<SupportPlane> supportPlanes = new ArrayList<>();
     private final boolean removeSupportPlane;
     private CaptureGuidance guidance=new CaptureGuidance();
     String guidanceHint(){return guidance.hint(removeSupportPlane);}
@@ -40,15 +53,15 @@ final class RawDepthSampler {
             lastDepthTimestamp = depth.getTimestamp();
             if (depth.getWidth() != confidence.getWidth() || depth.getHeight() != confidence.getHeight()) throw new IllegalStateException("Depth and confidence images do not match.");
             CameraIntrinsics intrinsics = frame.getCamera().getTextureIntrinsics();
-            float[] focal = intrinsics.getFocalLength(), centre = intrinsics.getPrincipalPoint();
-            int[] size = intrinsics.getImageDimensions();
-            float fx = focal[0] * depth.getWidth() / size[0], fy = focal[1] * depth.getHeight() / size[1];
-            float cx = centre[0] * depth.getWidth() / size[0], cy = centre[1] * depth.getHeight() / size[1];
+            intrinsics.getFocalLength(focalLength,0); intrinsics.getPrincipalPoint(principalPoint,0); intrinsics.getImageDimensions(imageDimensions,0);
+            float fx = focalLength[0] * depth.getWidth() / imageDimensions[0], fy = focalLength[1] * depth.getHeight() / imageDimensions[1];
+            float cx = principalPoint[0] * depth.getWidth() / imageDimensions[0], cy = principalPoint[1] * depth.getHeight() / imageDimensions[1];
             Image.Plane pixels = depth.getPlanes()[0], certainty = confidence.getPlanes()[0];
             DepthPixels image=new DepthPixels(pixels.getBuffer(),certainty.getBuffer(),depth.getWidth(),depth.getHeight(),pixels.getRowStride(),pixels.getPixelStride(),certainty.getRowStride(),certainty.getPixelStride());
-            int[] diagnostics=image.centralSample();
+            image.centralSample(diagnostics);
             guidance.depth(depth.getTimestamp(),diagnostics[0],diagnostics[1]);
             Pose camera = frame.getCamera().getPose();
+            DepthProjection.Projector projector = new DepthProjection.Projector(fx,fy,cx,cy);
             if (origin == null) {
                 int bestX = -1, bestY = -1, bestDistance = Integer.MAX_VALUE, bestDepth = 0;
                 int middleX = depth.getWidth() / 2, middleY = depth.getHeight() / 2;
@@ -61,35 +74,45 @@ final class RawDepthSampler {
                     }
                 }
                 if (bestX < 0) return;
-                float[] point = DepthProjection.point(bestX,bestY,bestDepth,fx,fy,cx,cy);
+                projector.writePoint(bestX,bestY,bestDepth,cameraPoint,0);
                 // Move the selection centre slightly behind the visible front surface.
-                origin = session.createAnchor(camera.compose(Pose.makeTranslation(point[0],point[1],point[2] - 0.08f)));
+                origin = session.createAnchor(camera.compose(Pose.makeTranslation(cameraPoint[0],cameraPoint[1],cameraPoint[2] - 0.08f)));
                 cloud = new DepthCloud(halfExtent,guidance);
             }
             Pose inverse = origin.getPose().inverse();
-            List<Plane> planes = new ArrayList<>();
+            int planeCount = 0;
             if (removeSupportPlane) for (Plane plane : session.getAllTrackables(Plane.class)) {
                 if (plane.getTrackingState() == TrackingState.TRACKING && plane.getSubsumedBy() == null
-                    && plane.getType() == Plane.Type.HORIZONTAL_UPWARD_FACING) planes.add(plane);
+                    && plane.getType() == Plane.Type.HORIZONTAL_UPWARD_FACING) {
+                    if (planeCount == supportPlanes.size()) supportPlanes.add(new SupportPlane(plane));
+                    else supportPlanes.get(planeCount).update(plane);
+                    planeCount++;
+                }
             }
-            float[] samples = new float[((depth.getWidth() + 2) / 3) * ((depth.getHeight() + 2) / 3) * 4];
+            for (int index = planeCount; index < supportPlanes.size(); index++) supportPlanes.get(index).clear();
+            int sampleCapacity = ((depth.getWidth() + 2) / 3) * ((depth.getHeight() + 2) / 3) * 4;
+            if (sampleBuffer.length != sampleCapacity) sampleBuffer = new float[sampleCapacity];
             int count = 0;
             for (int y = 0; y < depth.getHeight(); y += 3) for (int x = 0; x < depth.getWidth(); x += 3) {
                 int level = image.confidence(x,y);
                 if (level < 204) continue;
                 int mm = image.millimetres(x,y);
                 if (mm < 150 || mm > 4000) continue;
-                float[] world = camera.transformPoint(DepthProjection.point(x,y,mm,fx,fy,cx,cy));
+                projector.writePoint(x,y,mm,cameraPoint,0);
+                camera.transformPoint(cameraPoint,0,worldPoint,0);
                 boolean support = false;
-                for (Plane plane : planes) {
-                    float[] relative = plane.getCenterPose().inverse().transformPoint(world);
-                    if (Math.abs(relative[1]) < 0.015f && plane.isPoseInPolygon(Pose.makeTranslation(world))) { support = true; break; }
+                for (int supportIndex = 0; supportIndex < planeCount; supportIndex++) {
+                    SupportPlane supportPlane = supportPlanes.get(supportIndex);
+                    supportPlane.worldToLocal.transformPoint(worldPoint,0,relativePoint,0);
+                    if (Math.abs(relativePoint[1]) < 0.015f && supportPlane.plane.isPoseInPolygon(Pose.makeTranslation(worldPoint))) { support = true; break; }
                 }
                 if (support) continue;
-                float[] local = inverse.transformPoint(world);
-                samples[count++] = local[0]; samples[count++] = local[1]; samples[count++] = local[2]; samples[count++] = level / 255f;
+                inverse.transformPoint(worldPoint,0,localPoint,0);
+                sampleBuffer[count++] = localPoint[0]; sampleBuffer[count++] = localPoint[1]; sampleBuffer[count++] = localPoint[2]; sampleBuffer[count++] = level / 255f;
             }
-            cloud.addFrame(depth.getTimestamp(),Arrays.copyOf(samples,count),inverse.transformPoint(camera.getTranslation()));
+            camera.getTranslation(cameraLocal,0);
+            inverse.transformPoint(cameraLocal,0,cameraLocal,0);
+            cloud.addFrame(depth.getTimestamp(),sampleBuffer,count,cameraLocal);
         } catch (NotYetAvailableException expected) {
             // Sparse or temporarily unavailable depth: keep the previous cloud, never fabricate points.
         }
@@ -97,6 +120,13 @@ final class RawDepthSampler {
 
     void close() {
         if (origin != null) origin.detach();
-        origin = null; cloud = null; lastDepthTimestamp = -1; lastSampleTime = 0; guidance=new CaptureGuidance();
+        origin = null;
+        if (cloud != null) cloud.clear();
+        cloud = null; lastDepthTimestamp = -1; lastSampleTime = 0; guidance=new CaptureGuidance();
+        Arrays.fill(sampleBuffer,0f); sampleBuffer=new float[0];
+        Arrays.fill(cameraPoint,0f); Arrays.fill(worldPoint,0f); Arrays.fill(relativePoint,0f);
+        Arrays.fill(localPoint,0f); Arrays.fill(cameraLocal,0f); Arrays.fill(focalLength,0f); Arrays.fill(principalPoint,0f);
+        Arrays.fill(imageDimensions,0); Arrays.fill(diagnostics,0);
+        for (SupportPlane supportPlane : supportPlanes) supportPlane.clear();
     }
 }

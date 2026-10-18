@@ -3,7 +3,7 @@ import {RecognitionReview} from './RecognitionReview';
 import type {ItemRecognition} from '../scanning/recognition';
 import { changedPropertyEvidence, handlingEvidenceError } from '../property-evidence';
 import { PropertyEvidenceFields } from './PropertyEvidenceFields';
-import { topLoadError } from '../stack-load';
+import { topLoadError } from '../stack-load-records';
 import { packingFormsError } from '../packing-forms';
 import { PackingFormFields } from './PackingFormFields';
 import { PackingShapeCard } from './PackingShapeCard';
@@ -13,6 +13,7 @@ import { lazy, Suspense, useEffect, useRef, useState, type FormEvent } from 'rea
 import { Camera, ImagePlus, Ruler, ScanLine, X } from 'lucide-react';
 import type { Evidence, EvidenceSource, Flexibility, ItemCategory, LibraryItem, ScaleCalibration, UnitSystem } from '../types';
 import { useDeviceWorkspace } from './DeviceWorkspace';
+import { useScannerCapabilities } from '../scanning/useScannerCapabilities';
 import { calibrateLongestEdge } from '../scanning/calibration';
 import type { ReconstructedGeometry } from '../scanning/reconstructed-solid';
 import type { SavedGeometryPreview } from '../scanning/saved-geometry';
@@ -28,9 +29,6 @@ interface Props {
   initial?: LibraryItem;
   suggestedItem?: { name: string; category: ItemCategory };
   unit: UnitSystem;
-  scanSupported: boolean;
-  recognitionSupported?:boolean;
-  scanUnavailableReason?: string;
   existingPhotoUrl?: string;
   resumed?:ItemEditorDraft;
   resumedPhoto?:Blob;
@@ -45,9 +43,13 @@ const evidenceLabels: Record<EvidenceSource, string> = {
   measured: 'Measured by you', known: 'Known product dimensions', estimated: 'Estimate', user_confirmed: 'Confirmed by you', provider: 'Verified provider record',
 };
 
-export function ItemCapture({ initial, suggestedItem, unit, scanSupported, recognitionSupported, scanUnavailableReason, existingPhotoUrl, resumed, resumedPhoto, sourceTripId, suggestion, onPhotoStaged, onClose, onSave }: Props) {
+export function ItemCapture({ initial, suggestedItem, unit, existingPhotoUrl, resumed, resumedPhoto, sourceTripId, suggestion, onPhotoStaged, onClose, onSave }: Props) {
   const device=useDeviceWorkspace();
   const {deleteScanCapture,scanObject}=device.capture;
+  const scanCapabilities=useScannerCapabilities();
+  const scanSupported=scanCapabilities.supported;
+  const recognitionSupported=scanSupported&&scanCapabilities.platform==='android'&&scanCapabilities.recognitionSupported===true;
+  const scanUnavailableReason=scanCapabilities.reason;
   const [name, setName] = useState(resumed?.name ?? (initial?.name ?? suggestedItem?.name ?? ''));
   const [category, setCategory] = useState<ItemCategory>(resumed?.category ?? (initial?.category ?? suggestedItem?.category ?? 'other'));
   const showLength = (value: number) => measurementInput(value, unit === 'metric' ? 1 : 25.4);

@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PlannerWorkerClient, type PlannerWorkerRequest, type PlannerWorkerResponse } from './optimizer-worker-client';
+import { PlannerWorkerClient, PLANNER_WORKER_MIN_ITEMS, plannerContainersForWorker, plannerItemsForWorker, plannerTripForWorker, reusePlannerItemReferences, shouldUsePlannerWorker, type PlannerWorkerRequest, type PlannerWorkerResponse } from './optimizer-worker-client';
+import { buildPlan } from './optimizer';
+import { createInitialData } from './seed';
 import type { PackingPlan, Trip } from './types';
 
 class FakeWorker {
@@ -21,6 +23,109 @@ const request = (requestId: number): PlannerWorkerRequest => ({
 afterEach(() => vi.useRealTimers());
 
 describe('PlannerWorkerClient', () => {
+  it('sends only planner-relevant trip fields without changing the plan', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const data = createInitialData();
+    const trip = {
+      ...data.trips[0],
+      sharedPack: {
+        householdId: 'household',
+        packId: 'pack',
+        revision: 1,
+        idPrefix: 'shared-copy:',
+        baseline: {
+          method: 'shared_pack_baseline_v1' as const,
+          revision: 1,
+          tripId: data.trips[0].id,
+          hashes: Object.fromEntries([
+            ...['identity', 'name', 'context', 'mode'].map(kind => [JSON.stringify([kind, 'pack']), 'a'.repeat(64)]),
+            ...Array.from({ length: 1_000 }, (_, index) => [JSON.stringify(['entry', `entry-${index}`]), 'a'.repeat(64)]),
+          ]),
+        },
+      },
+    };
+
+    const plannerTrip = plannerTripForWorker(trip);
+
+    expect(plannerTrip).not.toHaveProperty('sharedPack');
+    expect(plannerTrip.entries).toBe(trip.entries);
+    expect(plannerTrip.containerIds).toBe(trip.containerIds);
+    expect(JSON.stringify(plannerTrip).length).toBeLessThan(JSON.stringify(trip).length / 2);
+    expect(buildPlan(plannerTrip, data.libraryItems, data.containers)).toEqual(buildPlan(trip, data.libraryItems, data.containers));
+  });
+
+  it('limits comparison worker inputs to the trip items and selected bags', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const data = createInitialData();
+    const trip = data.trips[0];
+    const extraItems = Array.from({ length: 100 }, (_, index) => ({ ...data.libraryItems[0], id: `unused-library-item-${index}` }));
+    const extraContainers = Array.from({ length: 20 }, (_, index) => ({ ...data.containers[0], id: `unused-container-${index}` }));
+
+    const allItems = [...data.libraryItems, ...extraItems];
+    const allContainers = [...data.containers, ...extraContainers];
+    const items = plannerItemsForWorker(trip, allItems);
+    const containers = plannerContainersForWorker(trip, allContainers);
+
+    expect(items.some(item => extraItems.includes(item))).toBe(false);
+    expect(items.every(item => trip.entries.some(entry => entry.itemId === item.id))).toBe(true);
+    expect(containers.some(container => extraContainers.includes(container))).toBe(false);
+    expect(containers.every(container => trip.containerIds.includes(container.id))).toBe(true);
+    expect(plannerItemsForWorker(trip, items)).toBe(items);
+    expect(plannerContainersForWorker(trip, containers)).toBe(containers);
+    expect(items).toEqual(data.libraryItems.filter(item => trip.entries.some(entry => entry.itemId === item.id)));
+    expect(containers).toEqual(data.containers.filter(container => trip.containerIds.includes(container.id)));
+    expect(JSON.stringify({ items, containers }).length).toBeLessThan(JSON.stringify({ items: allItems, containers: allContainers }).length / 2);
+    expect(buildPlan(trip, items, containers)).toEqual(buildPlan(trip, allItems, allContainers));
+  });
+
+  it('reuses planner inputs when only scan, photo and lifecycle metadata changes', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const data = createInitialData(), item = data.libraryItems[0], previous = [item];
+    const metadataOnlyChange = {
+      ...item,
+      photoId: 'replacement-photo',
+      scan: { id: 'capture', target: 'item' as const, createdAt: '2026-01-01T00:00:00Z', platform: 'ios' as const,
+        method: 'guided_object_capture' as const, completedPasses: 4, modelStoredLocally: false },
+      scaleCalibration: { method: 'measured_longest_edge' as const, referenceLengthMm: 120, calibratedAt: '2026-01-01T00:00:00Z' },
+      updatedAt: '2026-01-02T00:00:00Z',
+    };
+
+    expect(reusePlannerItemReferences(previous, [metadataOnlyChange])).toBe(previous);
+    const updatedLibrary = data.libraryItems.map(candidate => candidate.id === item.id ? metadataOnlyChange : candidate);
+    const stableLibrary = reusePlannerItemReferences(data.libraryItems, updatedLibrary);
+    expect(stableLibrary).toBe(data.libraryItems);
+    expect(buildPlan(data.trips[0], stableLibrary, data.containers)).toEqual(buildPlan(data.trips[0], data.libraryItems, data.containers));
+    expect(reusePlannerItemReferences(previous, [{ ...item, dimensions: { ...item.dimensions, length: item.dimensions.length + 1 } }])[0])
+      .not.toBe(item);
+
+    const formItem = { ...item, packingForms: [{ id: 'folded', name: 'Folded', kind: 'folded' as const, dimensions: item.dimensions,
+      dimensionEvidence: item.dimensionEvidence, preparation: 'Fold once', reviewedAt: '2026-01-01T00:00:00Z' }] };
+    const clonedForms = { ...formItem, packingForms: structuredClone(formItem.packingForms), photoId: 'form-photo' };
+    expect(reusePlannerItemReferences([formItem], [clonedForms])[0]).toBe(formItem);
+    const changedForm = { ...formItem, packingForms: [{ ...formItem.packingForms[0], dimensions: { ...item.dimensions, length: item.dimensions.length + 1 } }] };
+    expect(reusePlannerItemReferences([formItem], [changedForm])[0]).toBe(changedForm);
+  });
+
+  it('keeps small plans on the main thread and hands medium or complex plans to the worker', () => {
+    expect(shouldUsePlannerWorker(PLANNER_WORKER_MIN_ITEMS - 1, false)).toBe(false);
+    expect(shouldUsePlannerWorker(PLANNER_WORKER_MIN_ITEMS, false)).toBe(true);
+    expect(shouldUsePlannerWorker(1, true)).toBe(true);
+  });
+
+  it('passes batched comparison modes through the worker response', async () => {
+    const worker = new FakeWorker();
+    const client = new PlannerWorkerClient(() => worker as unknown as Worker);
+    const plans = [{ mode: 'balanced' }, { mode: 'easy_access' }] as PackingPlan[];
+    const pending = client.calculate({ ...request(3), modes: ['balanced', 'easy_access'] });
+    expect(worker.postMessage).toHaveBeenCalledWith(expect.objectContaining({ modes: ['balanced', 'easy_access'] }));
+    worker.respond({ requestId: 3, plans });
+    await expect(pending).resolves.toEqual({ requestId: 3, plans });
+    client.dispose();
+  });
+
   it('reuses an idle worker and releases it after the idle timeout', async () => {
     vi.useFakeTimers();
     const worker = new FakeWorker();
