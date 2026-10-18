@@ -330,6 +330,10 @@ export function ThreePackCanvas({ container, plan, items, selectedInstanceId, vi
       geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
       const edges=new THREE.LineSegments(geometry,material);edges.renderOrder=2;scene.add(edges);
     }
+    // The scene and selection callbacks now own what they need. Drop setup
+    // maps, especially the JS edge arrays copied into GPU buffers above.
+    itemLookup.clear();itemMaterials.clear();itemEdgeMaterials.clear();boxMaterials.clear();
+    shapeGeometries.clear();shapeInstances.clear();boxInstances.clear();boxEdgePositions.clear();
     const setSelection=(instanceId?:string)=>{
       if(activeSelection===instanceId)return;
       if(activeSelection){const previous=selectionTargets.get(activeSelection);previous?.setItemSelection?.(false);previous?.setLabelSelection?.(false);}
