@@ -10,7 +10,7 @@ import {useDeviceWorkspace} from './DeviceWorkspace';
 import {DeviceWorkspaceSetup} from './DeviceWorkspacePanels';
 
 const initial: PackingAccountState = { available: false, registrations: false, profile: null, csrf: null };
-export function AccountPanel({ data, onRestore, onOpenShared, onPublished }: { data: AppData; onRestore: (file: File) => Promise<boolean>; onOpenShared: (snapshot: SharedPackSnapshot,baseline?:SharedPackBaseline,witness?:SharedCopyWitness) => void; onPublished: (tripId: string,snapshot:SharedPackSnapshot,baseline:SharedPackBaseline) => void }) {
+export function AccountPanel({ data, onRestore, onOpenShared, onPublished }: { data: AppData; onRestore: (file: File) => Promise<boolean>; onOpenShared: (snapshot: SharedPackSnapshot,baseline?:SharedPackBaseline,witness?:SharedCopyWitness) => void | Promise<void>; onPublished: (tripId: string,snapshot:SharedPackSnapshot,baseline:SharedPackBaseline) => void | Promise<void> }) {
   const device=useDeviceWorkspace();
   const native = nativeAccounts();
   const [serviceOrigin, setServiceOrigin] = useState('');

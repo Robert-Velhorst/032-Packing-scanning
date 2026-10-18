@@ -483,12 +483,15 @@ export function PackingApp() {
     await saveAppData(empty);
     setData(empty);setSavedData(empty);setSyncStatus('saved');setSyncError('');setEditingPhotoUrl(undefined);setNotice(scanCleanupFailed ? 'Packing data was deleted, but some native scan files could not be removed from this device.' : 'All local packing data and saved scans have been deleted.'); setPage('workspace');
   };
-  const openSharedPackFromSettings = (snapshot: SharedPackSnapshot, baseline?: SharedPackBaseline, witness?: SharedCopyWitness) => {
-    void import('./shared-packs').then(({ openSharedPack }) => updateData(current => openSharedPack(current, snapshot, newId(), baseline, witness))).catch(() => setNotice('The shared pack could not be opened. Reopen Settings and try again.'));
+  const openSharedPackFromSettings = async (snapshot: SharedPackSnapshot, baseline?: SharedPackBaseline, witness?: SharedCopyWitness) => {
+    const { openSharedPack } = await import('./shared-packs');
+    updateData(current => openSharedPack(current, snapshot, newId(), baseline, witness));
   };
-  const recordSharedPublicationFromSettings = (tripId: string, snapshot: SharedPackSnapshot, baseline: SharedPackBaseline) => {
-    void import('./shared-pack-combination').then(({ recordSharedPublication }) => updateData(current => recordSharedPublication(current, tripId, snapshot, baseline))).catch(() => setNotice('The household pack could not be updated. Reopen Settings and try again.'));
+  const recordSharedPublicationFromSettings = async (tripId: string, snapshot: SharedPackSnapshot, baseline: SharedPackBaseline) => {
+    const { recordSharedPublication } = await import('./shared-pack-combination');
+    updateData(current => recordSharedPublication(current, tripId, snapshot, baseline));
   };
+
 
   if (!data) return <div className="boot-screen"><div className="brand-mark">P</div><p>{syncStatus === 'error' ? syncError : 'Opening your local packing space…'}</p>{syncStatus === 'error' && <button className="button button-secondary" onClick={() => { setSyncStatus('loading'); loadAppData().then((loaded) => { setData(loaded); setSavedData(loaded); setSyncStatus('saved'); }).catch((error: unknown) => setSyncError(error instanceof Error ? error.message : 'Could not load saved data.')); }}>Try again</button>}</div>;
 
