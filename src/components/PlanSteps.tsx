@@ -50,7 +50,7 @@ export function PlanSteps({ getPhoto, trip, plan, containers, items, onExit, onC
   const ordered = useMemo(() => orderPackingSteps(plan.placements, containers), [plan.placements, containers]);
   const unresolved = useMemo(() => plan.excluded.filter((entry) => entry.reason !== 'Marked unavailable for this plan.'), [plan.excluded]);
   const relationIndex = useMemo(() => createPackingStepRelationIndex(ordered,items), [ordered,items]);
-  const selectedIndex = ordered.findIndex((step) => step.instanceId === selection.id);
+  const selectedIndex = relationIndex.firstPlacementIndex.get(selection.id) ?? -1;
   const safeIndex = selectedIndex >= 0 ? selectedIndex : Math.min(selection.index, Math.max(0, ordered.length - 1));
   const placement = ordered[safeIndex];
   const item = placement ? packingItemForPlacement(itemById.get(placement.itemId),placement) : undefined;

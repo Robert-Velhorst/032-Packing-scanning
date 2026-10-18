@@ -33,6 +33,13 @@ describe('packing sequence', () => {
     expect(resumePackingStep([], undefined, [])).toBe(0);
     expect(resumePackingStep(ordered, undefined, ordered.map((step) => step.instanceId))).toBe(0);
   });
+  it('indexes the first occurrence of each item for selection lookup', () => {
+    const duplicated = [...ordered, { ...ordered[0], x: ordered[0].x + 1 }];
+    const index = createPackingStepRelationIndex(duplicated, data.libraryItems);
+    expect(index.firstPlacementIndex.get(ordered[0].instanceId)).toBe(0);
+    expect(index.firstPlacementIndex.get(ordered[1].instanceId)).toBe(1);
+    expect(index.firstPlacementIndex.has('missing')).toBe(false);
+  });
   it('advances from the new plan order when a previously last item becomes an earlier packed lock', () => {
     const [a,b,c]=ordered,newOrder=[c,a,b];
     expect(nextUnpackedStep(newOrder,c.instanceId,[c.instanceId])).toBe(1);
