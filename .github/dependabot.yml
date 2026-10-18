@@ -20,7 +20,7 @@ updates:
   schedule:
     interval: weekly
   open-pull-requests-limit: 5
-  - package-ecosystem: "swift"
-    directory: "/ios/App/CapApp-SPM"
-    schedule:
-      interval: "weekly"
+- package-ecosystem: swift
+  directory: /ios/App/CapApp-SPM
+  schedule:
+    interval: weekly
