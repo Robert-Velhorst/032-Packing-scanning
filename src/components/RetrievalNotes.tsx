@@ -1,15 +1,21 @@
 import { reviewRetrieval } from '../retrieval';
 import { orderPackingSteps } from '../packing-sequence';
+import { useMemo } from 'react';
 import type { Container, LibraryItem, PackingPlan, Trip } from '../types';
 
 export function RetrievalNotes({ trip, items, bags, plan, instanceId }: {
   trip: Trip; items: LibraryItem[]; bags: Container[]; plan: PackingPlan; instanceId?: string;
 }) {
-  const review = reviewRetrieval(trip,items,bags,plan);
-  const names = new Map(orderPackingSteps(plan.placements,bags).map((p,index) => [p.instanceId, `${index+1}. ${items.find(item => item.id === p.itemId)?.name ?? 'Item'}`]));
+  const review = useMemo(() => reviewRetrieval(trip,items,bags,plan), [trip.entries,trip.lockedPlacements,items,bags,plan.placements]);
+  const names = useMemo(() => {
+    const itemNames=new Map<string,string>();
+    for(const item of items)if(!itemNames.has(item.id))itemNames.set(item.id,item.name);
+    return new Map(orderPackingSteps(plan.placements,bags).map((placement,index) => [placement.instanceId, `${index+1}. ${itemNames.get(placement.itemId) ?? 'Item'}`]));
+  }, [plan.placements,bags,items]);
+  const priorityInstanceIds = useMemo(() => new Set(review.priorityInstanceIds), [review]);
   const checks = instanceId ? review.checks.filter(check => check.instanceId === instanceId)
-    : review.checks.filter(check => review.priorityInstanceIds.includes(check.instanceId) || check.status !== 'clear');
-  const priorityClear = review.checks.filter(check => check.status === 'clear' && review.priorityInstanceIds.includes(check.instanceId)).length;
+    : review.checks.filter(check => priorityInstanceIds.has(check.instanceId) || check.status !== 'clear');
+  const priorityClear = instanceId ? 0 : review.checks.filter(check => check.status === 'clear' && priorityInstanceIds.has(check.instanceId)).length;
   return <section className="retrieval-notes" aria-label="Retrieval from the finished pack">
     <h4>Retrieval from the finished pack</h4>
     {!instanceId && <p>{review.priorityInstanceIds.length ? `${priorityClear} of ${review.priorityInstanceIds.length} placed priority-access items have a clear upward path in the model.` : 'No proposed priority-access items to assess.'}</p>}
