@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PlannerWorkerClient, PLANNER_WORKER_MIN_ITEMS, plannerContainersForWorker, plannerItemsForWorker, plannerTripForWorker, shouldUsePlannerWorker, type PlannerWorkerRequest, type PlannerWorkerResponse } from './optimizer-worker-client';
+import { PlannerWorkerClient, PLANNER_WORKER_MIN_ITEMS, plannerContainersForWorker, plannerItemsForWorker, plannerTripForWorker, reusePlannerItemReferences, shouldUsePlannerWorker, type PlannerWorkerRequest, type PlannerWorkerResponse } from './optimizer-worker-client';
 import { buildPlan } from './optimizer';
 import { createInitialData } from './seed';
 import type { PackingPlan, Trip } from './types';
@@ -78,6 +78,35 @@ describe('PlannerWorkerClient', () => {
     expect(containers).toEqual(data.containers.filter(container => trip.containerIds.includes(container.id)));
     expect(JSON.stringify({ items, containers }).length).toBeLessThan(JSON.stringify({ items: allItems, containers: allContainers }).length / 2);
     expect(buildPlan(trip, items, containers)).toEqual(buildPlan(trip, allItems, allContainers));
+  });
+
+  it('reuses planner inputs when only scan, photo and lifecycle metadata changes', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const data = createInitialData(), item = data.libraryItems[0], previous = [item];
+    const metadataOnlyChange = {
+      ...item,
+      photoId: 'replacement-photo',
+      scan: { id: 'capture', target: 'item' as const, createdAt: '2026-01-01T00:00:00Z', platform: 'ios' as const,
+        method: 'guided_object_capture' as const, completedPasses: 4, modelStoredLocally: false },
+      scaleCalibration: { method: 'measured_longest_edge' as const, referenceLengthMm: 120, calibratedAt: '2026-01-01T00:00:00Z' },
+      updatedAt: '2026-01-02T00:00:00Z',
+    };
+
+    expect(reusePlannerItemReferences(previous, [metadataOnlyChange])).toBe(previous);
+    const updatedLibrary = data.libraryItems.map(candidate => candidate.id === item.id ? metadataOnlyChange : candidate);
+    const stableLibrary = reusePlannerItemReferences(data.libraryItems, updatedLibrary);
+    expect(stableLibrary).toBe(data.libraryItems);
+    expect(buildPlan(data.trips[0], stableLibrary, data.containers)).toEqual(buildPlan(data.trips[0], data.libraryItems, data.containers));
+    expect(reusePlannerItemReferences(previous, [{ ...item, dimensions: { ...item.dimensions, length: item.dimensions.length + 1 } }])[0])
+      .not.toBe(item);
+
+    const formItem = { ...item, packingForms: [{ id: 'folded', name: 'Folded', kind: 'folded' as const, dimensions: item.dimensions,
+      dimensionEvidence: item.dimensionEvidence, preparation: 'Fold once', reviewedAt: '2026-01-01T00:00:00Z' }] };
+    const clonedForms = { ...formItem, packingForms: structuredClone(formItem.packingForms), photoId: 'form-photo' };
+    expect(reusePlannerItemReferences([formItem], [clonedForms])[0]).toBe(formItem);
+    const changedForm = { ...formItem, packingForms: [{ ...formItem.packingForms[0], dimensions: { ...item.dimensions, length: item.dimensions.length + 1 } }] };
+    expect(reusePlannerItemReferences([formItem], [changedForm])[0]).toBe(changedForm);
   });
 
   it('keeps small plans on the main thread and hands medium or complex plans to the worker', () => {

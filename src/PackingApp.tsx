@@ -30,7 +30,7 @@ import { measurementInput } from './measurement-input';
 import {workspaceStorage} from './storage';
 import {MAX_BACKUP_BYTES} from './backup-limits';
 import { createEmptyData } from './empty-data';
-import { PlannerWorkerClient, plannerContainersForWorker, plannerItemsForWorker, plannerTripForWorker, shouldUsePlannerWorker } from './optimizer-worker-client';
+import { PlannerWorkerClient, plannerContainersForWorker, plannerItemsForWorker, plannerTripForWorker, reusePlannerItemReferences, shouldUsePlannerWorker } from './optimizer-worker-client';
 import { observeNearViewport } from './viewport-observer';
 import { filterLibraryItems } from './library-search';
 import type { AppData, CarrierRule, Container, Evidence, ItemPriority, LibraryItem, OptimizationMode, PackEntry, PackingPlan, Placement, Trip, TripActivity, UnitSystem } from './types';
@@ -152,7 +152,7 @@ export function PackingApp() {
   const planItems = useMemo(() => {
     const referenced = new Set(activeTrip?.entries.map((entry) => entry.itemId) ?? []);
     const next = data?.libraryItems.filter((item) => referenced.has(item.id)) ?? [];
-    const stable = reuseIdenticalReferences(previousPlanItems.current, next);
+    const stable = reusePlannerItemReferences(previousPlanItems.current, next);
     previousPlanItems.current = stable;
     return stable;
   }, [data?.libraryItems, activeTrip?.entries]);
@@ -202,19 +202,21 @@ export function PackingApp() {
   const confirmRemovedSources=useCallback((reply:ScanRetentionReply)=>setData(current=>current?recordRemovedScanSources(current,reply):current),[]);
   const scanRetention=useRawScanRetention({data,savedData,capture:device.capture,deferred:!!capture||!!device.pendingPhoto||!!device.pendingBackup||device.fileBusy,checkAvailability:page==='settings'||data?.settings.automaticScanDeletionDays!=null,onRemoved:confirmRemovedSources});
 
-  const updateData = (updater: (current: AppData) => AppData) => setData((current) => current ? updater(current) : current);
-  const updateTrip = (updater: (trip: Trip) => Trip) => updateData((current) => ({
+  const updateData = useCallback((updater: (current: AppData) => AppData) => setData((current) => current ? updater(current) : current), []);
+  const updateTrip = useCallback((updater: (trip: Trip) => Trip) => updateData((current) => ({
     ...current, trips: current.trips.map((trip) => trip.id === current.activeTripId ? { ...updater(trip), updatedAt: new Date().toISOString() } : trip),
-  }));
+  })), [updateData]);
   const switchTrip = (id: string) => { updateData((current) => ({ ...current, activeTripId: id })); setSelectedContainerId(''); setPage('workspace'); };
-  const addEntry = (item: LibraryItem) => {
+  const addEntry = useCallback((item: LibraryItem) => {
     if (!activeTrip) return;
     const existing = activeTrip.entries.find((entry) => entry.itemId === item.id);
     if (existing) updateTrip((trip) => ({ ...trip, entries: trip.entries.map((entry) => entry.id === existing.id ? { ...entry, quantity: entry.quantity + 1 } : entry) }));
     else updateTrip((trip) => ({ ...trip, entries: [...trip.entries, { id: newId(), itemId: item.id, travellerId: trip.travellers[0]?.id ?? '', quantity: 1, priority: 'preferred', accessPriority: 2, required: false }] }));
     setNotice(`${item.name} added to ${activeTrip.name}.`);
     setPage('workspace');
-  };
+  }, [activeTrip, updateTrip]);
+  const openNewLibraryItem = useCallback(() => setCapture({ kind: 'item' }), []);
+  const editLibraryItem = useCallback((item: LibraryItem) => setCapture({ kind: 'item', item }), []);
   const addSuggestedItem = (suggestion: TripSuggestion, item?: LibraryItem) => {
     if (!item) { setCapture({ kind: 'item', suggestion }); return; }
     if (!activeTrip || activeTrip.entries.some((entry) => entry.itemId === item.id)) {
@@ -363,7 +365,7 @@ export function PackingApp() {
   });
   };
 
-  const deleteLibraryItem = async (item: LibraryItem) => {
+  const deleteLibraryItem = useCallback(async (item: LibraryItem) => {
     if(data?.trips.some(trip=>trip.entries.some(entry=>entry.itemId===item.id && entryHasSeparation(trip,entry.id)))){setNotice('Edit or remove the linked separation rules before removing this item from the library.');return;}
     const linked = data?.trips.some((trip) => trip.entries.some((entry) => entry.itemId === item.id));
     if (linked && !window.confirm(`Remove ${item.name} from every packing list and delete it from your library?`)) return;
@@ -371,7 +373,7 @@ export function PackingApp() {
     if (item.photoId) await deletePhoto(item.photoId);
     if (item.scan) await deleteScanCapture(item.scan.id).catch(() => setNotice('The item record was removed, but its 3D source capture could not be removed from this device.'));
     updateData((current) => ({ ...current, libraryItems: current.libraryItems.filter((record) => record.id !== item.id), trips: current.trips.map((trip) => ({ ...trip, entries: trip.entries.filter((entry) => entry.itemId !== item.id), lockedPlacements: trip.lockedPlacements.filter((placement) => placement.itemId !== item.id) })) }));
-  };
+  }, [data?.trips, deletePhoto, deleteScanCapture, setNotice, updateData]);
   const removeBag = (bag: Container) => {
     if (!activeTrip || !window.confirm(`Remove ${bag.name} from this pack? Its dimensions will remain in other packs that use it.`)) return;
     updateData((current) => ({ ...current, trips: current.trips.map((trip) => trip.id === activeTrip.id ? { ...trip, containerIds: trip.containerIds.filter((id) => id !== bag.id), carrierRules: trip.carrierRules.map((rule) => ({ ...rule, applicableBagIds: rule.applicableBagIds.filter((id) => id !== bag.id) })) } : trip) }));
@@ -521,7 +523,7 @@ export function PackingApp() {
           onView={setCanvasView} onLayer={setLayer} onSelectContainer={setSelectedContainerId} onMode={setMode} onAddItem={() => { setSearch(''); setPage('items'); }} onAddSuggestion={addSuggestedItem} onAddBag={() => setCapture({ kind: 'bag' })} onAddTrip={() => setCapture({ kind: 'trip' })} onRemoveEntry={removeEntry} onToggleComplete={toggleComplete} onToggleLock={toggleLock} onUnavailable={setUnavailable} onStartSteps={() => setPage('steps')} onEditTrip={() => setCapture({ kind: 'trip', trip: activeTrip })} onPriority={setEntryPriority} onAccess={setEntryAccess} onTraveller={setEntryTraveller} onAssignment={setEntryBagAssignment} onPackingForm={setEntryPackingForm} onSeparateCopy={splitPackingCopy} onQuantity={changeEntryQuantity}/>}
         {page === 'steps' && activeTrip && plan && <Suspense fallback={<div className="secondary-page" role="status">Opening packing steps…</div>}><PlanSteps getPhoto={getPhoto} key={activeTrip.id} trip={activeTrip} plan={plan} containers={activeContainers} items={data.libraryItems} onExit={() => setPage('workspace')} onComplete={toggleComplete} onUnavailable={(id) => updateTrip((trip) => markPackingItemUnavailable(trip, id))} onLock={lockPlacement} onDoesNotFit={rejectPlacement} onResetFailed={() => updateTrip((trip) => ({ ...trip, rejectedPlacements: [] }))} onSelectStep={(id) => updateTrip((trip) => ({ ...trip, packingCursor: id }))} onPrintSequence={() => setPage('sequence')}/></Suspense>}
         {page === 'sequence' && activeTrip && plan && <Suspense fallback={<div className="secondary-page" role="status">Opening packing sequence…</div>}><PackingSequence trip={activeTrip} plan={plan} containers={activeContainers} items={data.libraryItems} getPhoto={getPhoto} onExit={() => setPage('steps')}/></Suspense>}
-        {page === 'items' && <Suspense fallback={<div className="secondary-page" role="status">Opening items…</div>}><LibraryPage items={libraryItems} data={data} activeTrip={activeTrip} search={search} setSearch={setSearch} getPhoto={getPhoto} unit={data.unitSystem} onAdd={() => setCapture({ kind: 'item' })} onEdit={(item) => setCapture({ kind: 'item', item })} onDelete={deleteLibraryItem} onAddEntry={addEntry} formatters={inventoryFormatters}/></Suspense>}
+        {page === 'items' && <Suspense fallback={<div className="secondary-page" role="status">Opening items…</div>}><LibraryPage items={libraryItems} itemCount={data.libraryItems.length} trips={data.trips} activeTrip={activeTrip} search={search} setSearch={setSearch} getPhoto={getPhoto} unit={data.unitSystem} onAdd={openNewLibraryItem} onEdit={editLibraryItem} onDelete={deleteLibraryItem} onAddEntry={addEntry} formatters={inventoryFormatters}/></Suspense>}
         {page === 'bags' && <Suspense fallback={<div className="secondary-page" role="status">Opening bags…</div>}><BagsPage trip={activeTrip} bags={activeContainers} unit={data.unitSystem} onAdd={() => setCapture({ kind: 'bag' })} onEdit={(bag) => setCapture({ kind: 'bag', bag })} onRemove={removeBag} formatters={inventoryFormatters}/></Suspense>}
         {page === 'carrier-rules' && activeTrip && plan && <Suspense fallback={<div className="secondary-page" role="status">Opening carrier rules…</div>}><CarrierRulesPage trip={activeTrip} bags={activeContainers} summaries={plan.summaries} placements={plan.placements} items={data.libraryItems} unit={data.unitSystem} catalog={data.carrierCatalog} onCatalog={(carrierCatalog) => updateData((current) => ({ ...current, carrierCatalog }))} onReview={(draft) => setCapture({ kind: 'carrier-rule', draft })} onAdd={() => setCapture({ kind: 'carrier-rule' })} onEdit={(rule) => setCapture({ kind: 'carrier-rule', rule })} onDelete={deleteCarrierRule}/></Suspense>}
         {page === 'settings' && <Suspense fallback={<div className="secondary-page" role="status">Opening settings…</div>}><SettingsPage data={data} syncStatus={syncStatus} unit={data.unitSystem} onUnit={(unitSystem) => updateData((current) => ({ ...current, unitSystem }))} scanRetention={scanRetention} onScanRetention={(days)=>updateData(current=>({...current,settings:{...current.settings,automaticScanDeletionDays:days}}))} onPhotoRetention={(days) => updateData((current) => ({ ...current, settings: { ...current.settings, automaticPhotoDeletionDays: days } }))} onExport={exportBackup} onImport={importBackup} onDelete={deleteAllData} onOpenShared={openSharedPackFromSettings} onPublished={recordSharedPublicationFromSettings}/></Suspense>}

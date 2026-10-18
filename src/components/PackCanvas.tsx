@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { Container, LibraryItem, PackingPlan } from '../types';
-import { threeViewData } from '../three-view-data';
+import { sameThreeViewData, threeViewData } from '../three-view-data';
 import { ContainerSpaceNotes } from './ContainerSpaceNotes';
 import { PackingDiagram } from './PackingDiagram';
 
@@ -35,7 +35,14 @@ export const PackCanvas = memo(function PackCanvas({ container, plan, items, sel
 });
 
 function ThreePackFrame({ container, plan, items, selectedInstanceId, placementLabels }: Omit<Props, 'view' | 'layer'>) {
-  const viewData = useMemo(() => threeViewData(container?.id, plan, items), [container?.id, plan.placements, items]);
+  const nextViewData = useMemo(() => threeViewData(container, plan, items), [container, plan.placements, items]);
+  const priorViewData = useRef<ReturnType<typeof threeViewData> | undefined>(undefined);
+  const viewData = useMemo(() => {
+    const prior = priorViewData.current;
+    if (prior && sameThreeViewData(prior, nextViewData)) return prior;
+    priorViewData.current = nextViewData;
+    return nextViewData;
+  }, [nextViewData]);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const [shouldLoad, setShouldLoad] = useState(false);
@@ -59,13 +66,18 @@ function ThreePackFrame({ container, plan, items, selectedInstanceId, placementL
     if (!frameLoaded) return;
     frameRef.current?.contentWindow?.postMessage({
       type: 'packing-scanning:render',
-      container,
+      container: viewData.container,
       plan: viewData.plan,
       items: viewData.items,
       selectedInstanceId,
       placementLabels,
     }, location.origin);
-  }, [frameLoaded, container, viewData, selectedInstanceId, placementLabels]);
+  }, [frameLoaded, viewData, placementLabels]);
+
+  useEffect(() => {
+    if (!frameLoaded) return;
+    frameRef.current?.contentWindow?.postMessage({ type: 'packing-scanning:selection', selectedInstanceId }, location.origin);
+  }, [frameLoaded, selectedInstanceId]);
 
   return <div className="packing-viewer">
     <div className="pack-canvas" ref={viewportRef}>

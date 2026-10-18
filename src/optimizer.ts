@@ -13,7 +13,7 @@ import { packingItem, packingFormKey } from './packing-forms';
 import { isValidRejectedPlacement, samePlacementGeometry } from './packing-progress';
 import { containerBlockedBoxes, containerSpaceError, usableContainerHeight, usableContainerVolume } from './container-space';
 import { interiorKey, interiorSupportError, interiorTravelUp } from './packing-interior';
-import { contactPositions, fitsGeometrySpaceInValidatedContainer, geometryIntersects, geometryOrientations, hasGeometrySupport, hasPackingAndTravelSupport, hasVerticalEntry, insertObstaclePrefixMaxRight, obstaclePrefixMaxRight, orientationForRotation, packingShapeError, placementBoxes, RectangularSupportIndex, shapeDimensions, shapeKey, shapeVolume, type GeometryBox, uniqueGeometryOrientations } from './packing-geometry';
+import { contactPositions, createContactPositionScratch, fitsGeometrySpaceInValidatedContainer, geometryIntersects, geometryOrientations, hasGeometrySupport, hasPackingAndTravelSupport, hasVerticalEntry, insertObstaclePrefixMaxRight, obstaclePrefixMaxRight, orientationForRotation, packingShapeError, placementBoxes, RectangularSupportIndex, shapeDimensions, shapeKey, shapeVolume, type ContactPositionScratch, type GeometryBox, uniqueGeometryOrientations } from './packing-geometry';
 
 interface FreeSpace {
   compartmentId?: string;
@@ -25,19 +25,23 @@ interface FreeSpace {
   width: number;
   height: number;
 }
+interface FreeSpaceContainmentBlock {
+  volume:number;length:number;width:number;height:number;minY:number;maxBack:number;minZ:number;maxTop:number;
+}
 
 const volume = (box: { length: number; width: number; height: number }) => box.length * box.width * box.height;
 const spaceVolume = (box: FreeSpace) => box.length * box.width * box.height;
 const EPSILON = 0.01;
 const obstacleXOrder = (left: GeometryBox, right: GeometryBox) => left.x - right.x;
-const SUPPORT_INDEX_THRESHOLD=16;
+const SUPPORT_INDEX_THRESHOLD=8;
+const SINGLE_CONTAINER_SUPPORT_INDEX_THRESHOLD=16;
 const SHAPED_SUPPORT_INDEX_THRESHOLD=8;
 // Bound the Cartesian product of shape-aware contact positions per orientation.
 const SHAPE_CONTACT_POSITION_LIMIT=100;
 // Deduplicating exact shape orientations pays off only when many shapes are searched.
 const SHAPE_ORIENTATION_DEDUP_THRESHOLD=512;
 // Use numeric geometry hashes once split output grows enough to avoid string-key churn.
-const FREE_SPACE_HASH_THRESHOLD=32;
+const FREE_SPACE_HASH_THRESHOLD=16;
 
 export function buildPlan(trip: PlannerTrip, library: LibraryItem[], allContainers: Container[], mode: OptimizationMode = trip.mode): PackingPlan {
   const referencedItemIds = new Set(trip.entries.map(entry => entry.itemId));
@@ -350,9 +354,13 @@ function baseArea(item: PlanItem) {
 function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<string, Placement>, mode: OptimizationMode, rejected: Placement[], rules: SeparationRule[], containerErrors: Map<string,string|undefined>, blockedSpaces: Map<string,ReturnType<typeof containerBlockedBoxes>>, lookaheadDepth = 1) {
   const containerError=(container:Container)=>containerErrors.get(container.id);
   const usableHeight=(container:Container)=>container.inside.height-(container.lidClearanceMm??0);
-  const useShapeSequence=items.some(item=>item.packingShape)||containers.some(bag=>bag.packingInterior||bag.compartments);
+  const hasPackingShapes=items.some(item=>item.packingShape);
+  const useShapeSequence=hasPackingShapes||containers.some(bag=>bag.packingInterior||bag.compartments);
   const placements: Placement[] = [];
   const previousFreeSpaces = new Set<FreeSpace>();
+  // Large plans split free spaces repeatedly; reuse the containment summaries.
+  const containmentBlockScratch:FreeSpaceContainmentBlock[]=[];
+  let contactPositionScratch:ContactPositionScratch|undefined;
   const placementsByContainer = new Map(containers.map(container => [container.id, [] as Placement[]]));
   const massByContainer = new Map(containers.map(container => [container.id, container.tareGrams ?? 0]));
   const unweighedByContainer = new Map(containers.map(container => [container.id, 0]));
@@ -362,10 +370,13 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
   const freeSpaces = new Map(containers.map((container) => {
     const error=containerError(container);
     let spaces:FreeSpace[]=error||usableHeight(container)<=EPSILON?[]:packingRegions(container);
-    if(!error)for(const blocked of [...(container.unavailableSpaces??[])].sort((a,b)=>a.x-b.x||a.y-b.y||a.z-b.z||a.length-b.length||a.width-b.width||a.height-b.height))spaces=splitFreeSpaces(spaces,blocked,true,previousFreeSpaces);
+    if(!error)for(const blocked of [...(container.unavailableSpaces??[])].sort((a,b)=>a.x-b.x||a.y-b.y||a.z-b.z||a.length-b.length||a.width-b.width||a.height-b.height))spaces=splitFreeSpaces(spaces,blocked,true,previousFreeSpaces,containmentBlockScratch);
     return [container.id,spaces] as const;
   }));
-  const shapeSearchSpaces = useShapeSequence
+  // Rectangular free-space splits already cover compartment boundaries and
+  // unavailable rectangles. The broad contact grid is needed for shaped
+  // item geometry and adopted bag interiors, not plain compartment layouts.
+  const shapeSearchSpaces = hasPackingShapes||containers.some(bag=>bag.packingInterior)
     ? new Map(containers.map(container => {
       const spaces=containerError(container)||usableHeight(container)<=EPSILON?[]:packingRegions(container);
       return [container.id,spaces.map(region => ({ ...region, shapeSearch: true }))] as const;
@@ -419,7 +430,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     massByContainer.set(saved.containerId, (massByContainer.get(saved.containerId) ?? 0) + (item.upperMassGrams ?? 0));
     if (item.upperMassGrams === undefined) unweighedByContainer.set(saved.containerId, (unweighedByContainer.get(saved.containerId) ?? 0) + 1);
     placementByInstanceId.set(locked.instanceId,locked);
-    let spaces=freeSpaces.get(container.id)??[];for(const box of placementBoxes(saved,item))spaces=splitFreeSpaces(spaces,box,true,previousFreeSpaces);freeSpaces.set(container.id,spaces);
+    let spaces=freeSpaces.get(container.id)??[];for(const box of placementBoxes(saved,item))spaces=splitFreeSpaces(spaces,box,true,previousFreeSpaces,containmentBlockScratch);freeSpaces.set(container.id,spaces);
   }
 
   const savedMassPositions = [...lockedById.values()].filter(isValidRejectedPlacement);
@@ -460,9 +471,10 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     freeSpaces.set(bagId, []);
   }
 
-  const supportIndexThreshold=shapeItems.length?SHAPED_SUPPORT_INDEX_THRESHOLD:SUPPORT_INDEX_THRESHOLD;
+  const supportIndexThreshold=shapeItems.length?SHAPED_SUPPORT_INDEX_THRESHOLD:containers.length===1?SINGLE_CONTAINER_SUPPORT_INDEX_THRESHOLD:SUPPORT_INDEX_THRESHOLD;
   const supportIndexes=items.length>=supportIndexThreshold?new Map<string,RectangularSupportIndex>():undefined;
-  if(supportIndexes)for(const bag of containers){const current=placementsByContainer.get(bag.id)??[];if(current.length>=supportIndexThreshold)supportIndexes.set(bag.id,new RectangularSupportIndex(itemById,current));}
+  const shapedInstanceIds=supportIndexes?new Set(shapeItems.map(item=>item.instanceId)):undefined;
+  if(supportIndexes)for(const bag of containers){const current=placementsByContainer.get(bag.id)??[];if(current.length>=supportIndexThreshold)supportIndexes.set(bag.id,new RectangularSupportIndex(itemById,current,shapedInstanceIds));}
   const verticalEntryObstaclePrefixMaxRights=new Map<string,number[]>();
   const verticalEntryObstacles=useShapeSequence?new Map(containers.map(bag=>{
     const obstacles:GeometryBox[]=[...(blockedSpaces.get(bag.id)??[])];
@@ -485,7 +497,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     let loadFailure: string | undefined;
     let separationFailure: string | undefined;
     let searchLimited=false;
-    let best: { placement: Placement; container: Container; score: number; lookahead: number; affinity: boolean } | undefined;
+    let best: { placement: Placement; position: { x: number; y: number; z: number }; container: Container; score: number; lookahead: number; affinity: boolean } | undefined;
     const lookaheadCache = new Map<string,number>();
     const balancingBags = mode === 'balanced' ? candidateContainers.filter(bag => !blockedBagIds.has(bag.id) && !containerError(bag) && !interiorSupportError(bag.packingInterior)) : [];
     const completeBalancedTotals = balancingBags.every(bag => typeof bag.tareGrams === 'number' && Number.isFinite(bag.tareGrams) && bag.tareGrams >= 0
@@ -543,33 +555,58 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
         for (const orientation of context.orientations) {
           if (orientation.length > space.length + EPSILON || orientation.width > space.width + EPSILON || orientation.height > space.height + EPSILON) continue;
           const contactCollisionObstacles=space.shapeSearch?verticalEntryObstacles?.get(container.id):undefined;
-          const contacts=space.shapeSearch?contactPositions(container,orientation,item,shapeContactObstacles?[]:[...bagPlacements,...anchors],itemById,space,blockedSpaces.get(container.id),shapeContactObstacles,SHAPE_CONTACT_POSITION_LIMIT,contactCollisionObstacles,verticalEntryObstaclePrefixMaxRights.get(container.id)):undefined;
+          const contacts=space.shapeSearch?contactPositions(container,orientation,item,shapeContactObstacles?[]:[...bagPlacements,...anchors],itemById,space,blockedSpaces.get(container.id),shapeContactObstacles,SHAPE_CONTACT_POSITION_LIMIT,contactCollisionObstacles,verticalEntryObstaclePrefixMaxRights.get(container.id),contactPositionScratch??=createContactPositionScratch()):undefined;
           if(contacts?.limited)searchLimited=true;
           const basePositions=contacts?.positions??cornerPositions(space, orientation);
           const positions = rules.length
             ? separationPositions(basePositions,space,item,orientation,item.entryId,bagPlacements,rules,itemById)
             : basePositions;
           if(positions.length>=20000)searchLimited=true;
+          const reusablePlacement: Placement | undefined = !useShapeSequence && rules.length === 0 ? {
+            instanceId: item.instanceId,
+            entryId: item.entryId,
+            itemId: item.itemId,
+            containerId: container.id,
+            ...context.placementMetadata,
+            x: 0,
+            y: 0,
+            z: 0,
+            length: orientation.length,
+            width: orientation.width,
+            height: orientation.height,
+            layer: 1,
+            rotation: orientation.rotation,
+            ...placementSequenceMetadata,
+            ...shapePlacementMetadata,
+            ...formPlacementMetadata,
+            ...interiorPlacementMetadata,
+          } : undefined;
           for (const position of positions) {
-            const placement: Placement = {
-              instanceId: item.instanceId,
-              entryId: item.entryId,
-              itemId: item.itemId,
-              containerId: container.id,
-              ...context.placementMetadata,
-              x: position.x,
-              y: position.y,
-              z: position.z,
-              length: orientation.length,
-              width: orientation.width,
-              height: orientation.height,
-              layer: 1,
-              rotation: orientation.rotation,
-              ...placementSequenceMetadata,
-              ...shapePlacementMetadata,
-              ...formPlacementMetadata,
-              ...interiorPlacementMetadata,
-            };
+            let placement: Placement;
+            if(reusablePlacement){
+              reusablePlacement.x=position.x;reusablePlacement.y=position.y;reusablePlacement.z=position.z;
+              placement=reusablePlacement;
+            }else{
+              placement = {
+                instanceId: item.instanceId,
+                entryId: item.entryId,
+                itemId: item.itemId,
+                containerId: container.id,
+                ...context.placementMetadata,
+                x: position.x,
+                y: position.y,
+                z: position.z,
+                length: orientation.length,
+                width: orientation.width,
+                height: orientation.height,
+                layer: 1,
+                rotation: orientation.rotation,
+                ...placementSequenceMetadata,
+                ...shapePlacementMetadata,
+                ...formPlacementMetadata,
+                ...interiorPlacementMetadata,
+              };
+            }
             // Plain rectangular candidates come only from free regions already
             // clipped to the bag and split around any blocked geometry. When
             // there is no shape sequence or blocked geometry, this check repeats
@@ -633,7 +670,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
               && weightCost !== undefined && priorCost !== undefined && Math.abs(weightCost - priorCost) > 1e-12;
             if (!best || (compareAffinity ? affinity : compareWeight ? weightCost! < priorCost! : score < best.score)) {
               if(!hasCandidateVerticalEntry(placement,bagPlacements,container))continue;
-              best = { placement, container, score, lookahead, affinity };
+              best = { placement, position, container, score, lookahead, affinity };
             }
           }
         }
@@ -642,6 +679,7 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
 
     if(best){
       const bestPlacements=placementsByContainer.get(best.container.id)??[];
+      best.placement.x=best.position.x;best.placement.y=best.position.y;best.placement.z=best.position.z;
       best.placement.layer=1+bestPlacements.reduce((maxLayer,placed)=>placed.compartmentId===best.placement.compartmentId
         &&placed.z+placed.height<=best.placement.z+EPSILON?Math.max(maxLayer,placed.layer):maxLayer,0);
     }
@@ -683,11 +721,11 @@ function packOnce(items: PlanItem[], containers: Container[], lockedById: Map<st
     if(entryObstacles)insertObstaclePrefixMaxRight(entryObstacles,verticalEntryObstaclePrefixMaxRights.get(best.container.id)!,placementBoxes(best.placement,item));
     const bagPlacements=placementsByContainer.get(best.container.id)!;
     if(supportIndexes?.has(best.container.id))supportIndexes.get(best.container.id)!.add(best.placement);
-    else if(supportIndexes&&bagPlacements.length>=supportIndexThreshold)supportIndexes.set(best.container.id,new RectangularSupportIndex(itemById,bagPlacements));
+    else if(supportIndexes&&bagPlacements.length>=supportIndexThreshold)supportIndexes.set(best.container.id,new RectangularSupportIndex(itemById,bagPlacements,shapedInstanceIds));
     massByContainer.set(best.container.id, (massByContainer.get(best.container.id) ?? best.container.tareGrams ?? 0) + (item.upperMassGrams ?? 0));
     if (item.upperMassGrams === undefined) unweighedByContainer.set(best.container.id, (unweighedByContainer.get(best.container.id) ?? 0) + 1);
     placedIds.add(item.instanceId);
-    let remaining=freeSpaces.get(best.container.id)??[];for(const box of placementBoxes(best.placement,item))remaining=splitFreeSpaces(remaining,box,true,previousFreeSpaces);freeSpaces.set(best.container.id,remaining);
+    let remaining=freeSpaces.get(best.container.id)??[];for(const box of placementBoxes(best.placement,item))remaining=splitFreeSpaces(remaining,box,true,previousFreeSpaces,containmentBlockScratch);freeSpaces.set(best.container.id,remaining);
   }
 
   return { placements, excluded, massConflicts, score: solutionScore(placements, excluded, items, mode, containers) };
@@ -807,7 +845,8 @@ function rememberFreeSpace(seen: Map<number, FreeSpace | FreeSpace[]>, space: Fr
   return false;
 }
 
-function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVolumes = false, previousSpacesScratch?: Set<FreeSpace>): FreeSpace[] {
+function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVolumes = false, previousSpacesScratch?: Set<FreeSpace>, containmentBlockScratch?:FreeSpaceContainmentBlock[]): FreeSpace[] {
+  const containmentBlockSize=8;
   let next: FreeSpace[] | undefined;
   const usedRight=used.x+used.length,usedBack=used.y+used.width,usedTop=used.z+used.height;
   for (let index=0;index<spaces.length;index++) {
@@ -828,12 +867,14 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
       continue;
     }
     next??=spaces.slice(0,index);
-    if (used.x > space.x + EPSILON) next.push({ ...space, length: used.x - space.x });
-    if (usedRight < right - EPSILON) next.push({ ...space, x: usedRight, length: right - usedRight });
-    if (used.y > space.y + EPSILON) next.push({ ...space, width: used.y - space.y });
-    if (usedBack < back - EPSILON) next.push({ ...space, y: usedBack, width: back - usedBack });
-    if (used.z > space.z + EPSILON) next.push({ ...space, height: used.z - space.z });
-    if (usedTop < top - EPSILON) next.push({ ...space, z: usedTop, height: top - usedTop });
+    // Keep ordinary rectangles compact while preserving compartment/search annotations.
+    const hasMetadata = space.compartmentId !== undefined || space.shapeSearch !== undefined;
+    if (used.x > space.x + EPSILON) next.push(hasMetadata ? { compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: space.x, y: space.y, z: space.z, length: used.x - space.x, width: space.width, height: space.height } : { x: space.x, y: space.y, z: space.z, length: used.x - space.x, width: space.width, height: space.height });
+    if (usedRight < right - EPSILON) next.push(hasMetadata ? { compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: usedRight, y: space.y, z: space.z, length: right - usedRight, width: space.width, height: space.height } : { x: usedRight, y: space.y, z: space.z, length: right - usedRight, width: space.width, height: space.height });
+    if (used.y > space.y + EPSILON) next.push(hasMetadata ? { compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: space.x, y: space.y, z: space.z, length: space.length, width: used.y - space.y, height: space.height } : { x: space.x, y: space.y, z: space.z, length: space.length, width: used.y - space.y, height: space.height });
+    if (usedBack < back - EPSILON) next.push(hasMetadata ? { compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: space.x, y: usedBack, z: space.z, length: space.length, width: back - usedBack, height: space.height } : { x: space.x, y: usedBack, z: space.z, length: space.length, width: back - usedBack, height: space.height });
+    if (used.z > space.z + EPSILON) next.push(hasMetadata ? { compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: space.x, y: space.y, z: space.z, length: space.length, width: space.width, height: used.z - space.z } : { x: space.x, y: space.y, z: space.z, length: space.length, width: space.width, height: used.z - space.z });
+    if (usedTop < top - EPSILON) next.push(hasMetadata ? { compartmentId: space.compartmentId, shapeSearch: space.shapeSearch, x: space.x, y: space.y, z: usedTop, length: space.length, width: space.width, height: top - usedTop } : { x: space.x, y: space.y, z: usedTop, length: space.length, width: space.width, height: top - usedTop });
   }
   if(!next)return spaces;
   // Filter and deduplicate in one pass; preserve the first record for each geometry.
@@ -890,6 +931,22 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
   const ordered=unique.map((space,index)=>({space,index,right:space.x+space.length,back:space.y+space.width,top:space.z+space.height,volume:cacheCandidateVolumes?spaceVolume(space):undefined}))
     .sort((left,right)=>left.space.x-right.space.x||left.index-right.index);
   const candidatesByVolume=ordered;
+  let containmentBlocks:FreeSpaceContainmentBlock[]|undefined;
+  // Skip x-ordered candidate blocks that cannot contain a large new region.
+  if(cacheCandidateVolumes&&ordered.length>=128){
+    containmentBlocks=containmentBlockScratch??[];
+    for(let start=0;start<ordered.length;start+=containmentBlockSize){
+      const block=containmentBlocks[start/containmentBlockSize]??(containmentBlocks[start/containmentBlockSize]={volume:0,length:0,width:0,height:0,minY:Number.POSITIVE_INFINITY,maxBack:Number.NEGATIVE_INFINITY,minZ:Number.POSITIVE_INFINITY,maxTop:Number.NEGATIVE_INFINITY});
+      block.volume=0;block.length=0;block.width=0;block.height=0;block.minY=Number.POSITIVE_INFINITY;block.maxBack=Number.NEGATIVE_INFINITY;block.minZ=Number.POSITIVE_INFINITY;block.maxTop=Number.NEGATIVE_INFINITY;
+      for(let index=start;index<Math.min(start+containmentBlockSize,ordered.length);index++){
+        const candidate=ordered[index],space=candidate.space;
+        block.volume=Math.max(block.volume,candidate.volume!);
+        block.length=Math.max(block.length,space.length);block.width=Math.max(block.width,space.width);block.height=Math.max(block.height,space.height);
+        block.minY=Math.min(block.minY,space.y);block.maxBack=Math.max(block.maxBack,space.y+space.width);
+        block.minZ=Math.min(block.minZ,space.z);block.maxTop=Math.max(block.maxTop,space.z+space.height);
+      }
+    }
+  }
   const keep=new Array<boolean>(unique.length).fill(true);
   for(const inner of ordered){
     // The input list is already maximal: packingRegions produces disjoint
@@ -898,6 +955,7 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
     if(previousSpaces.has(inner.space))continue;
     // EPSILON containment allows at most 2*EPSILON less extent per axis.
     const minimumContainingVolume=Math.max(0,inner.space.length-2*EPSILON)*Math.max(0,inner.space.width-2*EPSILON)*Math.max(0,inner.space.height-2*EPSILON);
+    const minimumLength=Math.max(0,inner.space.length-2*EPSILON),minimumWidth=Math.max(0,inner.space.width-2*EPSILON),minimumHeight=Math.max(0,inner.space.height-2*EPSILON);
     let scan=candidatesByVolume;
     let scanCount=candidatesByVolume.length;
     const volumeThreshold=minimumContainingVolume*(1-1e-12);
@@ -909,6 +967,12 @@ function splitFreeSpaces(spaces: FreeSpace[], used: FreeSpace, cacheCandidateVol
       scan=ordered;scanCount=low;scanByX=true;
     }
     for(let candidateIndex=0;candidateIndex<scanCount;candidateIndex++){
+      if(containmentBlocks&&candidateIndex%containmentBlockSize===0){
+        const block=containmentBlocks[candidateIndex/containmentBlockSize];
+        if(block.volume<volumeThreshold||block.length<minimumLength||block.width<minimumWidth||block.height<minimumHeight
+          ||block.minY>inner.space.y+EPSILON||block.maxBack<inner.space.y+inner.space.width-EPSILON
+          ||block.minZ>inner.space.z+EPSILON||block.maxTop<inner.space.z+inner.space.height-EPSILON){candidateIndex+=containmentBlockSize-1;continue;}
+      }
       const candidate=scan[candidateIndex];
       const outer=candidate.space;
       if(cacheCandidateVolumes&&scanByX&&candidate.volume!<volumeThreshold)continue;

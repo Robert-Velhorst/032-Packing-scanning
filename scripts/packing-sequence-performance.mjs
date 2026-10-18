@@ -47,7 +47,22 @@ try {
       if (result.fingerprint !== expected) throw new Error(`Run ${run + 1} changed the relation results.`);
       samplesMs.push(result.ms);
     }
-    results.push({ placements: count, runs, medianMs: median(samplesMs), samplesMs, relationSha256: expected });
+    const completed=placements.filter((_,placementIndex)=>placementIndex%7===0).map(placement=>placement.instanceId),completedSet=new Set(completed);
+    const measurePreviews=(useIndex) => {
+      const started=performance.now();
+      const values=placements.map((_,placementIndex)=>sequence.packingStepPreview(placements,placementIndex,completed,completedSet,useIndex?index:undefined));
+      return {ms:performance.now()-started,fingerprint:createHash('sha256').update(JSON.stringify(values)).digest('hex')};
+    };
+    const expectedPreview=measurePreviews(false).fingerprint;
+    if(measurePreviews(true).fingerprint!==expectedPreview)throw new Error('Indexed previews changed their placement contents.');
+    const previewSamples={unindexed:[],indexed:[]};
+    for(let warmup=0;warmup<3;warmup++)for(const useIndex of [false,true])if(measurePreviews(useIndex).fingerprint!==expectedPreview)throw new Error('Warmup changed the preview results.');
+    for(let run=0;run<runs;run++)for(const useIndex of run%2?[true,false]:[false,true]){
+      const result=measurePreviews(useIndex);if(result.fingerprint!==expectedPreview)throw new Error(`Run ${run+1} changed the preview results.`);
+      previewSamples[useIndex?'indexed':'unindexed'].push(result.ms);
+    }
+    results.push({ placements: count, runs, medianMs: median(samplesMs), samplesMs, relationSha256: expected,
+      preview: {unindexedMedianMs:median(previewSamples.unindexed),indexedMedianMs:median(previewSamples.indexed),unindexedSamplesMs:previewSamples.unindexed,indexedSamplesMs:previewSamples.indexed,placementSha256:expectedPreview} });
   }
   console.log(JSON.stringify({ operation: 'packing-sequence support guidance', sourceRef: sourceRef || 'working tree', node: process.version, results }));
 } finally {

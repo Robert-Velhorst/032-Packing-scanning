@@ -76,8 +76,20 @@ export function SavedScanPreview({ record,onAdopt,onAdoptInterior }: { record: S
 }
 
 const ScanCloudTopView=memo(function ScanCloudTopView({preview}:{preview:SavedGeometryPreview}) {
+  const canvasRef=useRef<HTMLCanvasElement>(null);
   const bounds=preview.envelope.dimensionsMm,scale=Math.min(300/bounds.length,180/bounds.width);
-  return <svg className="scan-cloud-top" viewBox="0 0 340 220" role="img" aria-label="Top view of original captured surface points"><rect x={20} y={20} width={bounds.length*scale} height={bounds.width*scale} fill="#f7faf7" stroke="#637267"/>{Array.from({length:preview.samplePointCount},(_,index)=>{const i=index*4;return <circle key={index} cx={20+preview.pointsMm[i]*scale} cy={20+preview.pointsMm[i+1]*scale} r={1} fill="#267052" opacity={0.45}/>;})}</svg>;
+  useEffect(()=>{
+    const canvas=canvasRef.current,context=canvas?.getContext('2d');if(!canvas||!context)return;
+    context.fillStyle='#f7faf7';context.fillRect(20,20,bounds.length*scale,bounds.width*scale);
+    context.strokeStyle='#637267';context.strokeRect(20,20,bounds.length*scale,bounds.width*scale);
+    context.fillStyle='#267052';context.globalAlpha=.45;context.beginPath();
+    for(let index=0;index<preview.samplePointCount;index++){
+      const i=index*4,x=20+preview.pointsMm[i]*scale,y=20+preview.pointsMm[i+1]*scale;
+      context.moveTo(x+1,y);context.arc(x,y,1,0,Math.PI*2);
+    }
+    context.fill();context.globalAlpha=1;
+  },[preview,bounds.length,bounds.width,scale]);
+  return <canvas ref={canvasRef} className="scan-cloud-top" width={340} height={220} role="img" aria-label="Top view of original captured surface points"/>;
 });
 
 const SolidTopView=memo(function SolidTopView({geometry}:{geometry:ReconstructedGeometry}) {

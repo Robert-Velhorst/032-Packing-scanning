@@ -6,6 +6,15 @@ import { uprightRecordError } from './upright.ts';
 import { interiorFrame, interiorSupportError, interiorTravelUp } from './packing-interior.ts';
 
 export interface GeometryBox extends DimensionsMm { x:number; y:number; z:number }
+/** Reused synchronously during planning; returned positions are overwritten by the next call using this scratch. */
+export interface ContactPositionScratch {
+  values:[Set<number>,Set<number>,Set<number>];
+  coords:[number[],number[],number[]];
+  positions:Array<{x:number;y:number;z:number}>;
+}
+export function createContactPositionScratch():ContactPositionScratch {
+  return {values:[new Set(),new Set(),new Set()],coords:[[],[],[]],positions:[]};
+}
 type ShapeItem = {packingShape?:PackingShape};
 type Face = {x:number;y:number;z:number;length:number;width:number};
 const EPS=.01, axes=['length','width','height'] as const;
@@ -18,7 +27,7 @@ for(const base of legacy)for(const flip of [[1,-1,-1],[-1,1,-1],[-1,-1,1]])rotat
 export interface GravityUp {axis:number;sign:number}
 const packingUp:GravityUp={axis:2,sign:1};
 interface ContactFaces {bottom:Face[];down:Face[];top:Face[]}
-interface Oriented extends ContactFaces {boxes:GeometryBox[];directional:Map<string,ContactFaces>}
+interface Oriented extends ContactFaces {boxes:GeometryBox[];bottomArea:number;directional:Map<string,ContactFaces>}
 interface Compiled {boxes:GeometryBox[];bounds:DimensionsMm;key:string;volume:number;surface:SolidSurface;oriented:Map<number,Oriented>}
 const cache=new WeakMap<PackingShape,Compiled>();
 
@@ -109,7 +118,8 @@ function localGeometry(shape:PackingShape,code:number) {
     return faces;
   });
   const down=boxes.flatMap(b=>{let patches:Face[]=[{x:b.x,y:b.y,z:b.z,length:b.length,width:b.width}];for(const below of boxes)if(Math.abs(below.z+below.height-b.z)<=EPS)patches=patches.flatMap(f=>subtractFace(f,below));return patches;});
-  const result={boxes,bottom,down,top,directional:new Map<string,ContactFaces>()};compiled.oriented.set(code,result);return result;
+  const bottomArea=bottom.reduce((area,face)=>area+face.length*face.width,0);
+  const result={boxes,bottom,bottomArea,down,top,directional:new Map<string,ContactFaces>()};compiled.oriented.set(code,result);return result;
 }
 function orientedBoxes(compiled:Compiled,rotation:Rotation):GeometryBox[] {
   const dimensions=axes.map(a=>compiled.bounds[a]);
@@ -133,13 +143,21 @@ export function placementBoxes(placement:GeometryBox&{rotation?:number},item?:Sh
   if(!item?.packingShape)return [placement];
   return localGeometry(item.packingShape,placement.rotation??0).boxes.map(b=>({...b,x:b.x+placement.x,y:b.y+placement.y,z:b.z+placement.z}));
 }
-export function placementSurface(p:Placement,item:ShapeItem):SolidSurface|undefined {
+function transformedPlacementSurface(p:Placement,item:ShapeItem,translated:boolean):SolidSurface|undefined {
   if(!item.packingShape)return;
   const shape=item.packingShape,compiled=compile(shape),r=rotations.find(r=>r.code===p.rotation);if(!r)throw Error('Unsupported rotation.');
   const scale=shape.fittedDimensionsMm.length/shape.sourceEnvelopeMm.length,dimensions=axes.map(a=>compiled.bounds[a]),v=compiled.surface.verticesMm,verticesMm:number[]=[];
-  for(let i=0;i<v.length;i+=3){const point=v.slice(i,i+3).map(n=>n*scale),out=r.axis.map((a,j)=>r.sign[j]>0?point[a]:dimensions[a]-point[a]);verticesMm.push(out[0]+p.x,out[1]+p.y,out[2]+p.z);}
+  const axis0=r.axis[0],axis1=r.axis[1],axis2=r.axis[2],sign0=r.sign[0],sign1=r.sign[1],sign2=r.sign[2];
+  const offsetX=translated?p.x:0,offsetY=translated?p.y:0,offsetZ=translated?p.z:0;
+  for(let i=0;i<v.length;i+=3){
+    const sourceX=v[i]*scale,sourceY=v[i+1]*scale,sourceZ=v[i+2]*scale;
+    const value0=axis0===0?sourceX:axis0===1?sourceY:sourceZ,value1=axis1===0?sourceX:axis1===1?sourceY:sourceZ,value2=axis2===0?sourceX:axis2===1?sourceY:sourceZ;
+    verticesMm.push((sign0>0?value0:dimensions[axis0]-value0)+offsetX,(sign1>0?value1:dimensions[axis1]-value1)+offsetY,(sign2>0?value2:dimensions[axis2]-value2)+offsetZ);
+  }
   return {...compiled.surface,verticesMm,volumeMm3:compiled.volume};
 }
+export function placementSurfaceLocal(p:Placement,item:ShapeItem):SolidSurface|undefined {return transformedPlacementSurface(p,item,false);}
+export function placementSurface(p:Placement,item:ShapeItem):SolidSurface|undefined {return transformedPlacementSurface(p,item,true);}
 export function boxesIntersect(a:GeometryBox,b:GeometryBox):boolean {
   return a.z<b.z+b.height-EPS&&a.z+a.height>b.z+EPS&&a.x<b.x+b.length-EPS&&a.x+a.length>b.x+EPS&&a.y<b.y+b.width-EPS&&a.y+a.width>b.y+EPS;
 }
@@ -266,20 +284,27 @@ export class RectangularSupportIndex {
   private readonly candidateCache=new Map<SupportPlaneGroup,Map<number,Placement[]>>();
   private nextOrder=0;
   private readonly items:Map<string,ShapeItem>;
-  constructor(items:Map<string,ShapeItem>,placements:Placement[]=[]){this.items=items;for(const placement of placements)this.add(placement);}
+  private readonly shapedIds?:ReadonlySet<string>;
+  constructor(items:Map<string,ShapeItem>,placements:Placement[]=[],shapedIds?:ReadonlySet<string>){this.items=items;this.shapedIds=shapedIds;for(const placement of placements)this.add(placement);}
+  hasPackingShape(instanceId:string){return this.shapedIds?.has(instanceId)??!!this.items.get(instanceId)?.packingShape;}
   add(placement:Placement){
     let compartments=this.groups.get(placement.containerId);if(!compartments){compartments=new Map();this.groups.set(placement.containerId,compartments);}
     let group=compartments.get(placement.compartmentId);if(!group){group={shapesByTopPlane:new Map(),rectangles:new Map()};compartments.set(placement.compartmentId,group);}
-    this.candidateCache.delete(group);
     this.order.set(placement.instanceId,this.nextOrder++);
-    const shape=this.items.get(placement.instanceId)?.packingShape;
+    const shape=this.hasPackingShape(placement.instanceId)?this.items.get(placement.instanceId)?.packingShape:undefined;
     if(shape){
       const planes=new Set(localGeometry(shape,placement.rotation??0).top.map(face=>Math.floor((placement.z+face.z)/(2*EPS))));
+      for(const plane of planes)this.invalidateCandidatePlane(group,plane);
       for(const plane of planes){const bucket=group.shapesByTopPlane.get(plane)??[];bucket.push(placement);group.shapesByTopPlane.set(plane,bucket);}
       return;
     }
     const plane=Math.floor((placement.z+placement.height)/(2*EPS)),bucket=group.rectangles.get(plane)??[];
+    this.invalidateCandidatePlane(group,plane);
     bucket.push(placement);group.rectangles.set(plane,bucket);
+  }
+  private invalidateCandidatePlane(group:SupportPlaneGroup,plane:number){
+    const cached=this.candidateCache.get(group);if(!cached)return;
+    cached.delete(plane-1);cached.delete(plane);cached.delete(plane+1);
   }
   candidates(placement:Placement){
     const group=this.groups.get(placement.containerId)?.get(placement.compartmentId);if(!group)return [];
@@ -291,21 +316,31 @@ export class RectangularSupportIndex {
     if(sourceCount===1)return shapeLower??shapeCenter??shapeUpper??rectangleLower??rectangleCenter??rectangleUpper!;
     const cached=this.candidateCache.get(group)?.get(plane);if(cached)return cached;
     const sources=[shapeLower,shapeCenter,shapeUpper,rectangleLower,rectangleCenter,rectangleUpper];
-    const candidates:Placement[]=[],seen=new Set<Placement>();
-    for(const source of sources)for(const candidate of source??[])if(!seen.has(candidate)){seen.add(candidate);candidates.push(candidate);}
-    candidates.sort((left,right)=>(this.order.get(left.instanceId)??0)-(this.order.get(right.instanceId)??0));
+    const cursors=[0,0,0,0,0,0],candidates:Placement[]=[];
+    // Every bucket is already in global insertion order. Merge the six short
+    // plane lists directly, advancing duplicate shaped placements together.
+    while(true){
+      let next:Placement|undefined,nextOrder=Number.POSITIVE_INFINITY;
+      for(let index=0;index<sources.length;index++){
+        const candidate=sources[index]?.[cursors[index]];
+        if(candidate){const order=this.order.get(candidate.instanceId)??0;if(order<nextOrder){next=candidate;nextOrder=order;}}
+      }
+      if(!next)break;
+      candidates.push(next);
+      for(let index=0;index<sources.length;index++)if(sources[index]?.[cursors[index]]===next)cursors[index]++;
+    }
     let byPlane=this.candidateCache.get(group);if(!byPlane){byPlane=new Map();this.candidateCache.set(group,byPlane);}if(byPlane.size>=64)byPlane.clear();byPlane.set(plane,candidates);
     return candidates;
   }
 }
 export function hasGeometrySupport(p:Placement,placed:Placement[],items:Map<string,ShapeItem>,fraction:number,up:GravityUp=packingUp,floor=0,supportIndex?:RectangularSupportIndex):boolean {
-  if(up.axis===2&&up.sign===1&&!items.get(p.instanceId)?.packingShape){
+  if(up.axis===2&&up.sign===1&&!(supportIndex?.hasPackingShape(p.instanceId)??!!items.get(p.instanceId)?.packingShape)){
     const area=p.length*p.width;if(area<=0)return false;if(Math.abs(p.z-floor)<=EPS)return true;
     const required=area*fraction;let supported=0;
     const indexedCandidates=supportIndex?.candidates(p);
     for(const lower of indexedCandidates??placed){
       if(!indexedCandidates&&(lower.containerId!==p.containerId||lower.compartmentId!==p.compartmentId))continue;
-      if(items.get(lower.instanceId)?.packingShape){
+      if(supportIndex?.hasPackingShape(lower.instanceId)??!!items.get(lower.instanceId)?.packingShape){
         if(up.axis===2&&up.sign===1&&!maySharePackingSupportFace(p,lower))continue;
         supported+=geometrySupportArea(p,lower,items,up);
       }
@@ -319,7 +354,10 @@ export function hasGeometrySupport(p:Placement,placed:Placement[],items:Map<stri
     }
     return false;
   }
-  const area=facePatches(p,items.get(p.instanceId),'bottom',up).patches.reduce((sum,f)=>sum+f.length*f.width,0);
+  const item=items.get(p.instanceId);
+  const area=up.axis===2&&up.sign===1&&item?.packingShape
+    ?localGeometry(item.packingShape,p.rotation??0).bottomArea
+    :facePatches(p,item,'bottom',up).patches.reduce((sum,f)=>sum+f.length*f.width,0);
   if(area<=0)return false;if(Math.abs(gravityBox(p,up).z-floor)<=EPS)return true;
   const required=area*fraction;let supported=0;
   const candidates=up.axis===2&&up.sign===1&&supportIndex?supportIndex.candidates(p):placed;
@@ -411,24 +449,39 @@ export function hasVerticalEntry(p:Placement,placed:Placement[],items:Map<string
   return true;
 }
 
-export function contactPositions(bag:Container,orientation:DimensionsMm&{rotation:number},item:ShapeItem,placed:Placement[],items:Map<string,ShapeItem>,region:GeometryBox={x:0,y:0,z:0,...bag.inside,height:usableContainerHeight(bag)},blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[],maxPositions=20000,collisionObstacles?:readonly GeometryBox[],collisionObstaclePrefixMaxRight?:readonly number[]) {
+export function contactPositions(bag:Container,orientation:DimensionsMm&{rotation:number},item:ShapeItem,placed:Placement[],items:Map<string,ShapeItem>,region:GeometryBox={x:0,y:0,z:0,...bag.inside,height:usableContainerHeight(bag)},blockedSpaces:readonly SpaceBox[]=containerBlockedBoxes(bag),cachedObstacles?:readonly GeometryBox[],maxPositions=20000,collisionObstacles?:readonly GeometryBox[],collisionObstaclePrefixMaxRight?:readonly number[],scratch?:ContactPositionScratch) {
   const local=item.packingShape?localGeometry(item.packingShape,orientation.rotation).boxes:[{x:0,y:0,z:0,length:orientation.length,width:orientation.width,height:orientation.height}],obstacles=cachedObstacles??[...placed.flatMap(p=>placementBoxes(p,items.get(p.instanceId))),...blockedSpaces];
   let indexedCollisionObstacles=collisionObstacles,indexedCollisionPrefix=collisionObstaclePrefixMaxRight;
   if(collisionObstacles&&!indexedCollisionPrefix){indexedCollisionObstacles=[...collisionObstacles].sort((a,b)=>a.x-b.x);indexedCollisionPrefix=obstaclePrefixMaxRight(indexedCollisionObstacles);}
-  const minimum=[region.x,region.y,region.z],maximum=[region.x+region.length-orientation.length,region.y+region.width-orientation.width,region.z+region.height-orientation.height];
-  const values=[new Set([minimum[0],maximum[0]]),new Set([minimum[1],maximum[1]]),new Set([minimum[2]])];
+  const minimumX=region.x,minimumY=region.y,minimumZ=region.z;
+  const maximumX=region.x+region.length-orientation.length,maximumY=region.y+region.width-orientation.width,maximumZ=region.z+region.height-orientation.height;
+  const values=scratch?.values??[new Set([minimumX,maximumX]),new Set([minimumY,maximumY]),new Set([minimumZ])];
+  if(scratch){
+    values[0].clear();values[0].add(minimumX);values[0].add(maximumX);
+    values[1].clear();values[1].add(minimumY);values[1].add(maximumY);
+    values[2].clear();values[2].add(minimumZ);
+  }
   for(const b of obstacles)for(const c of local){
     const right=b.x+b.length-c.x,left=b.x-c.x-c.length;
-    if(right>=minimum[0]-EPS&&right<=maximum[0]+EPS)values[0].add(Math.max(minimum[0],right));
-    if(left>=minimum[0]-EPS&&left<=maximum[0]+EPS)values[0].add(Math.max(minimum[0],left));
+    if(right>=minimumX-EPS&&right<=maximumX+EPS)values[0].add(Math.max(minimumX,right));
+    if(left>=minimumX-EPS&&left<=maximumX+EPS)values[0].add(Math.max(minimumX,left));
     const back=b.y+b.width-c.y,front=b.y-c.y-c.width;
-    if(back>=minimum[1]-EPS&&back<=maximum[1]+EPS)values[1].add(Math.max(minimum[1],back));
-    if(front>=minimum[1]-EPS&&front<=maximum[1]+EPS)values[1].add(Math.max(minimum[1],front));
+    if(back>=minimumY-EPS&&back<=maximumY+EPS)values[1].add(Math.max(minimumY,back));
+    if(front>=minimumY-EPS&&front<=maximumY+EPS)values[1].add(Math.max(minimumY,front));
     const top=b.z+b.height-c.z;
-    if(top>=minimum[2]-EPS&&top<=maximum[2]+EPS)values[2].add(Math.max(minimum[2],top));
+    if(top>=minimumZ-EPS&&top<=maximumZ+EPS)values[2].add(Math.max(minimumZ,top));
   }
-  const coords=values.map(set=>[...set].sort((a,b)=>a-b));
-  const positions:Array<{x:number;y:number;z:number}>=[];let limited=false,examined=0;
+  let coords:[number[],number[],number[]];
+  if(scratch){
+    coords=scratch.coords;
+    for(let axis=0;axis<3;axis++){
+      const axisCoords=coords[axis];axisCoords.length=0;
+      for(const value of values[axis])axisCoords.push(value);
+      axisCoords.sort((a,b)=>a-b);
+    }
+  }else coords=values.map(set=>[...set].sort((a,b)=>a-b)) as [number[],number[],number[]];
+  const positions=scratch?.positions??[];positions.length=0;
+  let limited=false,examined=0;
   outer:for(const z of coords[2])for(const y of coords[1])for(const x of coords[0]){
     if(examined>=maxPositions){limited=true;break outer;}
     examined++;

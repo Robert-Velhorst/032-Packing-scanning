@@ -1,7 +1,8 @@
 import { lazy, Suspense } from 'react';
 import { DeviceWorkspace } from './components/DeviceWorkspace';
+import { loadPackingApp } from './packing-app-loader';
 
-const PackingApp = lazy(() => import('./PackingApp').then((module) => ({ default: module.PackingApp })));
+const PackingApp = lazy(() => loadPackingApp().then((module) => ({ default: module.PackingApp })));
 
 export function App() {
   return (
