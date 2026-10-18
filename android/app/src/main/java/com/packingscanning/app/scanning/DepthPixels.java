@@ -17,5 +17,6 @@ public final class DepthPixels {
     private void check(int x,int y){if(x<0||y<0||x>=width||y>=height)throw new IllegalArgumentException("Depth pixel outside image.");}
     public int millimetres(int x,int y){check(x,y);int i=depth.position()+y*depthRow+x*depthPixel;return Byte.toUnsignedInt(depth.get(i)) | Byte.toUnsignedInt(depth.get(i+1))<<8;}
     public int confidence(int x,int y){check(x,y);return Byte.toUnsignedInt(confidence.get(confidence.position()+y*confidenceRow+x*confidencePixel));}
-    public int[] centralSample(){int sampled=0,reliable=0;for(int y=height/4;y<height-height/4;y+=3)for(int x=width/4;x<width-width/4;x+=3){sampled++;int mm=millimetres(x,y);if(mm>=150&&mm<=4000&&confidence(x,y)>=204)reliable++;}return new int[]{sampled,reliable};}
+    public int[] centralSample(){int[] result=new int[2];centralSample(result);return result;}
+    public void centralSample(int[] result){if(result==null||result.length<2)throw new IllegalArgumentException("Central sample output needs two slots.");int sampled=0,reliable=0;for(int y=height/4;y<height-height/4;y+=3)for(int x=width/4;x<width-width/4;x+=3){sampled++;int mm=millimetres(x,y);if(mm>=150&&mm<=4000&&confidence(x,y)>=204)reliable++;}result[0]=sampled;result[1]=reliable;}
 }

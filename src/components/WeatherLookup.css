@@ -1,0 +1,16 @@
+
+.weather-lookup { padding: 22px; border: 1px solid var(--line); border-radius: 12px; background: white; margin: 0 0 20px; }
+.weather-heading { display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap; align-items: center; }
+.weather-lookup h2 { font-size: 18px; margin: 6px 0 12px; }
+.weather-lookup p, .weather-notes p { font-size: 12px; line-height: 1.6; }
+.weather-search { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+.weather-search .field { flex: 1; min-width: min(240px,100%); margin: 0; }
+.weather-notes, .weather-preview { border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-top: 16px; }
+.weather-notes h3 { font-size: 15px; margin: 0 0 10px; }
+.weather-notes a { color: var(--green); }
+.weather-warning { color: #875020; }
+.weather-days > div { display: flex; gap: 8px 18px; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+.weather-days strong { min-width: 82px; }
+.weather-hash { overflow-wrap: anywhere; }
+@media (max-width: 600px) { .weather-lookup { padding: 16px; } .weather-notes, .weather-preview { padding: 12px; } }
+@media print { .weather-notes { margin: 16px 0; } .weather-notes details { display: none; } .weather-notes { break-inside: avoid; } }

@@ -27,6 +27,7 @@ public class DepthPixelsTest {
         ByteBuffer d=ByteBuffer.allocate(12*12*2),c=ByteBuffer.allocate(12*12);
         for(int i=0;i<144;i++){d.put(i*2,(byte)0xe8);d.put(i*2+1,(byte)3);c.put(i,(byte)204);}
         DepthPixels image=new DepthPixels(d,c,12,12,24,2,12,1);assertArrayEquals(new int[]{4,4},image.centralSample());
+        int[] reused={-1,-1,7};image.centralSample(reused);assertArrayEquals(new int[]{4,4,7},reused);
         c.put(3+3*12,(byte)203);d.put((6+3*12)*2,(byte)0);d.put((6+3*12)*2+1,(byte)0);
         assertArrayEquals(new int[]{4,2},image.centralSample());
         c.put(0,(byte)0);assertArrayEquals(new int[]{4,2},image.centralSample());

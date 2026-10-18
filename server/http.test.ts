@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -14,9 +14,39 @@ async function start(retrieve = vi.fn().mockResolvedValue(parseEasyjet(fixture()
   await writeFile(join(root,'private.txt'),'never serve this');
   const server=createAppServer({dist,carrierService:new CarrierService(join(root,'cache.json'),retrieve),allowedOrigins:['https://localhost']});
   await new Promise<void>((resolve) => server.listen(0,'127.0.0.1',resolve));
-  return { url:`http://127.0.0.1:${(server.address() as AddressInfo).port}`, close:() => new Promise<void>((resolve) => {server.closeAllConnections();server.close(() => resolve());}) };
+  return { dist, url:`http://127.0.0.1:${(server.address() as AddressInfo).port}`, close:async() => {await new Promise<void>((resolve) => {server.closeAllConnections();server.close(() => resolve());});await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});} };
 }
 describe('public carrier HTTP endpoint', () => {
+  it('caches hashed static assets within a bounded server cache', async () => {
+    const app=await start(),directory=join(app.dist,'assets'),path=join(directory,'app-Abcdef12.js');
+    try {
+      await mkdir(directory);await writeFile(path,'const value = 1;');
+      const first=await fetch(`${app.url}/assets/app-Abcdef12.js`);
+      expect(first.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable');
+      expect(await first.text()).toBe('const value = 1;');
+      await writeFile(path,'const value = 2;');
+      const second=await fetch(`${app.url}/assets/app-Abcdef12.js`);
+      expect(await second.text()).toBe('const value = 1;');
+    } finally {await app.close();}
+  });
+  it('compresses hashed assets with the best accepted encoding and honors opt-out', async () => {
+    const app=await start(),directory=join(app.dist,'assets'),path=join(directory,'app-Abcdef12.js'),source='const phrase = "packing";\n'.repeat(5000);
+    try {
+      await mkdir(directory);await writeFile(path,source);
+      const brotli=await fetch(`${app.url}/assets/app-Abcdef12.js`,{headers:{'Accept-Encoding':'br, gzip'}});
+      expect(brotli.headers.get('Content-Encoding')).toBe('br');
+      expect(brotli.headers.get('Vary')).toBe('Accept-Encoding');
+      expect(Number(brotli.headers.get('Content-Length'))).toBeLessThan(Buffer.byteLength(source));
+      expect(await brotli.text()).toBe(source);
+      const gzipResponse=await fetch(`${app.url}/assets/app-Abcdef12.js`,{headers:{'Accept-Encoding':'gzip'}});
+      expect(gzipResponse.headers.get('Content-Encoding')).toBe('gzip');
+      expect(await gzipResponse.text()).toBe(source);
+      const identity=await fetch(`${app.url}/assets/app-Abcdef12.js`,{headers:{'Accept-Encoding':'br;q=0, gzip;q=0'}});
+      expect(identity.headers.get('Content-Encoding')).toBeNull();
+      expect(Number(identity.headers.get('Content-Length'))).toBe(Buffer.byteLength(source));
+      expect(await identity.text()).toBe(source);
+    } finally {await app.close();}
+  });
   it('serves the real protocol, explicit native origins and no-store freshness', async () => {
     const app=await start();
     try {

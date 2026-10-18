@@ -1,16 +1,17 @@
-import { SeparationNotes } from './SeparationRules';
+import { SeparationNotes } from './SeparationNotes';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BagMassConflictNote } from './BagMassConflictNote';
 import { RetrievalNotes } from './RetrievalNotes';
-import { comparePackingPlan, comparisonWeightText, type ComparisonWeight } from '../plan-comparison';
+import { comparePackingPlan, comparisonWeightText, type ComparisonWeight, type PlanComparison as CandidateReview } from '../plan-comparison';
 import { buildPlan } from '../optimizer';
 import type { Container, LibraryItem, OptimizationMode, PackingPlan, Trip, UnitSystem } from '../types';
 
 const comparisonModes: OptimizationMode[] = ['balanced', 'maximum_capacity', 'easy_access', 'fragile_protection'];
 
-export function PlanReview({ trip, items, bags, plan, unit, modeCopy, onSelect }: {
+export function PlanReview({ trip, items, bags, plan, unit, modeCopy, onSelect, requestPlanComparison }: {
   trip: Trip; items: LibraryItem[]; bags: Container[]; plan: PackingPlan; unit: UnitSystem;
   modeCopy: Record<OptimizationMode, { title: string; detail: string }>; onSelect: (mode: OptimizationMode) => void;
+  requestPlanComparison: (trip: Trip, items: LibraryItem[], bags: Container[], modes: OptimizationMode[]) => { requestId: number; promise: Promise<PackingPlan[]>; cancel: () => void };
 }) {
   const sectionRef = useRef<HTMLDivElement>(null);
   const [requested, setRequested] = useState(false);
@@ -38,24 +39,36 @@ export function PlanReview({ trip, items, bags, plan, unit, modeCopy, onSelect }
     let cancelled = false;
     let timer: number | undefined;
     let index = 0;
-    const plans: PackingPlan[] = [];
+    const modes = comparisonModes.filter(mode => mode !== plan.mode);
+    const plansByMode = new Map<OptimizationMode, PackingPlan>([[plan.mode, plan]]);
     setComparison(undefined);
-    const calculateNext = () => {
+    const finish = () => {
+      setComparison({ source: plan, plans: comparisonModes.map(mode => plansByMode.get(mode)!).filter(Boolean) });
+    };
+    const calculateFallback = () => {
       if (cancelled) return;
-      const mode = comparisonModes[index++];
-      plans.push(mode === plan.mode ? plan : buildPlan(trip, items, bags, mode));
-      if (index < comparisonModes.length) {
-        timer = window.setTimeout(calculateNext, 0);
+      const mode = modes[index++];
+      if (mode) plansByMode.set(mode, buildPlan(trip, items, bags, mode));
+      if (index < modes.length) {
+        timer = window.setTimeout(calculateFallback, 0);
       } else {
-        setComparison({ source: plan, plans });
+        finish();
       }
     };
-    timer = window.setTimeout(calculateNext, 0);
+    const task = requestPlanComparison(trip, items, bags, modes);
+    task.promise.then(plans => {
+      if (cancelled) return;
+      for (const candidate of plans) plansByMode.set(candidate.mode, candidate);
+      finish();
+    }).catch(() => {
+      if (!cancelled) timer = window.setTimeout(calculateFallback, 0);
+    });
     return () => {
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
+      task.cancel();
     };
-  }, [requested, plan, trip.id, trip.entries, trip.containerIds, trip.lockedPlacements, trip.unavailableInstanceIds, trip.rejectedPlacements, trip.separationRules, items, bags]);
+  }, [requested, plan, trip.id, trip.entries, trip.containerIds, trip.lockedPlacements, trip.unavailableInstanceIds, trip.rejectedPlacements, trip.separationRules, items, bags, requestPlanComparison]);
 
   const ready = comparison?.source === plan ? comparison.plans : undefined;
   return <div ref={sectionRef}>
@@ -77,7 +90,6 @@ export function PlanComparison({ trip, items, bags, plans, unit, modeCopy, onSel
   modeCopy: Record<OptimizationMode, { title: string; detail: string }>; onSelect: (mode: OptimizationMode) => void;
 }) {
   const comparisons = useMemo(() => plans.map(plan => comparePackingPlan(trip, items, bags, plan)), [trip, items, bags, plans]);
-  const mass = (n: number) => (n / (unit === 'metric' ? 1 : 28.3495)).toLocaleString('en-GB', { maximumFractionDigits: 3 }) + (unit === 'metric' ? ' g' : ' oz');
   return <section className="candidate-comparison" aria-label="Candidate plan comparison">
     <p>Compare proposed contents, saved weights and recorded bag usage before selecting an approach. Each weight includes all selected bags’ empty weights; missing values stay incomplete.</p>
     <div className="tradeoff-grid">{comparisons.map((candidate, index) => {
@@ -95,23 +107,34 @@ export function PlanComparison({ trip, items, bags, plans, unit, modeCopy, onSel
         {(candidate.missingBagCount > 0 || candidate.unlinkedPlacementCount > 0) && <p className="candidate-uncertainty">Selected bag records or placement links are missing. Restore or correct them before relying on these subtotals.</p>}
         {same && <p className="candidate-equivalence">Same placed items and proposed positions as {modeCopy[same.mode].title}. Check exclusions and warnings separately.</p>}
         <button className="button button-secondary" type="button" aria-label={`Use ${modeCopy[candidate.mode].title} plan`} aria-pressed={trip.mode === candidate.mode} onClick={() => onSelect(candidate.mode)}>{trip.mode === candidate.mode ? 'Selected plan' : 'Use this plan'}</button>
-        <details className="candidate-details"><summary>Bag usage and checks · {candidate.warnings.length} warnings</summary>
-          <p>{candidate.preparationCount} recorded preparations · {candidate.earlyAccessCount} priority-access items placed · {candidate.fragileCount} fragile items placed. Placement counts do not establish retrieval ease or impact protection.</p>
-          <SeparationNotes trip={trip} items={items} bags={bags} plan={plans[index]} unit={unit}/>
-          <RetrievalNotes trip={trip} items={items} bags={bags} plan={plans[index]}/>
-          {candidate.unverifiedStackCount > 0 && <p>{candidate.unverifiedStackCount} support/load checks need review.</p>}
-          <ul className="candidate-bags">{candidate.bags.map(bag => <li key={bag.id}><h4>{bag.name}</h4>
-            <p>{bag.itemCount} proposed {bag.itemCount === 1 ? 'item' : 'items'} · {bag.occupiedPercent === undefined ? 'Recorded volume unavailable' : `~${bag.occupiedPercent.toLocaleString('en-GB', { maximumFractionDigits: 1 })}% of recorded usable volume`}</p>
-            <p>{comparisonWeightText(bag.weight, unit)}</p><MissingWeights weight={bag.weight}/>
-            <BagMassConflictNote conflict={bag.massConflict} unit={unit}/>
-            {bag.limitGrams !== undefined && !bag.massConflict && <p>{bag.limitStatus === 'over' ? 'Exceeds recorded bag limit' : bag.limitStatus === 'incomplete' ? 'Bag-limit check incomplete' : 'Within recorded bag limit'} · {mass(bag.limitGrams)}.{bag.marginGrams !== undefined && ` Upper saved-weight margin: ${mass(bag.marginGrams)}.`} Check the real packed weight.</p>}
-            {bag.limitNeedsReview && <p>Bag-limit source or value needs review.</p>}
-          </li>)}</ul>
-          {!!candidate.excluded.length && <div className="candidate-exclusions"><h4>Items outside this plan</h4><ul>{candidate.excluded.map((item, i) => <li key={`${item.instanceId}:${i}`}><strong>{item.name}{item.required ? ' · required' : ''}</strong> — {item.reason}</li>)}</ul></div>}
-          {!!candidate.warnings.length && <div className="candidate-warnings"><h4>Plan warnings</h4><ul>{candidate.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></div>}
-          <p>Volume uses occupied cells or rectangular bounds. Closure, physical balance, cushioning and fit are unverified. Carrier applicability and source freshness remain in Carrier rules; a bag-limit comparison does not establish carrier acceptance.</p>
-        </details>
+        <CandidateDetails trip={trip} items={items} bags={bags} plan={plans[index]} candidate={candidate} unit={unit}/>
       </article>;
     })}</div>
   </section>;
+}
+
+function CandidateDetails({ trip, items, bags, plan, candidate, unit }: {
+  trip: Trip; items: LibraryItem[]; bags: Container[]; plan: PackingPlan; candidate: CandidateReview; unit: UnitSystem;
+}) {
+  const [open, setOpen] = useState(false);
+  const mass = (n: number) => (n / (unit === 'metric' ? 1 : 28.3495)).toLocaleString('en-GB', { maximumFractionDigits: 3 }) + (unit === 'metric' ? ' g' : ' oz');
+  return <details className="candidate-details" onToggle={event => setOpen(event.currentTarget.open)}>
+    <summary>Bag usage and checks · {candidate.warnings.length} warnings</summary>
+    {open && <>
+      <p>{candidate.preparationCount} recorded preparations · {candidate.earlyAccessCount} priority-access items placed · {candidate.fragileCount} fragile items placed. Placement counts do not establish retrieval ease or impact protection.</p>
+      <SeparationNotes trip={trip} items={items} bags={bags} plan={plan} unit={unit}/>
+      <RetrievalNotes trip={trip} items={items} bags={bags} plan={plan}/>
+      {candidate.unverifiedStackCount > 0 && <p>{candidate.unverifiedStackCount} support/load checks need review.</p>}
+      <ul className="candidate-bags">{candidate.bags.map(bag => <li key={bag.id}><h4>{bag.name}</h4>
+        <p>{bag.itemCount} proposed {bag.itemCount === 1 ? 'item' : 'items'} · {bag.occupiedPercent === undefined ? 'Recorded volume unavailable' : `~${bag.occupiedPercent.toLocaleString('en-GB', { maximumFractionDigits: 1 })}% of recorded usable volume`}</p>
+        <p>{comparisonWeightText(bag.weight, unit)}</p><MissingWeights weight={bag.weight}/>
+        <BagMassConflictNote conflict={bag.massConflict} unit={unit}/>
+        {bag.limitGrams !== undefined && !bag.massConflict && <p>{bag.limitStatus === 'over' ? 'Exceeds recorded bag limit' : bag.limitStatus === 'incomplete' ? 'Bag-limit check incomplete' : 'Within recorded bag limit'} · {mass(bag.limitGrams)}.{bag.marginGrams !== undefined && ` Upper saved-weight margin: ${mass(bag.marginGrams)}.`} Check the real packed weight.</p>}
+        {bag.limitNeedsReview && <p>Bag-limit source or value needs review.</p>}
+      </li>)}</ul>
+      {!!candidate.excluded.length && <div className="candidate-exclusions"><h4>Items outside this plan</h4><ul>{candidate.excluded.map((item, i) => <li key={`${item.instanceId}:${i}`}><strong>{item.name}{item.required ? ' · required' : ''}</strong> — {item.reason}</li>)}</ul></div>}
+      {!!candidate.warnings.length && <div className="candidate-warnings"><h4>Plan warnings</h4><ul>{candidate.warnings.map((warning, i) => <li key={i}>{warning}</li>)}</ul></div>}
+      <p>Volume uses occupied cells or rectangular bounds. Closure, physical balance, cushioning and fit are unverified. Carrier applicability and source freshness remain in Carrier rules; a bag-limit comparison does not establish carrier acceptance.</p>
+    </>}
+  </details>;
 }

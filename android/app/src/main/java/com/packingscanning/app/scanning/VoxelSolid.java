@@ -1,11 +1,7 @@
 package com.packingscanning.app.scanning;
 
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 /** Bounded observed-shell reconstruction. Unknown/open surfaces are not silently sealed. */
 public final class VoxelSolid {
@@ -72,31 +68,53 @@ public final class VoxelSolid {
             for(int[] d:DIRS){int a=x+d[0],b=y+d[1],c=z+d[2];if(!occupied(solid,a,b,c,nx,ny,nz))continue;int next=index(a,b,c,nx,ny);if(!visited[next]){visited[next]=true;queue[tail++]=next;}}}
         if(tail!=expected)throw new ReconstructionRejected("Several disconnected shapes were observed. Isolate one object and capture it again; no source components were discarded.");
     }
-    private static long vertex(int x,int y,int z){return x+64L*(y+64L*z);}
     static int validateSurface(boolean[] solid,int nx,int ny,int nz){
-        Map<Long,int[]> edges=new HashMap<>();Map<Long,List<long[]>> links=new HashMap<>();int faces=0;
+        int ex=nx*(ny+1)*(nz+1),ey=(nx+1)*ny*(nz+1),ez=(nx+1)*(ny+1)*nz;
+        byte[] edgeCountsX=new byte[ex],edgeWindingX=new byte[ex];
+        byte[] edgeCountsY=new byte[ey],edgeWindingY=new byte[ey];
+        byte[] edgeCountsZ=new byte[ez],edgeWindingZ=new byte[ez];
+        int vx=nx+1,vy=ny+1,vz=nz+1,vertexCount=vx*vy*vz;
+        byte[] vertexNeighbours=new byte[vertexCount],fanLinks=new byte[vertexCount*6];int faces=0;
         for(int cell=0;cell<solid.length;cell++)if(solid[cell]){
             int x=cell%nx,y=(cell/nx)%ny,z=cell/(nx*ny);
             for(int side=0;side<6;side++){
                 int[] d=DIRS[side];if(occupied(solid,x+d[0],y+d[1],z+d[2],nx,ny,nz))continue;
                 if(++faces>MAX_FACES)throw new ReconstructionRejected("The reconstructed surface is too complex for this preview. Capture a simpler isolated object or use its envelope.");
-                long[] ids=new long[4];for(int i=0;i<4;i++){int[] c=QUADS[side][i];ids[i]=vertex(x+c[0],y+c[1],z+c[2]);}
                 for(int i=0;i<4;i++){
-                    long a=ids[i],b=ids[(i+1)%4],key=Math.min(a,b)*262144L+Math.max(a,b);
-                    int[] edge=edges.computeIfAbsent(key,k->new int[2]);edge[0]++;edge[1]+=a<b?1:-1;
-                    links.computeIfAbsent(a,k->new ArrayList<>()).add(new long[]{ids[(i+3)%4],b});
+                    int[] a=QUADS[side][i],b=QUADS[side][(i+1)%4],previous=QUADS[side][(i+3)%4];
+                    int ax=x+a[0],ay=y+a[1],az=z+a[2],bx=x+b[0],by=y+b[1],bz=z+b[2];
+                    int dx=bx-ax,dy=by-ay,dz=bz-az;
+                    // Grid topology limits each edge to four incident faces, so byte counters cannot overflow.
+                    if(dx!=0){int key=Math.min(ax,bx)+nx*(ay+(ny+1)*az);edgeCountsX[key]=(byte)(edgeCountsX[key]+1);edgeWindingX[key]=(byte)(edgeWindingX[key]+dx);}
+                    else if(dy!=0){int key=ax+(nx+1)*(Math.min(ay,by)+ny*az);edgeCountsY[key]=(byte)(edgeCountsY[key]+1);edgeWindingY[key]=(byte)(edgeWindingY[key]+dy);}
+                    else {int key=ax+(nx+1)*(ay+(ny+1)*Math.min(az,bz));edgeCountsZ[key]=(byte)(edgeCountsZ[key]+1);edgeWindingZ[key]=(byte)(edgeWindingZ[key]+dz);}
+
+                    int px=x+previous[0],py=y+previous[1],pz=z+previous[2];
+                    int vertex=ax+vx*(ay+vy*az),first=directionSlot(px-ax,py-ay,pz-az),second=directionSlot(bx-ax,by-ay,bz-az);
+                    vertexNeighbours[vertex]|=(byte)((1<<first)|(1<<second));
+                    fanLinks[vertex*6+first]|=(byte)(1<<second);fanLinks[vertex*6+second]|=(byte)(1<<first);
                 }
             }
         }
-        for(int[] edge:edges.values())if(edge[0]!=2||edge[1]!=0)throw new ReconstructionRejected("The surface contains ambiguous edge contacts. Its watertight topology could not be established; keep the envelope estimate.");
+        if(!closedEdges(edgeCountsX,edgeWindingX)||!closedEdges(edgeCountsY,edgeWindingY)||!closedEdges(edgeCountsZ,edgeWindingZ))
+            throw new ReconstructionRejected("The surface contains ambiguous edge contacts. Its watertight topology could not be established; keep the envelope estimate.");
         // A closed edge count alone misses two surface fans touching at one vertex.
-        for(List<long[]> pairs:links.values()){
-            Map<Long,Set<Long>> graph=new HashMap<>();for(long[] pair:pairs){graph.computeIfAbsent(pair[0],k->new HashSet<>()).add(pair[1]);graph.computeIfAbsent(pair[1],k->new HashSet<>()).add(pair[0]);}
-            for(Set<Long> neighbours:graph.values())if(neighbours.size()!=2)throw new ReconstructionRejected("The surface contains an ambiguous vertex contact.");
-            Set<Long> reached=new HashSet<>();List<Long> pending=new ArrayList<>();pending.add(graph.keySet().iterator().next());
-            for(int i=0;i<pending.size();i++){long current=pending.get(i);if(reached.add(current))pending.addAll(graph.get(current));}
-            if(reached.size()!=graph.size())throw new ReconstructionRejected("The surface has disconnected vertex fans; keep the envelope estimate.");
+        for(int vertex=0;vertex<vertexCount;vertex++){
+            int neighbours=vertexNeighbours[vertex]&0xff;if(neighbours==0)continue;
+            for(int direction=0;direction<6;direction++)if((neighbours&(1<<direction))!=0&&Integer.bitCount(fanLinks[vertex*6+direction]&0xff)!=2)
+                throw new ReconstructionRejected("The surface contains an ambiguous vertex contact.");
+            int reached=0,frontier=Integer.lowestOneBit(neighbours);
+            while(frontier!=0){int bit=Integer.lowestOneBit(frontier);frontier^=bit;if((reached&bit)!=0)continue;reached|=bit;
+                int direction=Integer.numberOfTrailingZeros(bit);frontier|=(fanLinks[vertex*6+direction]&0xff)&~reached;}
+            if(reached!=neighbours)throw new ReconstructionRejected("The surface has disconnected vertex fans; keep the envelope estimate.");
         }
         return faces;
+    }
+    private static boolean closedEdges(byte[] counts,byte[] winding){
+        for(int i=0;i<counts.length;i++)if(counts[i]!=0&&(counts[i]!=2||winding[i]!=0))return false;
+        return true;
+    }
+    private static int directionSlot(int x,int y,int z){
+        if(x<0)return 0;if(x>0)return 1;if(y<0)return 2;if(y>0)return 3;if(z<0)return 4;return 5;
     }
 }

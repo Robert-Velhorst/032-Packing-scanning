@@ -27,14 +27,24 @@ export interface RetrievalReview {
  * as planning. Hand clearance, closures, angled motion and real stability are absent. */
 export function assessRetrieval(placements: Placement[], bags: Container[], items: Map<string, RetrievalItem>): RetrievalCheck[] {
   const checks = new Map<string, RetrievalCheck>();
-  const counts = new Map<string, number>();
-  for (const p of placements) counts.set(p.instanceId, (counts.get(p.instanceId) ?? 0) + 1);
+  const counts = new Map<string, number>(), placementsByContainer = new Map<string, Placement[]>(), bagsById = new Map<string, { bag: Container; count: number }>();
+  for (const bag of bags) {
+    const match = bagsById.get(bag.id);
+    if (match) match.count++;
+    else bagsById.set(bag.id, { bag, count: 1 });
+  }
+  for (const p of placements) {
+    counts.set(p.instanceId, (counts.get(p.instanceId) ?? 0) + 1);
+    const group = placementsByContainer.get(p.containerId);
+    if (group) group.push(p);
+    else placementsByContainer.set(p.containerId, [p]);
+  }
   const unknown = (p: Placement, reason: string): RetrievalCheck => ({ instanceId: p.instanceId, containerId: p.containerId,
     status: 'unknown', beforeInstanceIds: [], supportingInstanceIds: [], reason });
-  for (const bagId of new Set(placements.map(p => p.containerId))) {
-    const group = placements.filter(p => p.containerId === bagId), matches = bags.filter(b => b.id === bagId), bag = matches[0];
+  for (const [bagId, group] of placementsByContainer) {
+    const match = bagsById.get(bagId), bag = match?.bag;
     try {
-      if (matches.length !== 1 || containerSpaceError(bag) || !bag.opening
+      if (!match || match.count !== 1 || !bag || containerSpaceError(bag) || !bag.opening
         || ![bag.opening.length,bag.opening.width].every(n => Number.isFinite(n) && n > 0)) throw Error('The bag or usable-space record is missing, ambiguous or invalid.');
       const boxes = new Map(group.map(p => {
         const item = items.get(p.instanceId), orientation = item && orientationForRotation(item, p.rotation, bag);
@@ -92,21 +102,45 @@ export function assessRetrieval(placements: Placement[], bags: Container[], item
  * saved physical contents cannot be reconciled with this candidate. */
 export function reviewRetrieval(trip: Trip, library: LibraryItem[], bags: Container[], plan: PackingPlan): RetrievalReview {
   const items = new Map<string, RetrievalItem>(), priorityInstanceIds: string[] = [];
+  const libraryById = new Map<string, { item: LibraryItem; count: number }>();
+  for (const item of library) {
+    const match = libraryById.get(item.id);
+    if (match) match.count++;
+    else libraryById.set(item.id, { item, count: 1 });
+  }
+  const entriesById = new Map<string, Map<string, { entry: Trip['entries'][number]; count: number }>>();
+  for (const entry of trip.entries) {
+    let byItem = entriesById.get(entry.id);
+    if (!byItem) { byItem = new Map(); entriesById.set(entry.id, byItem); }
+    const match = byItem.get(entry.itemId);
+    if (match) match.count++;
+    else byItem.set(entry.itemId, { entry, count: 1 });
+  }
   for (const p of plan.placements) {
-    const matches = library.filter(item => item.id === p.itemId), entry = trip.entries.filter(e => e.id === p.entryId && e.itemId === p.itemId);
-    const item = matches.length === 1 && entry.length === 1 ? packingItemForPlacement(matches[0],p) : undefined;
+    const itemMatch = libraryById.get(p.itemId), entryMatch = entriesById.get(p.entryId)?.get(p.itemId);
+    const item = itemMatch?.count === 1 && entryMatch?.count === 1 ? packingItemForPlacement(itemMatch.item,p) : undefined;
     if (item) items.set(p.instanceId,item);
-    if (entry.length === 1 && entry[0].accessPriority >= 4) priorityInstanceIds.push(p.instanceId);
+    if (entryMatch?.count === 1 && entryMatch.entry.accessPriority >= 4) priorityInstanceIds.push(p.instanceId);
   }
   const checks = assessRetrieval(plan.placements,bags,items), unresolvedBags = new Set<string>();
+  const bagIds = new Set(bags.map(bag => bag.id)), lockedCounts = new Map<string, number>(), lockedPlanByInstance = new Map<string, Placement[]>();
+  for (const saved of trip.lockedPlacements) {
+    if (saved && typeof saved.instanceId === 'string') lockedCounts.set(saved.instanceId, (lockedCounts.get(saved.instanceId) ?? 0) + 1);
+  }
+  for (const placement of plan.placements) {
+    if (!placement.locked) continue;
+    const matches = lockedPlanByInstance.get(placement.instanceId);
+    if (matches) matches.push(placement);
+    else lockedPlanByInstance.set(placement.instanceId, [placement]);
+  }
   let unresolvedPackedCount = 0;
   for (const saved of trip.lockedPlacements) {
-    const matched = isValidRejectedPlacement(saved) && trip.lockedPlacements.filter(p => p?.instanceId === saved.instanceId).length === 1 && plan.placements.filter(p => p.locked && p.itemId === saved.itemId
+    const matched = isValidRejectedPlacement(saved) && lockedCounts.get(saved.instanceId) === 1 && (lockedPlanByInstance.get(saved.instanceId) ?? []).filter(p => p.itemId === saved.itemId
       && p.entryId === saved.entryId && samePlacementGeometry(p,saved)).length === 1;
     if (matched) continue;
     unresolvedPackedCount++;
     const id = (saved as Placement | null)?.containerId;
-    if (typeof id === 'string' && bags.some(b => b.id === id)) unresolvedBags.add(id);
+    if (typeof id === 'string' && bagIds.has(id)) unresolvedBags.add(id);
     else for (const bag of bags) unresolvedBags.add(bag.id);
   }
   return { checks: checks.map(check => unresolvedBags.has(check.containerId) ? { ...check, status: 'unknown',
