@@ -44,7 +44,7 @@
     "@types/react-dom": "^19.1.9",
     "@types/three": "^0.178.1",
     "@vitejs/plugin-react": "^5.0.2",
-    "preact": "10.29.8",
+    "preact": "11.0.1",
     "preact-render-to-string": "6.8.1",
     "typescript": "^7.0.2",
     "vite": "^7.1.5",
