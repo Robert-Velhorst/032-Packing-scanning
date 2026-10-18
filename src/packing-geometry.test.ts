@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest';
 import {buildPlan} from './optimizer';
 import {assessStackLoads} from './stack-load';
 import {orderPackingSteps} from './packing-sequence';
-import {boxesIntersect,contactPositions,geometryContactArea,geometryIntersects,geometryOrientations,geometrySupportArea,hasGeometrySupport,hasVerticalEntry,insertObstaclePrefixMaxRight,obstaclePrefixMaxRight,packingShapeError,placementBoxes,placementSurface,RectangularSupportIndex,shapeDimensions,shapeKey,shapeVolume,uniqueGeometryOrientations} from './packing-geometry';
+import {boxesIntersect,contactPositions,createContactPositionScratch,geometryContactArea,geometryIntersects,geometryOrientations,geometrySupportArea,hasGeometrySupport,hasVerticalEntry,insertObstaclePrefixMaxRight,obstaclePrefixMaxRight,packingShapeError,placementBoxes,placementSurface,placementSurfaceLocal,RectangularSupportIndex,shapeDimensions,shapeKey,shapeVolume,uniqueGeometryOrientations} from './packing-geometry';
 import type {Container,LibraryItem,PackingShape,Placement,PlanItem,Trip} from './types';
 const date='2026-10-01T00:00:00Z',evidence={source:'estimated' as const,confidence:.5,collectedAt:date};
 function shape(portal=false):PackingShape {
@@ -71,6 +71,10 @@ describe('adopted occupied-cell planning',()=>{
   const shaped=shape(),obstacle=placement('U'),shapeItem=item('U',shaped.fittedDimensionsMm,shaped),candidate=item('candidate',{length:40,width:30,height:20}),items=new Map<string,LibraryItem>([[obstacle.instanceId,shapeItem],[candidate.id+'#1',candidate]]),orientation=geometryOrientations(candidate,bag)[0];
   const full=contactPositions(bag,orientation,candidate,[obstacle],items),cached=contactPositions(bag,orientation,candidate,[],items,undefined,[],placementBoxes(obstacle,shapeItem));
   expect(cached).toEqual(full);
+  const scratch=createContactPositionScratch(),reused=contactPositions(bag,orientation,candidate,[obstacle],items,undefined,undefined,undefined,20000,undefined,undefined,scratch);
+  expect(reused).toEqual(full);
+  const narrowRegion={x:0,y:0,z:0,length:90,width:70,height:50},reusedAgain=contactPositions(bag,orientation,candidate,[],items,narrowRegion,[],undefined,8,undefined,undefined,scratch);
+  expect(reusedAgain).toEqual(contactPositions(bag,orientation,candidate,[],items,narrowRegion,[],undefined,8));
   const capped=contactPositions(bag,orientation,candidate,[obstacle],items,undefined,undefined,undefined,8);
   expect(full.positions.length).toBeGreaterThan(8);expect(capped.positions).toEqual(full.positions.slice(0,8));expect(capped.limited).toBe(true);
   const obstacleBoxes=placementBoxes(obstacle,shapeItem),clear=(position:{x:number;y:number;z:number})=>!geometryIntersects(placement('candidate',{...position,...orientation}),obstacle,items);
@@ -104,6 +108,22 @@ describe('adopted occupied-cell planning',()=>{
   expect(upperIndex.candidates(shapedUpper)).toEqual([rectangularSupport]);
   expect(hasGeometrySupport(shapedUpper,upperPlacements,upperItems,.65,undefined,0,upperIndex)).toBe(hasGeometrySupport(shapedUpper,upperPlacements,upperItems,.65));
  });
+ it('retains cached support planes unaffected by a new placement',()=>{
+  const lower=placement('lower',{height:60}),nearby=placement('nearby',{height:59.997}),farLower=placement('far-lower',{z:100,height:60}),farNearby=placement('far-nearby',{z:100,height:59.997}),upper=placement('upper',{z:60}),farUpper=placement('far-upper',{z:160});
+  const placed=[lower,nearby,farLower,farNearby],items=new Map<string,LibraryItem>([...placed,upper,farUpper].map(p=>[p.instanceId,item(p.itemId)])),index=new RectangularSupportIndex(items,placed);
+  const nearCandidates=index.candidates(upper),farCandidates=index.candidates(farUpper),added=placement('added',{height:60});items.set(added.instanceId,item(added.itemId));index.add(added);
+  expect(index.candidates(upper)).not.toBe(nearCandidates);expect(index.candidates(upper)).toEqual([lower,nearby,added]);
+  expect(index.candidates(farUpper)).toBe(farCandidates);
+ });
+ it('invalidates every affected plane when adding a shaped support',()=>{
+  const stepped=shape(),shapedSupport=placement('shaped-support',{height:60}),nearby=placement('nearby',{height:59.997}),farLower=placement('far-lower',{z:100,height:60}),farNearby=placement('far-nearby',{z:100,height:59.997}),upper=placement('upper',{z:60}),farUpper=placement('far-upper',{z:160});
+  const placed=[shapedSupport,nearby,farLower,farNearby],items=new Map<string,LibraryItem>([...placed,upper,farUpper].map(p=>[p.instanceId,item(p.itemId)]));
+  items.set(shapedSupport.instanceId,item(shapedSupport.itemId,stepped.fittedDimensionsMm,stepped));
+  const index=new RectangularSupportIndex(items,placed),nearCandidates=index.candidates(upper),farCandidates=index.candidates(farUpper),added=placement('added-shape',{height:60});
+  items.set(added.instanceId,item(added.itemId,stepped.fittedDimensionsMm,stepped));index.add(added);
+  expect(index.candidates(upper)).not.toBe(nearCandidates);expect(index.candidates(upper)).toContain(added);
+  expect(index.candidates(farUpper)).toBe(farCandidates);
+ });
  it('indexes stepped shape supports by their actual top-surface planes',()=>{
   const stepped=customShape({x:8,y:8,z:6},(x,_y,z)=>x>=4||z<3);
   const lower=placement('stepped',{length:80,width:80,height:60}),remote=placement('remote',{z:100,length:120,width:100,height:60});
@@ -134,9 +154,19 @@ describe('adopted occupied-cell planning',()=>{
  });
  it('uses 24 proper rotations, four upright rotations, and outward volume without mirroring',()=>{
   const s=shape(),i=item('U',s.fittedDimensionsMm,s),all=geometryOrientations({...i,keepUpright:false});expect(all).toHaveLength(24);expect(geometryOrientations(i)).toHaveLength(4);
-  for(const o of all){const surface=placementSurface(placement('U',{...o}),i)!;let volume=0;const v=surface.verticesMm;
+  for(const o of all){const surface=placementSurface(placement('U',{...o}),i)!,origin=placementSurface(placement('U',{...o,x:0,y:0,z:0}),i)!,translated=placementSurface(placement('U',{...o,x:17,y:23,z:31}),i)!;expect(translated.verticesMm).toEqual(origin.verticesMm.map((value,index)=>value+[17,23,31][index%3]));let volume=0;const v=surface.verticesMm;
    for(let n=0;n<surface.triangles.length;n+=3){const [a,b,c]=surface.triangles.slice(n,n+3).map(index=>index*3);volume+=(v[a]*(v[b+1]*v[c+2]-v[b+2]*v[c+1])+v[a+1]*(v[b+2]*v[c]-v[b]*v[c+2])+v[a+2]*(v[b]*v[c+1]-v[b+1]*v[c]))/6;}
    expect(volume).toBeCloseTo(552000,5);expect(surface.verticesMm.every(Number.isFinite)).toBe(true);
+  }
+ });
+ it('keeps local surface vertices reusable across translated instances',()=>{
+  const s=shape(),i=item('U',s.fittedDimensionsMm,s);
+  for(const orientation of geometryOrientations({...i,keepUpright:false})){
+   const atOrigin=placementSurface(placement('U',{...orientation,x:0,y:0,z:0}),i)!;
+   const translated=placement('U',{...orientation,x:17,y:23,z:31});
+   const local=placementSurfaceLocal(translated,i)!;
+   expect(local.verticesMm).toEqual(atOrigin.verticesMm);
+   expect(placementSurface(translated,i)!.verticesMm).toEqual(local.verticesMm.map((value,index)=>value+[17,23,31][index%3]));
   }
  });
  it('retains cell-rounding allowance under uniform scaling and rejects stale or distorted dimensions',()=>{

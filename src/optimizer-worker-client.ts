@@ -51,6 +51,39 @@ export function plannerItemsForWorker(trip: Pick<Trip, 'entries'>, items: Librar
   return selected.length === items.length ? items : selected;
 }
 
+const sameDimensions = (left: LibraryItem['dimensions'], right: LibraryItem['dimensions']) => left === right
+  || left.length === right.length && left.width === right.width && left.height === right.height;
+const sameEvidence = (left: LibraryItem['dimensionEvidence'] | undefined, right: LibraryItem['dimensionEvidence'] | undefined) => left === right
+  || !!left && !!right && left.source === right.source && left.confidence === right.confidence && left.collectedAt === right.collectedAt && left.note === right.note;
+const samePackingForms = (left: LibraryItem['packingForms'], right: LibraryItem['packingForms']) => left === right
+  || !left?.length && !right?.length
+  || !!left && !!right && left.length === right.length && left.every((form, index) => {
+    const other = right[index];
+    return !!form && !!other && form.id === other.id && form.name === other.name && form.kind === other.kind
+      && sameDimensions(form.dimensions, other.dimensions) && sameEvidence(form.dimensionEvidence, other.dimensionEvidence)
+      && form.preparation === other.preparation && form.reviewedAt === other.reviewedAt
+      && form.maxTopLoadGrams === other.maxTopLoadGrams && sameEvidence(form.topLoadEvidence, other.topLoadEvidence);
+  });
+
+/** Keep planner references stable when only photo, scan-lifecycle or other non-planning metadata changes. */
+export function reusePlannerItemReferences(previous: LibraryItem[], next: LibraryItem[]): LibraryItem[] {
+  if (previous.length !== next.length) return next;
+  const stable = next.map((item, index) => {
+    const prior = previous[index];
+    const sameMassRange = prior.massRangeGrams === item.massRangeGrams
+      || !!prior.massRangeGrams && !!item.massRangeGrams && prior.massRangeGrams.min === item.massRangeGrams.min && prior.massRangeGrams.max === item.massRangeGrams.max;
+    return prior.id === item.id && prior.name === item.name && prior.category === item.category
+      && sameDimensions(prior.dimensions, item.dimensions) && sameEvidence(prior.dimensionEvidence, item.dimensionEvidence)
+      && prior.massGrams === item.massGrams && sameMassRange && sameEvidence(prior.massEvidence, item.massEvidence)
+      && prior.flexibility === item.flexibility && sameEvidence(prior.flexibilityEvidence, item.flexibilityEvidence)
+      && prior.fragile === item.fragile && sameEvidence(prior.fragileEvidence, item.fragileEvidence)
+      && prior.maxTopLoadGrams === item.maxTopLoadGrams && sameEvidence(prior.topLoadEvidence, item.topLoadEvidence)
+      && prior.keepUpright === item.keepUpright && sameEvidence(prior.keepUprightEvidence, item.keepUprightEvidence)
+      && prior.packingShape === item.packingShape && samePackingForms(prior.packingForms, item.packingForms) ? prior : item;
+  });
+  return stable.every((item, index) => item === previous[index]) ? previous : stable;
+}
+
 /** Exclude bags the planner cannot select through this trip's container IDs. */
 export function plannerContainersForWorker(trip: Pick<Trip, 'containerIds'>, containers: Container[]): Container[] {
   const selectedIds = new Set(trip.containerIds);

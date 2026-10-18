@@ -60,4 +60,9 @@ public class VoxelSolidTest {
         VoxelSolid.ReconstructionRejected error=assertThrows(VoxelSolid.ReconstructionRejected.class,()->VoxelSolid.reconstruct(shell(6,6,6,shape),new double[]{60,60,60}));
         assertTrue(error.getMessage().contains("edge contacts"));
     }
+    @Test public void rejectsSurfaceFansThatMeetOnlyAtAVertex() {
+        boolean[] diagonalCubes=new boolean[8];diagonalCubes[0]=true;diagonalCubes[7]=true;
+        VoxelSolid.ReconstructionRejected error=assertThrows(VoxelSolid.ReconstructionRejected.class,()->VoxelSolid.validateSurface(diagonalCubes,2,2,2));
+        assertTrue(error.getMessage().contains("disconnected vertex fans"));
+    }
 }

@@ -6,9 +6,11 @@ import { createServer } from 'vite';
 const value = (name, fallback) => process.argv.find((argument) => argument.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 const counts = value('counts', '50,100,250,500').split(',').map(Number);
 const runs = Number(value('runs', '5'));
+const bagCount = Number(value('bags', '1'));
 const sourceRef = value('sequence-ref', '');
 if (!counts.length || counts.some((count) => !Number.isInteger(count) || count < 1 || count > 500)) throw new Error('Use --counts= with item counts from 1 to 500.');
 if (!Number.isInteger(runs) || runs < 1 || runs > 10) throw new Error('Use --runs= with a count from 1 to 10.');
+if (!Number.isInteger(bagCount) || bagCount < 1 || bagCount > 10) throw new Error('Use --bags= with a count from 1 to 10.');
 
 const plugins = sourceRef ? [{
   name: 'packing-sequence-benchmark-source',
@@ -28,11 +30,14 @@ try {
   const results = [];
   for (const count of counts) {
     const items = Array.from({ length: count }, (_, index) => ({ ...structuredClone(seed.libraryItems[0]), id: `sequence-item-${index}`, name: `Item ${index}` }));
-    const placements = items.map((item, index) => ({
-      instanceId: `sequence-instance-${index}`, itemId: item.id, entryId: `sequence-entry-${index}`,
-      containerId: 'sequence-bag', compartmentId: undefined, x: 0, y: 0, z: index * 20,
-      length: 100, width: 100, height: 20, rotation: 0, layer: index, insertionOrder: index,
-    }));
+    const placements = Array.from({ length: bagCount }, (_, bagIndex) => items
+      .map((item, itemIndex) => ({ item, itemIndex }))
+      .filter(({ itemIndex }) => itemIndex % bagCount === bagIndex)
+      .map(({ item, itemIndex }, stepIndex) => ({
+        instanceId: `sequence-instance-${itemIndex}`, itemId: item.id, entryId: `sequence-entry-${itemIndex}`,
+        containerId: `sequence-bag-${bagIndex + 1}`, compartmentId: undefined, x: 0, y: 0, z: stepIndex * 20,
+        length: 100, width: 100, height: 20, rotation: 0, layer: stepIndex, insertionOrder: stepIndex,
+      }))).flat();
     const index = sequence.createPackingStepRelationIndex(placements, items);
     const measure = () => {
       const started = performance.now();
@@ -47,9 +52,24 @@ try {
       if (result.fingerprint !== expected) throw new Error(`Run ${run + 1} changed the relation results.`);
       samplesMs.push(result.ms);
     }
-    results.push({ placements: count, runs, medianMs: median(samplesMs), samplesMs, relationSha256: expected });
+    const completed=placements.filter((_,placementIndex)=>placementIndex%7===0).map(placement=>placement.instanceId),completedSet=new Set(completed);
+    const measurePreviews=(useIndex) => {
+      const started=performance.now();
+      const values=placements.map((_,placementIndex)=>sequence.packingStepPreview(placements,placementIndex,completed,completedSet,useIndex?index:undefined));
+      return {ms:performance.now()-started,fingerprint:createHash('sha256').update(JSON.stringify(values)).digest('hex')};
+    };
+    const expectedPreview=measurePreviews(false).fingerprint;
+    if(measurePreviews(true).fingerprint!==expectedPreview)throw new Error('Indexed previews changed their placement contents.');
+    const previewSamples={unindexed:[],indexed:[]};
+    for(let warmup=0;warmup<3;warmup++)for(const useIndex of [false,true])if(measurePreviews(useIndex).fingerprint!==expectedPreview)throw new Error('Warmup changed the preview results.');
+    for(let run=0;run<runs;run++)for(const useIndex of run%2?[true,false]:[false,true]){
+      const result=measurePreviews(useIndex);if(result.fingerprint!==expectedPreview)throw new Error(`Run ${run+1} changed the preview results.`);
+      previewSamples[useIndex?'indexed':'unindexed'].push(result.ms);
+    }
+    results.push({ placements: count, runs, medianMs: median(samplesMs), samplesMs, relationSha256: expected,
+      preview: {unindexedMedianMs:median(previewSamples.unindexed),indexedMedianMs:median(previewSamples.indexed),unindexedSamplesMs:previewSamples.unindexed,indexedSamplesMs:previewSamples.indexed,placementSha256:expectedPreview} });
   }
-  console.log(JSON.stringify({ operation: 'packing-sequence support guidance', sourceRef: sourceRef || 'working tree', node: process.version, results }));
+  console.log(JSON.stringify({ operation: 'packing-sequence support guidance and previews', bags: bagCount, sourceRef: sourceRef || 'working tree', node: process.version, results }));
 } finally {
   await vite.close();
 }

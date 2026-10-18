@@ -108,4 +108,10 @@ describe('finished-pack retrieval', () => {
     expect(buildPlan(trip,[item],[bag]).placements.find(p=>p.instanceId===a.placements[0].instanceId)).toMatchObject({...a.placements[0],locked:true});
     expect(buildPlan(trip,[item],[{...bag,massLimitGrams:50}]).requiredExcludedCount).toBe(3);
   });
+  it('keeps duplicate item and entry matches ambiguous during indexed lookup', () => {
+    const {bag,item,trip}=fixture(),plan=buildPlan(trip,[item],[bag]);
+    expect(reviewRetrieval(trip,[item,{...item,name:'Duplicate item'}],[bag],plan).checks.every(check=>check.status==='unknown')).toBe(true);
+    trip.entries=[...trip.entries,{...trip.entries[0]}];
+    expect(reviewRetrieval(trip,[item],[bag],plan).checks.every(check=>check.status==='unknown')).toBe(true);
+  });
 });

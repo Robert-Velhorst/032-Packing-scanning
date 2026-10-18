@@ -33,6 +33,13 @@ describe('packing sequence', () => {
     expect(resumePackingStep([], undefined, [])).toBe(0);
     expect(resumePackingStep(ordered, undefined, ordered.map((step) => step.instanceId))).toBe(0);
   });
+  it('indexes the first occurrence of each item for selection lookup', () => {
+    const duplicated = [...ordered, { ...ordered[0], x: ordered[0].x + 1 }];
+    const index = createPackingStepRelationIndex(duplicated, data.libraryItems);
+    expect(index.firstPlacementIndex.get(ordered[0].instanceId)).toBe(0);
+    expect(index.firstPlacementIndex.get(ordered[1].instanceId)).toBe(1);
+    expect(index.firstPlacementIndex.has('missing')).toBe(false);
+  });
   it('advances from the new plan order when a previously last item becomes an earlier packed lock', () => {
     const [a,b,c]=ordered,newOrder=[c,a,b];
     expect(nextUnpackedStep(newOrder,c.instanceId,[c.instanceId])).toBe(1);
@@ -51,6 +58,10 @@ describe('packing sequence', () => {
     expect(packingStepPreview(source, 0, [])).toEqual([ordered[0]]);
     expect(packingStepPreview(source, 0, [ordered[2].instanceId, other.instanceId])).toEqual([ordered[0], ordered[2]]);
     const completed=[ordered[2].instanceId,other.instanceId];expect(packingStepPreview(source,0,completed,new Set(completed))).toEqual([ordered[0],ordered[2]]);
+    const previewIndex=createPackingStepRelationIndex(source,data.libraryItems);
+    for(let index=0;index<source.length;index++)expect(packingStepPreview(source,index,completed,new Set(completed),previewIndex)).toEqual(packingStepPreview(source,index,completed,new Set(completed)));
+    const interleaved=[ordered[0],other,ordered[1],ordered[2]],interleavedIndex=createPackingStepRelationIndex(interleaved,data.libraryItems);
+    for(let index=0;index<interleaved.length;index++)expect(packingStepPreview(interleaved,index,completed,new Set(completed),interleavedIndex)).toEqual(packingStepPreview(interleaved,index,completed,new Set(completed)));
     expect(packingStepPreview(source, 99, [])).toEqual([]);
   });
   it('describes only geometrically overlapping support in the same bag', () => {
