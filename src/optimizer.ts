@@ -41,7 +41,7 @@ const SHAPE_CONTACT_POSITION_LIMIT=100;
 // Deduplicating exact shape orientations pays off only when many shapes are searched.
 const SHAPE_ORIENTATION_DEDUP_THRESHOLD=512;
 // Use numeric geometry hashes once split output grows enough to avoid string-key churn.
-const FREE_SPACE_HASH_THRESHOLD=32;
+const FREE_SPACE_HASH_THRESHOLD=16;
 
 export function buildPlan(trip: PlannerTrip, library: LibraryItem[], allContainers: Container[], mode: OptimizationMode = trip.mode): PackingPlan {
   const referencedItemIds = new Set(trip.entries.map(entry => entry.itemId));
