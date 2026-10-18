@@ -27,10 +27,16 @@ export function nextUnpackedStep(ordered: Placement[], currentId: string, comple
 }
 
 /** Earlier planned positions are context, not a claim that they are already packed. */
-export function packingStepPreview(ordered: Placement[], index: number, completed: string[],completedSet?:ReadonlySet<string>): Placement[] {
+export function packingStepPreview(ordered: Placement[], index: number, completed: string[],completedSet?:ReadonlySet<string>,previewIndex?:Pick<PackingStepRelationIndex,'byContainerRange'>): Placement[] {
   const current = ordered[index];
   if (!current) return [];
   const confirmed = completedSet??new Set(completed);
+  const range=previewIndex?.byContainerRange.get(current.containerId);
+  if(range){
+    const throughCurrent=Math.min(index+1,range.end),preview=ordered.slice(range.start,throughCurrent);
+    for(let stepIndex=throughCurrent;stepIndex<range.end;stepIndex++)if(confirmed.has(ordered[stepIndex].instanceId))preview.push(ordered[stepIndex]);
+    return preview;
+  }
   return ordered.filter((step, stepIndex) => step.containerId === current.containerId
     && (stepIndex <= index || confirmed.has(step.instanceId)));
 }
@@ -40,12 +46,19 @@ export interface PackingStepRelationIndex {
   byInstance: Map<string,LibraryItem>;
   byContainer: Map<string,Map<string|undefined,{plainByTopPlane:Map<number,Placement[]>;shaped:Placement[]}>>;
   placementOrder: Map<string,number>;
+  byContainerRange: Map<string,{start:number;end:number}>;
 }
 
 /** Prepares item/form geometry lookups once for all instructions in a plan. */
 export function createPackingStepRelationIndex(ordered: Placement[], items: LibraryItem[]): PackingStepRelationIndex {
-  const records=new Map(items.map(item=>[item.id,item])),byInstance=new Map<string,LibraryItem>(),byContainer=new Map<string,Map<string|undefined,{plainByTopPlane:Map<number,Placement[]>;shaped:Placement[] }>>(),placementOrder=new Map<string,number>();
+  const records=new Map(items.map(item=>[item.id,item])),byInstance=new Map<string,LibraryItem>(),byContainer=new Map<string,Map<string|undefined,{plainByTopPlane:Map<number,Placement[]>;shaped:Placement[] }>>(),placementOrder=new Map<string,number>(),byContainerRange=new Map<string,{start:number;end:number}>(),noncontiguousContainers=new Set<string>();
   for(const [order,placement] of ordered.entries()){
+    if(!noncontiguousContainers.has(placement.containerId)){
+      const range=byContainerRange.get(placement.containerId);
+      if(!range)byContainerRange.set(placement.containerId,{start:order,end:order+1});
+      else if(range.end===order)range.end=order+1;
+      else {byContainerRange.delete(placement.containerId);noncontiguousContainers.add(placement.containerId);}
+    }
     const item=packingItemForPlacement(records.get(placement.itemId),placement);if(item)byInstance.set(placement.instanceId,item);
     let compartments=byContainer.get(placement.containerId);if(!compartments){compartments=new Map();byContainer.set(placement.containerId,compartments);}
     let candidates=compartments.get(placement.compartmentId);if(!candidates){candidates={plainByTopPlane:new Map(),shaped:[]};compartments.set(placement.compartmentId,candidates);}
@@ -53,7 +66,7 @@ export function createPackingStepRelationIndex(ordered: Placement[], items: Libr
     else {const plane=Math.floor((placement.z+placement.height)/.01),placements=candidates.plainByTopPlane.get(plane)??[];placements.push(placement);candidates.plainByTopPlane.set(plane,placements);}
     placementOrder.set(placement.instanceId,order);
   }
-  return {names:new Map(items.map(item=>[item.id,item.name])),byInstance,byContainer,placementOrder};
+  return {names:new Map(items.map(item=>[item.id,item.name])),byInstance,byContainer,placementOrder,byContainerRange};
 }
 
 export function packingStepRelation(current: Placement, ordered: Placement[], items: LibraryItem[], bag?:Container,index?:PackingStepRelationIndex): string {
