@@ -8,7 +8,7 @@ The local-first web planner and a native guided-capture prototype are now in thi
 
 ### Run it locally
 
-Requires Node.js 22.18 or newer (native TypeScript execution for the carrier service).
+Requires Node.js 24.22.0 or newer (native TypeScript execution for the carrier service). The container uses Node.js 26.12.0.
 
 ```sh
 npm install
