@@ -1,8 +1,7 @@
 import { request as httpRequest, type IncomingHttpHeaders } from 'node:http';
 import { describe, expect, it } from 'vitest';
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import type { AddressInfo } from 'node:net';
 import { createAppServer } from './http.ts';
 import { AccountStore } from './accounts.ts';
@@ -14,9 +13,10 @@ import { sharedPackingRecords,openSharedPack,type SharedPackSnapshot } from '../
 import {createSharedPackBaseline} from '../src/shared-pack-baseline.ts';
 import {reviewSharedCombination,combineReviewedSharedRecords,recordSharedPublication,type SharedChoice} from '../src/shared-pack-combination.ts';
 import {setPackingItemComplete} from '../src/packing-progress.ts';
+import { createTestTempDirectory } from '../src/test-temp.ts';
 
 async function start(enabled = true, origin?: string, registrations = true) {
-  const root = await mkdtemp(join(tmpdir(), 'packing-account-http-')), dist = join(root, 'dist'); await mkdir(dist); await writeFile(join(dist, 'index.html'), '<title>Packing Scanning</title>');
+  const root = await createTestTempDirectory('packing-account-http-'), dist = join(root, 'dist'); await mkdir(dist); await writeFile(join(dist, 'index.html'), '<title>Packing Scanning</title>');
   const options: Parameters<typeof createAppServer>[0] = { dist, carrierService: new CarrierService(join(root, 'carrier.json')) };
   const server = createAppServer(options); await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`, store = enabled ? new AccountStore(join(root, 'account.sqlite'), Buffer.alloc(32, 9)) : undefined;

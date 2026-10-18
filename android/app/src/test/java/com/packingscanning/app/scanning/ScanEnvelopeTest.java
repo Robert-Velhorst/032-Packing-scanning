@@ -67,6 +67,12 @@ public class ScanEnvelopeTest {
         for(float[] p:points){p[0]+=.08f;p[1]-=.12f;p[2]+=.03f;}
         assertArrayEquals(first.dimensionsMm,ScanEnvelope.fit(points,.0025).dimensionsMm,.01);
     }
+    @Test public void fitDoesNotReorderOrModifySourcePoints() {
+        List<float[]> points=box(.4,.22,.12,.1,.2,.6),order=new ArrayList<>(points);
+        List<float[]> values=new ArrayList<>();for(float[] point:points)values.add(point.clone());
+        ScanEnvelope.fit(points,.0025);
+        for(int i=0;i<points.size();i++){assertSame(order.get(i),points.get(i));assertArrayEquals(values.get(i),points.get(i),0);}
+    }
     @Test public void tiltedSingleSurfaceAndMalformedCloudsAreRejected() {
         List<float[]> points=box(.3,.2,0,.3,.4,.2);
         assertThrows(IllegalStateException.class,()->ScanEnvelope.fit(points,.0025));

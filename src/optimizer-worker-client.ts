@@ -1,0 +1,172 @@
+import type { Container, LibraryItem, OptimizationMode, PackingPlan, PlannerTrip, Trip } from './types';
+
+export interface PlannerWorkerRequest {
+  requestId: number;
+  trip: PlannerTrip;
+  items: LibraryItem[];
+  containers: Container[];
+  modes?: OptimizationMode[];
+}
+
+export interface PlannerWorkerResponse {
+  requestId: number;
+  plan?: PackingPlan;
+  plans?: PackingPlan[];
+  error?: string;
+}
+
+interface PendingRequest {
+  requestId: number;
+  worker: Worker;
+  resolve: (response: PlannerWorkerResponse) => void;
+  reject: (error: Error) => void;
+}
+
+// The synthetic rectangular-plan benchmark crosses one 16 ms frame budget at
+// about 15 instances, so move medium plans off the UI thread while keeping
+// small plans on the lower-overhead main-thread path.
+export const PLANNER_WORKER_MIN_ITEMS = 15;
+
+export function shouldUsePlannerWorker(instanceCount: number, hasComplexGeometry: boolean) {
+  return instanceCount >= PLANNER_WORKER_MIN_ITEMS || hasComplexGeometry;
+}
+
+/** Exclude trip metadata not read by buildPlan before the browser clones the worker message. */
+export function plannerTripForWorker(trip: Trip): PlannerTrip {
+  return {
+    mode: trip.mode,
+    entries: trip.entries,
+    containerIds: trip.containerIds,
+    unavailableInstanceIds: trip.unavailableInstanceIds,
+    lockedPlacements: trip.lockedPlacements,
+    rejectedPlacements: trip.rejectedPlacements,
+    separationRules: trip.separationRules,
+  };
+}
+
+/** Exclude library records the planner cannot reach through this trip's entries. */
+export function plannerItemsForWorker(trip: Pick<Trip, 'entries'>, items: LibraryItem[]): LibraryItem[] {
+  const referencedIds = new Set(trip.entries.map(entry => entry.itemId));
+  const selected = items.filter(item => referencedIds.has(item.id));
+  return selected.length === items.length ? items : selected;
+}
+
+const sameDimensions = (left: LibraryItem['dimensions'], right: LibraryItem['dimensions']) => left === right
+  || left.length === right.length && left.width === right.width && left.height === right.height;
+const sameEvidence = (left: LibraryItem['dimensionEvidence'] | undefined, right: LibraryItem['dimensionEvidence'] | undefined) => left === right
+  || !!left && !!right && left.source === right.source && left.confidence === right.confidence && left.collectedAt === right.collectedAt && left.note === right.note;
+const samePackingForms = (left: LibraryItem['packingForms'], right: LibraryItem['packingForms']) => left === right
+  || !left?.length && !right?.length
+  || !!left && !!right && left.length === right.length && left.every((form, index) => {
+    const other = right[index];
+    return !!form && !!other && form.id === other.id && form.name === other.name && form.kind === other.kind
+      && sameDimensions(form.dimensions, other.dimensions) && sameEvidence(form.dimensionEvidence, other.dimensionEvidence)
+      && form.preparation === other.preparation && form.reviewedAt === other.reviewedAt
+      && form.maxTopLoadGrams === other.maxTopLoadGrams && sameEvidence(form.topLoadEvidence, other.topLoadEvidence);
+  });
+
+/** Keep planner references stable when only photo, scan-lifecycle or other non-planning metadata changes. */
+export function reusePlannerItemReferences(previous: LibraryItem[], next: LibraryItem[]): LibraryItem[] {
+  if (previous.length !== next.length) return next;
+  const stable = next.map((item, index) => {
+    const prior = previous[index];
+    const sameMassRange = prior.massRangeGrams === item.massRangeGrams
+      || !!prior.massRangeGrams && !!item.massRangeGrams && prior.massRangeGrams.min === item.massRangeGrams.min && prior.massRangeGrams.max === item.massRangeGrams.max;
+    return prior.id === item.id && prior.name === item.name && prior.category === item.category
+      && sameDimensions(prior.dimensions, item.dimensions) && sameEvidence(prior.dimensionEvidence, item.dimensionEvidence)
+      && prior.massGrams === item.massGrams && sameMassRange && sameEvidence(prior.massEvidence, item.massEvidence)
+      && prior.flexibility === item.flexibility && sameEvidence(prior.flexibilityEvidence, item.flexibilityEvidence)
+      && prior.fragile === item.fragile && sameEvidence(prior.fragileEvidence, item.fragileEvidence)
+      && prior.maxTopLoadGrams === item.maxTopLoadGrams && sameEvidence(prior.topLoadEvidence, item.topLoadEvidence)
+      && prior.keepUpright === item.keepUpright && sameEvidence(prior.keepUprightEvidence, item.keepUprightEvidence)
+      && prior.packingShape === item.packingShape && samePackingForms(prior.packingForms, item.packingForms) ? prior : item;
+  });
+  return stable.every((item, index) => item === previous[index]) ? previous : stable;
+}
+
+/** Exclude bags the planner cannot select through this trip's container IDs. */
+export function plannerContainersForWorker(trip: Pick<Trip, 'containerIds'>, containers: Container[]): Container[] {
+  const selectedIds = new Set(trip.containerIds);
+  const selected = containers.filter(container => selectedIds.has(container.id));
+  return selected.length === containers.length ? containers : selected;
+}
+
+export class PlannerWorkerClient {
+  private worker?: Worker;
+  private pending?: PendingRequest;
+  private idleTimer?: ReturnType<typeof setTimeout>;
+
+  constructor(private readonly createWorker: () => Worker, private readonly idleTimeoutMs = 10_000) {}
+
+  calculate(request: PlannerWorkerRequest): Promise<PlannerWorkerResponse> {
+    if (this.pending) this.cancel(this.pending.requestId);
+    this.clearIdleTimer();
+
+    let worker = this.worker;
+    try {
+      if (!worker) this.worker = worker = this.createWorker();
+    } catch (error) {
+      return Promise.reject(error);
+    }
+
+    return new Promise((resolve, reject) => {
+      const pending: PendingRequest = { requestId: request.requestId, worker, resolve, reject };
+      this.pending = pending;
+      worker.onmessage = (event: MessageEvent<PlannerWorkerResponse>) => {
+        if (this.pending !== pending || event.data.requestId !== pending.requestId) return;
+        this.pending = undefined;
+        resolve(event.data);
+        this.scheduleIdleTermination(worker);
+      };
+      worker.onerror = (event: ErrorEvent) => {
+        if (this.pending !== pending) return;
+        this.pending = undefined;
+        this.releaseWorker(worker);
+        reject(new Error(event.message || 'The packing planner worker failed.'));
+      };
+      try {
+        worker.postMessage(request);
+      } catch (error) {
+        if (this.pending === pending) this.pending = undefined;
+        this.releaseWorker(worker);
+        reject(error instanceof Error ? error : new Error('The packing planner worker could not be started.'));
+      }
+    });
+  }
+
+  cancel(requestId: number) {
+    const pending = this.pending;
+    if (!pending || pending.requestId !== requestId) return;
+    this.pending = undefined;
+    this.releaseWorker(pending.worker);
+    pending.reject(new Error('The packing plan request was cancelled.'));
+  }
+
+  dispose() {
+    const pending = this.pending;
+    this.pending = undefined;
+    if (this.worker) this.releaseWorker(this.worker);
+    if (pending) pending.reject(new Error('The planner worker client was disposed.'));
+  }
+
+  private scheduleIdleTermination(worker: Worker) {
+    this.clearIdleTimer();
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = undefined;
+      if (this.worker === worker && !this.pending) this.releaseWorker(worker);
+    }, this.idleTimeoutMs);
+  }
+
+  private clearIdleTimer() {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = undefined;
+  }
+
+  private releaseWorker(worker: Worker) {
+    this.clearIdleTimer();
+    worker.onmessage = null;
+    worker.onerror = null;
+    worker.terminate();
+    if (this.worker === worker) this.worker = undefined;
+  }
+}

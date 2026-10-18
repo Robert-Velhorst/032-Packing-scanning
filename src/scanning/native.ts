@@ -1,45 +1,14 @@
 import { parseReconstructedSolid, type ReconstructedGeometry } from './reconstructed-solid';
-import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
+import { Capacitor } from '@capacitor/core';
 import type { ScanTarget } from './contract';
 import { parseScanResult, type ScanCapabilities, type ScanResult } from './contract';
 import type { ScanRecord } from '../types';
 import { parseSavedGeometry, type SavedGeometryPreview } from './saved-geometry';
 import { parseInteriorCavity, type InteriorReview, type ReconstructedInterior } from './interior-cavity';
 import {parseScanRetentionReply,validScanRetentionDays,type ScanRetentionDays,type ScanRetentionReply} from '../scan-retention';
+import { PackingScan } from './native-plugin';
 
-interface NativePackingScan {
-  getRetentionCapabilities():Promise<{version:1;supported:boolean}>;
-  pruneExpiredSources(options:{lease:string;days:ScanRetentionDays;afterId?:string}):Promise<unknown>;
-  getStorageState():Promise<CaptureStorageState>;
-  selectGuestStorage(options:{revision:string}):Promise<CaptureStorageState>;
-  openWorkspaceStorage(options:{revision:string;workspaceId:string;accountId:string;keyBytes:number[]}):Promise<CaptureStorageState>;
-  lockStorage(options:{revision:string}):Promise<CaptureStorageState>;
-  touchStorage(options:{lease:string}):Promise<void>;
-  addListener(event:'captureWorkspaceLocked',listener:(event:{lease:string})=>void):Promise<PluginListenerHandle>;
-  getCapabilities(): Promise<ScanCapabilities>;
-  scanObject(options: { target: ScanTarget;lease?:string;recognize?:boolean }): Promise<unknown>;
-  deleteCapture(options: { id: string;lease?:string }): Promise<{ deleted: boolean }>;
-  clearCaptures(options?:{lease?:string}): Promise<{ deleted: number }>;
-  reconstructCapture(options: { id: string;lease?:string }): Promise<unknown>;
-  reconstructInterior(options: InteriorReview & { id: string;lease?:string }): Promise<unknown>;
-  getCapturePreview(options: { id: string;lease?:string }): Promise<unknown>;
-}
-
-const PackingScan = registerPlugin<NativePackingScan>('PackingScan');
-export interface CaptureStorageState {version:1;revision:string;lease:string|null;protectedWorkspace:boolean;}
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
-function storageState(value:CaptureStorageState){if(value?.version!==1||!uuid.test(value.revision)||value.lease!==null&&!uuid.test(value.lease)||typeof value.protectedWorkspace!=='boolean'||value.protectedWorkspace&&value.lease===null)throw new Error('The capture storage reply is invalid. Reload before unlocking.');return value;}
-export async function getCaptureStorageState():Promise<CaptureStorageState|undefined>{
-  if(!Capacitor.isNativePlatform()||Capacitor.getPlatform()!=='android'||!isScannerAvailable())return undefined;
-  try{return storageState(await PackingScan.getStorageState());}catch(error){if((error as {code?:string})?.code==='UNIMPLEMENTED')return undefined;throw error;}
-}
-export async function selectGuestCaptureStorage(revision:string){return storageState(await PackingScan.selectGuestStorage({revision}));}
-export async function openCaptureWorkspace(revision:string,workspaceId:string,accountId:string,raw:Uint8Array){
-  const keyBytes=Array.from(raw);
-  try{return storageState(await PackingScan.openWorkspaceStorage({revision,workspaceId,accountId,keyBytes}));}finally{keyBytes.fill(0);}
-}
-export async function lockCaptureStorage(revision:string){return storageState(await PackingScan.lockStorage({revision}));}
-export function onCaptureWorkspaceLocked(listener:(event:{lease:string})=>void){return PackingScan.addListener('captureWorkspaceLocked',listener);}
 
 /** Each mounted workspace keeps its own lease, including delayed callbacks after a switch. */
 export function captureClient(lease?:string){

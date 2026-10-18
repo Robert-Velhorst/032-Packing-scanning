@@ -5,7 +5,7 @@ import type { ScanCapabilities } from './contract';
 const unavailable: ScanCapabilities = {
   supported: false,
   platform: 'web',
-  reason: 'Guided 3D scanning is available only on supported mobile devices.',
+  reason: 'Checking guided scanning availability…',
 };
 
 export function useScannerCapabilities(): ScanCapabilities {

@@ -1,3 +1,4 @@
+import './WeatherLookup.css';
 import {useEffect,useRef,useState} from 'react';
 import type {Trip,UnitSystem} from '../types';
 import {isSavedWeather,placeLabel,reviewWeather,WEATHER_SOURCE,WEATHER_GEOCODING_SOURCE,type SavedWeather,type WeatherForecast,type WeatherPlace} from '../weather';
@@ -19,13 +20,12 @@ export function WeatherNotes({trip,unit,now=Date.now()}:{trip:Trip;unit:UnitSyst
   </section>;
 }
 export function WeatherLookup({trip,unit,onSave}:{trip:Trip;unit:UnitSystem;onSave:(weather:SavedWeather|undefined)=>void}){
-  const endpoint=weatherEndpoint(),now=useWeatherClock();
-  const [available,setAvailable]=useState<boolean|undefined>(),[query,setQuery]=useState(trip.destination),[places,setPlaces]=useState<WeatherPlace[]>([]),[selected,setSelected]=useState(''),[preview,setPreview]=useState<WeatherForecast>(),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[failed,setFailed]=useState(false);
+  const [query,setQuery]=useState(trip.destination),[places,setPlaces]=useState<WeatherPlace[]>([]),[selected,setSelected]=useState(''),[preview,setPreview]=useState<WeatherForecast>(),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[failed,setFailed]=useState(false);
+  const endpoint=weatherEndpoint(),now=useWeatherClock(Boolean(trip.weather||preview));
   const request=useRef<AbortController|undefined>(undefined);
-  useEffect(()=>{if(!endpoint)return;const controller=new AbortController();void fetchWeather(endpoint,'status',{},controller.signal).then(setAvailable).catch(()=>{if(!controller.signal.aborted)setAvailable(false);});return()=>controller.abort();},[endpoint]);
   useEffect(()=>()=>{request.current?.abort();request.current=undefined;},[]);
   async function lookup(action:'places'|'forecast'){
-    if(request.current||!endpoint||!available)return;
+    if(request.current||!endpoint)return;
     if(!navigator.onLine){setFailed(true);setMessage('You are offline. Saved weather remains available; refresh when connected.');return;}
     const controller=new AbortController();request.current=controller;setBusy(true);setFailed(false);setMessage(action==='places'?'Searching places…':'Retrieving a forecast for the chosen place…');
     const deadline=setTimeout(()=>controller.abort(),20000);
@@ -44,8 +44,8 @@ export function WeatherLookup({trip,unit,onSave}:{trip:Trip;unit:UnitSystem;onSa
   return <section className="weather-lookup" aria-label="Optional weather lookup">
     <div className="weather-heading"><div><p className="eyebrow">OPTIONAL TRIP CONTEXT</p><h2>Weather for your checklist</h2></div>{trip.weather&&<button className="button button-secondary" onClick={()=>{onSave(undefined);setMessage('Saved weather removed. Existing checklist items are unchanged.');}}>Remove saved weather</button>}</div>
     {!trip.packingOnly&&<><p>Search sends only the place text you enter to this app's weather service and Open-Meteo. Retrieving sends the selected place identity and coordinates. Dates, travellers, items and photos are not sent. Nothing is looked up automatically.</p>
-      {(!endpoint||available===false)&&<p className="weather-warning">Live weather is unavailable in this version or on this server. Saved forecasts remain usable offline, with their age and coverage shown.</p>}
-      <form onSubmit={event=>{event.preventDefault();void lookup('places');}} className="weather-search"><label className="field"><span>Place to look up</span><input value={query} maxLength={100} minLength={2} required disabled={busy} onChange={event=>{setQuery(event.target.value);setPlaces([]);setSelected('');setPreview(undefined);}} placeholder="City, country"/></label><button className="button button-secondary" disabled={busy||!endpoint||!available} type="submit">Search places</button></form>
+      {!endpoint&&<p className="weather-warning">Live weather is unavailable in this version. Saved forecasts remain usable offline, with their age and coverage shown.</p>}
+      <form onSubmit={event=>{event.preventDefault();void lookup('places');}} className="weather-search"><label className="field"><span>Place to look up</span><input value={query} maxLength={100} minLength={2} required disabled={busy} onChange={event=>{setQuery(event.target.value);setPlaces([]);setSelected('');setPreview(undefined);}} placeholder="City, country"/></label><button className="button button-secondary" disabled={busy||!endpoint} type="submit">Search places</button></form>
       {!!places.length&&<><label className="field"><span>Confirm exact place</span><select aria-label="Confirm exact place" value={selected} disabled={busy} onChange={event=>{setSelected(event.target.value);setPreview(undefined);}}><option value="">Choose a place…</option>{places.map(p=><option key={p.id} value={p.id}>{placeLabel(p)} · {p.timezone}</option>)}</select></label><button className="button button-secondary" disabled={busy||!selected} onClick={()=>void lookup('forecast')}>Retrieve forecast for this place</button></>}
     </>}
     {message&&<p role={failed?'alert':'status'} className={failed?'weather-warning':''}>{message}</p>}

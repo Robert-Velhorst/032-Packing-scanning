@@ -1,4 +1,4 @@
-import type { Trip } from './types.ts';
+import type { SeparationRule, Trip } from './types.ts';
 
 export const MAX_SEPARATION_RULES = 50;
 const text = (v: unknown) => typeof v === 'string' && v.trim().length > 0 && v.length <= 500;
@@ -21,4 +21,11 @@ export function separationRuleError(trip: Pick<Trip,'entries'|'separationRules'>
       : rule.clearanceMm !== undefined) return 'Record a finite positive geometric gap up to 10,000 mm only for a clearance rule.';
     if (rule.note !== undefined && (typeof rule.note !== 'string' || rule.note.length > 500)) return 'Keep the separation note within 500 characters.';
   }
+}
+
+export const entryHasSeparation = (trip: Pick<Trip,'separationRules'>,id: string) => trip.separationRules?.some(rule => rule.firstEntryId === id || rule.secondEntryId === id) ?? false;
+
+export function separationDescription(rule: SeparationRule,unit: 'metric'|'imperial'): string {
+  return rule.kind === 'different_bags' ? 'Different bags' : rule.kind === 'different_compartments' ? 'Different reviewed compartments or bags'
+    : `At least ${(rule.clearanceMm!/(unit==='metric'?1:25.4)).toLocaleString('en-GB',{maximumFractionDigits:3})} ${unit==='metric'?'mm':'in'} geometric gap`;
 }

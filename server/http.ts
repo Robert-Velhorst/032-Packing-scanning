@@ -2,12 +2,63 @@ import type { AccountApi } from './account-http.ts';
 import { createServer } from 'node:http';
 import { readFile, realpath } from 'node:fs/promises';
 import { resolve, sep, extname } from 'node:path';
+import { brotliCompress, constants as zlibConstants, gzip } from 'node:zlib';
 import type { CarrierService } from './carrier-service.ts';
 import type { WeatherService } from './weather-service.ts';
 
 const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.map': 'application/json' };
+type StaticEncoding = 'br' | 'gzip';
+const acceptedStaticEncoding = (header: string | undefined): StaticEncoding | undefined => {
+  const qualities = new Map<string, number>();
+  let wildcardQuality: number | undefined;
+  for (const encoding of header?.split(',') ?? []) {
+    const [name, ...parameters] = encoding.trim().toLowerCase().split(';').map(value => value.trim());
+    const qualityParameter = parameters.find(value => value.startsWith('q='));
+    const quality = qualityParameter === undefined ? 1 : Number(qualityParameter.slice(2));
+    const validQuality = Number.isFinite(quality) && quality >= 0 && quality <= 1 ? quality : 0;
+    if (name === 'br' || name === 'gzip') qualities.set(name, validQuality);
+    else if (name === '*') wildcardQuality = validQuality;
+  }
+  const brotliQuality = qualities.get('br') ?? wildcardQuality ?? 0;
+  const gzipQuality = qualities.get('gzip') ?? wildcardQuality ?? 0;
+  if (brotliQuality <= 0 && gzipQuality <= 0) return;
+  return brotliQuality >= gzipQuality ? 'br' : 'gzip';
+};
+const compressBuffer = (content: Buffer, encoding: StaticEncoding) => new Promise<Buffer>((resolve, reject) => {
+  const complete = (error: Error | null, compressed: Buffer) => error ? reject(error) : resolve(compressed);
+  if (encoding === 'br') brotliCompress(content, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 5 } }, complete);
+  else gzip(content, complete);
+});
 export function createAppServer(options: { dist: string; carrierService: CarrierService; weatherService?: WeatherService; allowedOrigins?: string[]; accountApi?: AccountApi }) {
   const root = resolve(options.dist), allowedOrigins = new Set(options.allowedOrigins ?? []);
+  const immutableAssetLimit = 8 * 1024 * 1024;
+  const immutableAssets = new Map<string, Buffer>();
+  const pendingImmutableAssetReads = new Map<string, Promise<Buffer>>();
+  let immutableAssetBytes = 0;
+  const readImmutableAsset = (path: string, encoding?: StaticEncoding): Promise<Buffer> => {
+    const cacheKey = encoding ? `${path}\0${encoding}` : path;
+    const cached = immutableAssets.get(cacheKey);
+    if (cached) {
+      immutableAssets.delete(cacheKey);
+      immutableAssets.set(cacheKey, cached);
+      return Promise.resolve(cached);
+    }
+    const pending = pendingImmutableAssetReads.get(cacheKey);
+    if (pending) return pending;
+    const read = (encoding ? readImmutableAsset(path).then(content => compressBuffer(content, encoding)) : readFile(path)).then((content) => {
+      if (content.byteLength > immutableAssetLimit) return content;
+      while (immutableAssetBytes + content.byteLength > immutableAssetLimit && immutableAssets.size) {
+        const oldestPath = immutableAssets.keys().next().value!;
+        immutableAssetBytes -= immutableAssets.get(oldestPath)!.byteLength;
+        immutableAssets.delete(oldestPath);
+      }
+      immutableAssets.set(cacheKey, content);
+      immutableAssetBytes += content.byteLength;
+      return content;
+    }).finally(() => pendingImmutableAssetReads.delete(cacheKey));
+    pendingImmutableAssetReads.set(cacheKey, read);
+    return read;
+  };
   let windowStart = Date.now(), requests = 0;
   return createServer(async (request, response) => {
     response.setHeader('X-Content-Type-Options', 'nosniff');
@@ -69,8 +120,21 @@ export function createAppServer(options: { dist: string; carrierService: Carrier
       const file = resolve(root, `.${pathname === '/' ? '/index.html' : pathname}`);
       const actual = await realpath(file);
       if (!actual.startsWith(`${root}${sep}`)) throw new Error('Outside static root');
-      const content = await readFile(actual);
-      response.writeHead(200, { 'Content-Type': TYPES[extname(actual)] ?? 'application/octet-stream', 'Cache-Control': /[.-][a-zA-Z0-9_-]{8,}\.(js|css)$/.test(actual) ? 'public, max-age=31536000, immutable' : 'no-cache' });
+      const immutable = /[.-][a-zA-Z0-9_-]{8,}\.(js|css)$/.test(actual);
+      let encoding = immutable ? acceptedStaticEncoding(request.headers['accept-encoding']) : undefined;
+      let content: Buffer;
+      try { content = immutable ? await readImmutableAsset(actual, encoding) : await readFile(actual); }
+      catch (error) {
+        if (!encoding) throw error;
+        encoding = undefined;
+        content = await readImmutableAsset(actual);
+      }
+      response.writeHead(200, {
+        'Content-Type': TYPES[extname(actual)] ?? 'application/octet-stream',
+        'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache',
+        ...(immutable ? { Vary: 'Accept-Encoding', 'Content-Length': String(content.byteLength) } : {}),
+        ...(encoding ? { 'Content-Encoding': encoding } : {}),
+      });
       response.end(request.method === 'HEAD' ? undefined : content);
     } catch { response.writeHead(404); response.end('Not found'); }
   });

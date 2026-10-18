@@ -6,7 +6,8 @@ import type { AppData } from '../types';
 import { HouseholdPanel } from './HouseholdPanel';
 import type { SharedPackSnapshot, SharedCopyWitness } from '../shared-packs';
 import type {SharedPackBaseline} from '../shared-pack-baseline';
-import {DeviceWorkspaceSetup,useDeviceWorkspace} from './DeviceWorkspace';
+import {useDeviceWorkspace} from './DeviceWorkspace';
+import {DeviceWorkspaceSetup} from './DeviceWorkspacePanels';
 
 const initial: PackingAccountState = { available: false, registrations: false, profile: null, csrf: null };
 export function AccountPanel({ data, onRestore, onOpenShared, onPublished }: { data: AppData; onRestore: (file: File) => Promise<boolean>; onOpenShared: (snapshot: SharedPackSnapshot,baseline?:SharedPackBaseline,witness?:SharedCopyWitness) => void; onPublished: (tripId: string,snapshot:SharedPackSnapshot,baseline:SharedPackBaseline) => void }) {

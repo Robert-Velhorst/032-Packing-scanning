@@ -6,7 +6,7 @@ import { packingItemForPlacement } from './packing-forms.ts';
 import { isValidRejectedPlacement } from './packing-progress.ts';
 
 import { separationRuleError } from './separation-rule-records.ts';
-export { separationRuleError, MAX_SEPARATION_RULES } from './separation-rule-records.ts';
+export { entryHasSeparation, separationDescription, separationRuleError, MAX_SEPARATION_RULES } from './separation-rule-records.ts';
 
 type ShapeItem = Pick<LibraryItem,'packingShape'>;
 
@@ -33,6 +33,7 @@ export function separationConflict(rule: SeparationRule,a: Placement,b: Placemen
 }
 
 export function placementSeparationError(candidate: Placement,positions: Placement[],rules: SeparationRule[],items: Map<string,ShapeItem>): string | undefined {
+  if(!rules.length)return;
   for (const other of positions) if (other.instanceId !== candidate.instanceId)
     for (const rule of rules) { const conflict = separationConflict(rule,candidate,other,items); if (conflict) return conflict; }
 }
@@ -62,13 +63,6 @@ export function separationPositions(bases: Array<{x:number;y:number;z:number}>,s
   return result;
 }
 
-export function separationDescription(rule: SeparationRule,unit: 'metric'|'imperial'): string {
-  return rule.kind === 'different_bags' ? 'Different bags' : rule.kind === 'different_compartments' ? 'Different reviewed compartments or bags'
-    : `At least ${(rule.clearanceMm!/(unit==='metric'?1:25.4)).toLocaleString('en-GB',{maximumFractionDigits:3})} ${unit==='metric'?'mm':'in'} geometric gap`;
-}
-
-/** Prevent entry deletion from silently dropping a hard separation requirement. */
-export const entryHasSeparation = (trip: Trip,id: string) => trip.separationRules?.some(rule => rule.firstEntryId === id || rule.secondEntryId === id) ?? false;
 export function validRuleCompartment(p: Placement,bags: Container[]): boolean {
   const bag=bags.find(b=>b.id===p.containerId),compartment=bag?.compartments?.find(c=>c.id===p.compartmentId);
   return !!compartment && p.compartmentKey===compartmentKey(compartment);

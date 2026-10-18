@@ -36,12 +36,24 @@ export function comparePackingPlan(trip: Trip, library: LibraryItem[], allBags: 
   const itemCounts = new Map<string, number>(), bagCounts = new Map<string, number>();
   for (const item of library) itemCounts.set(item.id, (itemCounts.get(item.id) ?? 0) + 1);
   for (const bag of allBags) bagCounts.set(bag.id, (bagCounts.get(bag.id) ?? 0) + 1);
+  const entriesByIdAndItem = new Map<string, Map<string, (typeof trip.entries)[number]>>();
+  for (const entry of trip.entries) {
+    let entriesByItem = entriesByIdAndItem.get(entry.id);
+    if (!entriesByItem) entriesByIdAndItem.set(entry.id, entriesByItem = new Map());
+    if (!entriesByItem.has(entry.itemId)) entriesByItem.set(entry.itemId, entry);
+  }
+  const placementsByBag = new Map<string, PackingPlan['placements']>();
+  for (const placement of plan.placements) {
+    let placements = placementsByBag.get(placement.containerId);
+    if (!placements) placementsByBag.set(placement.containerId, placements = []);
+    placements.push(placement);
+  }
   const selectedBags = allBags.filter(b => trip.containerIds.includes(b.id) && bagCounts.get(b.id) === 1);
   const bagIds = new Set(selectedBags.map(b => b.id)), records = new Map(library.map(item => [item.id, item]));
   const unresolved = unresolvedPackedBagCounts(selectedBags, plan.placements, trip.lockedPlacements);
   let preparationCount = 0, earlyAccessCount = 0, fragileCount = 0;
   const bags: ComparisonBag[] = selectedBags.map(bag => {
-    const placements = plan.placements.filter(p => p.containerId === bag.id), weight = emptyWeight();
+    const placements = placementsByBag.get(bag.id) ?? [], weight = emptyWeight();
     if (finiteWeight(bag.tareGrams)) {
       weight.minimumGrams = weight.maximumGrams = bag.tareGrams;
       if (!sourceReviewed(bag.tareEvidence)) { weight.estimated = true; weight.lowerConfidenceCount++; }
@@ -49,7 +61,7 @@ export function comparePackingPlan(trip: Trip, library: LibraryItem[], allBags: 
     weight.unresolvedPackedCount = unresolved.get(bag.id) ?? 0;
     for (const placement of placements) {
       const item = itemCounts.get(placement.itemId) === 1 ? packingItemForPlacement(records.get(placement.itemId), placement) : undefined;
-      const entry = trip.entries.find(e => e.id === placement.entryId && e.itemId === placement.itemId);
+      const entry = entriesByIdAndItem.get(placement.entryId)?.get(placement.itemId);
       if (placement.packingFormId) preparationCount++;
       if (entry && entry.accessPriority >= 4) earlyAccessCount++;
       if (item?.fragile) fragileCount++;

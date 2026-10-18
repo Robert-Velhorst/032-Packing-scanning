@@ -3,17 +3,17 @@ import {RecognitionReview} from './RecognitionReview';
 import type {ItemRecognition} from '../scanning/recognition';
 import { changedPropertyEvidence, handlingEvidenceError } from '../property-evidence';
 import { PropertyEvidenceFields } from './PropertyEvidenceFields';
-import { topLoadError } from '../stack-load';
+import { topLoadError } from '../stack-load-records';
 import { packingFormsError } from '../packing-forms';
 import { PackingFormFields } from './PackingFormFields';
-import { SavedScanPreview } from './SavedScanPreview';
 import { PackingShapeCard } from './PackingShapeCard';
 import { packingShapeError } from '../packing-geometry';
 import type { PackingShape, PackingForm } from '../types';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Camera, ImagePlus, Ruler, ScanLine, X } from 'lucide-react';
 import type { Evidence, EvidenceSource, Flexibility, ItemCategory, LibraryItem, ScaleCalibration, UnitSystem } from '../types';
 import { useDeviceWorkspace } from './DeviceWorkspace';
+import { useScannerCapabilities } from '../scanning/useScannerCapabilities';
 import { calibrateLongestEdge } from '../scanning/calibration';
 import type { ReconstructedGeometry } from '../scanning/reconstructed-solid';
 import type { SavedGeometryPreview } from '../scanning/saved-geometry';
@@ -21,15 +21,14 @@ import type { ScanRecord } from '../types';
 import type {ItemEditorDraft} from '../item-photo-draft';
 import type {TripSuggestion} from '../trip-assistant';
 
+const SavedScanPreview = lazy(() => import('./SavedScanPreview').then(module => ({ default: module.SavedScanPreview })));
+
 export type ItemDraft = Omit<LibraryItem, 'id' | 'createdAt' | 'updatedAt'>;
 
 interface Props {
   initial?: LibraryItem;
   suggestedItem?: { name: string; category: ItemCategory };
   unit: UnitSystem;
-  scanSupported: boolean;
-  recognitionSupported?:boolean;
-  scanUnavailableReason?: string;
   existingPhotoUrl?: string;
   resumed?:ItemEditorDraft;
   resumedPhoto?:Blob;
@@ -44,9 +43,13 @@ const evidenceLabels: Record<EvidenceSource, string> = {
   measured: 'Measured by you', known: 'Known product dimensions', estimated: 'Estimate', user_confirmed: 'Confirmed by you', provider: 'Verified provider record',
 };
 
-export function ItemCapture({ initial, suggestedItem, unit, scanSupported, recognitionSupported, scanUnavailableReason, existingPhotoUrl, resumed, resumedPhoto, sourceTripId, suggestion, onPhotoStaged, onClose, onSave }: Props) {
+export function ItemCapture({ initial, suggestedItem, unit, existingPhotoUrl, resumed, resumedPhoto, sourceTripId, suggestion, onPhotoStaged, onClose, onSave }: Props) {
   const device=useDeviceWorkspace();
   const {deleteScanCapture,scanObject}=device.capture;
+  const scanCapabilities=useScannerCapabilities();
+  const scanSupported=scanCapabilities.supported;
+  const recognitionSupported=scanSupported&&scanCapabilities.platform==='android'&&scanCapabilities.recognitionSupported===true;
+  const scanUnavailableReason=scanCapabilities.reason;
   const [name, setName] = useState(resumed?.name ?? (initial?.name ?? suggestedItem?.name ?? ''));
   const [category, setCategory] = useState<ItemCategory>(resumed?.category ?? (initial?.category ?? suggestedItem?.category ?? 'other'));
   const showLength = (value: number) => measurementInput(value, unit === 'metric' ? 1 : 25.4);
@@ -258,7 +261,7 @@ export function ItemCapture({ initial, suggestedItem, unit, scanSupported, recog
             {recognition&&<RecognitionReview result={recognition} onChoose={(nextName,nextCategory)=>{setName(nextName);setCategory(nextCategory);setRecognition(undefined);}} onDismiss={()=>setRecognition(undefined)}/>}
             <label className="field"><span>Item name</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Travel adapter" maxLength={80}/></label>
             <label className="field"><span>Category</span><select value={category} onChange={(event) => setCategory(event.target.value as ItemCategory)}>{[['clothing','Clothing'],['footwear','Footwear'],['electronics','Electronics'],['toiletries','Toiletries'],['medicine','Medicine'],['documents','Documents'],['accessories','Accessories'],['other','Other']].map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
-            <div className="field-block"><div className="field-heading"><span>Size · {unit === 'metric' ? 'millimetres' : 'inches'}</span><Ruler size={15}/></div><button className="button button-secondary scan-size-button" type="button" onClick={captureDimensions} disabled={!scanSupported || scanning}><ScanLine size={16}/>{scanning ? 'Scanning…' : 'Scan size'}</button>{!scanSupported && <small className="scan-availability">{scanUnavailableReason ?? 'Guided 3D capture is not available on this device.'}</small>}{scan && <><small className="scan-availability">{scan.modelStoredLocally ? 'Original scan points are recorded on this device. Saved shape boundaries remain estimates.' : 'Saved scan details and measurements remain; original scan points are unavailable. Adopted shape boundaries remain estimates.'}</small><div className="scan-calibration"><p>To set the scan scale, measure the item's longest edge and enter that length here. The other shape boundaries remain estimates.</p><label className="field"><span>Measured longest edge · {unit === 'metric' ? 'millimetres' : 'inches'}</span><input aria-label="Measured longest edge" inputMode="decimal" type="number" min="0.1" max={unit === 'metric' ? 10000 : 393.7} step="any" value={scaleReference} onChange={(event) => setScaleReference(event.target.value)} placeholder={unit === 'metric' ? 'e.g. 250' : 'e.g. 9.8'}/></label><button className="button button-secondary" type="button" onClick={calibrateScale} disabled={!scaleReference}>Calibrate scan scale</button>{scaleCalibration && !scanDimensionsEdited && <small className="scan-availability">Scale calibrated from your measured edge; confirm the remaining sides before relying on fit.</small>}</div><SavedScanPreview key={scan.id} record={scan} onAdopt={adoptShape}/><button className="text-button" type="button" onClick={removeScan}>Remove saved 3D scan</button></>}{<div className="dimension-fields">{([['length','Length',length,setLength],['width','Width',width,setWidth],['height','Height',height,setHeight]] as const).map(([axis,label,value,setter]) => <label className="field" key={axis}><span>{label}</span><input aria-label={label} inputMode="decimal" type="number" min="0.1" max="10000" step="any" value={value} onChange={(event) => editDimension(axis,setter,event.target.value)}/></label>)}</div>}<label className="field evidence-field"><span>How do you know the size?</span><select value={dimensionSource} onChange={(event) => setDimensionSource(event.target.value as EvidenceSource)}>{(['measured','known','estimated','user_confirmed'] as EvidenceSource[]).map((source) => <option key={source} value={source}>{evidenceLabels[source]}</option>)}</select></label></div>
+            <div className="field-block"><div className="field-heading"><span>Size · {unit === 'metric' ? 'millimetres' : 'inches'}</span><Ruler size={15}/></div><button className="button button-secondary scan-size-button" type="button" onClick={captureDimensions} disabled={!scanSupported || scanning}><ScanLine size={16}/>{scanning ? 'Scanning…' : 'Scan size'}</button>{!scanSupported && <small className="scan-availability">{scanUnavailableReason ?? 'Guided 3D capture is not available on this device.'}</small>}{scan && <><small className="scan-availability">{scan.modelStoredLocally ? 'Original scan points are recorded on this device. Saved shape boundaries remain estimates.' : 'Saved scan details and measurements remain; original scan points are unavailable. Adopted shape boundaries remain estimates.'}</small><div className="scan-calibration"><p>To set the scan scale, measure the item's longest edge and enter that length here. The other shape boundaries remain estimates.</p><label className="field"><span>Measured longest edge · {unit === 'metric' ? 'millimetres' : 'inches'}</span><input aria-label="Measured longest edge" inputMode="decimal" type="number" min="0.1" max={unit === 'metric' ? 10000 : 393.7} step="any" value={scaleReference} onChange={(event) => setScaleReference(event.target.value)} placeholder={unit === 'metric' ? 'e.g. 250' : 'e.g. 9.8'}/></label><button className="button button-secondary" type="button" onClick={calibrateScale} disabled={!scaleReference}>Calibrate scan scale</button>{scaleCalibration && !scanDimensionsEdited && <small className="scan-availability">Scale calibrated from your measured edge; confirm the remaining sides before relying on fit.</small>}</div><Suspense fallback={<div role="status">Opening saved scan preview…</div>}><SavedScanPreview key={scan.id} record={scan} onAdopt={adoptShape}/></Suspense><button className="text-button" type="button" onClick={removeScan}>Remove saved 3D scan</button></>}{<div className="dimension-fields">{([['length','Length',length,setLength],['width','Width',width,setWidth],['height','Height',height,setHeight]] as const).map(([axis,label,value,setter]) => <label className="field" key={axis}><span>{label}</span><input aria-label={label} inputMode="decimal" type="number" min="0.1" max="10000" step="any" value={value} onChange={(event) => editDimension(axis,setter,event.target.value)}/></label>)}</div>}<label className="field evidence-field"><span>How do you know the size?</span><select value={dimensionSource} onChange={(event) => setDimensionSource(event.target.value as EvidenceSource)}>{(['measured','known','estimated','user_confirmed'] as EvidenceSource[]).map((source) => <option key={source} value={source}>{evidenceLabels[source]}</option>)}</select></label></div>
             <div className="mass-row"><label className="field"><span>Weight · {unit === 'metric' ? 'grams' : 'ounces'} <em>optional</em></span><input inputMode="decimal" type="number" min="0.1" max="100000" step="any" value={mass} onChange={(event) => setMass(event.target.value)} placeholder="Add a weight"/></label>{mass && <label className="field"><span>Weight source</span><select value={massSource} onChange={(event) => setMassSource(event.target.value as EvidenceSource)}>{(['measured','known','estimated','user_confirmed'] as EvidenceSource[]).map((source) => <option key={source} value={source}>{evidenceLabels[source]}</option>)}</select></label>}</div>
           </div>
         </div>

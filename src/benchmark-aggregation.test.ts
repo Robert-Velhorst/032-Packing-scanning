@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { access, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { aggregateBenchmarks, aggregateMarkdown } from './benchmark-aggregation';
 import { newBenchmarkDataset, parseBenchmarkSource } from './physical-benchmarks';
+import { createTestTempDirectory } from './test-temp.ts';
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 const at = (seconds: number) => new Date(Date.UTC(2026, 9, 1, 0, 0, seconds)).toISOString();
 function fixture(id = 'one', offset = 0) {
@@ -119,7 +119,7 @@ describe('local aggregate command', () => {
     const file = join(root, id + '-trial.json'); await writeFile(file, JSON.stringify(f.dataset)); return file;
   }
   it('verifies all artifacts, writes actual aggregate outputs and preserves input bytes and existing output', async () => {
-    const root = await mkdtemp(join(tmpdir(), '032-aggregate-')), a = await bundle(root, 'one', 0), b = await bundle(root, 'two', 100), before = await readFile(a), out = join(root, 'result');
+    const root = await createTestTempDirectory('032-aggregate-'), a = await bundle(root, 'one', 0), b = await bundle(root, 'two', 100), before = await readFile(a), out = join(root, 'result');
     const result = run(['aggregate', out, a, b]); expect(result.status, result.stderr).toBe(0);
     const r = JSON.parse(await readFile(join(out, 'aggregate.json'), 'utf8')); expect(r.runCount).toBe(2); expect(r.artifactsVerified).toHaveLength(2); expect(r.declaredArtifactsVerified).toBe(true);
     expect(r.evidenceSummaries[0].scanAttempts.attempted).toBe(0); expect(r.evidenceSummaries[1].scanAttempts.attempted).toBe(2);
@@ -127,7 +127,7 @@ describe('local aggregate command', () => {
     expect(run(['aggregate', out, a, b]).status).toBe(1); expect(await readFile(join(out, 'aggregate.json'))).toEqual(old);
   }, 30000);
   it('fails before creating output when a later artifact changes or duplicate packet is selected', async () => {
-    const root = await mkdtemp(join(tmpdir(), '032-aggregate-invalid-')), a = await bundle(root, 'one', 0), b = await bundle(root, 'two', 100);
+    const root = await createTestTempDirectory('032-aggregate-invalid-'), a = await bundle(root, 'one', 0), b = await bundle(root, 'two', 100);
     const duplicate = join(root, 'duplicate'); expect(run(['aggregate', duplicate, a, a]).status).toBe(1); await expect(access(duplicate)).rejects.toThrow();
     await writeFile(join(root, 'two-plan.txt'), 'Changed evidence'); const out = join(root, 'tampered');
     const r = run(['aggregate', out, a, b]); expect(r.status).toBe(1); expect(r.stderr).toContain('hash mismatch'); await expect(access(out)).rejects.toThrow();

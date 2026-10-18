@@ -1,0 +1,23 @@
+
+.carrier-lookup { background:#fff; border:1px solid #d5e1d6; border-radius:16px; padding:24px; margin:24px 0; }
+.carrier-lookup-heading { display:flex; justify-content:space-between; gap:18px; align-items:center; }
+.carrier-lookup h2 { margin:5px 0; font-size:22px; }
+.carrier-lookup p, .carrier-provenance p { font-size:14px; line-height:1.6; }
+.carrier-lookup-heading .button, .retrieved-allowance .button { min-height:48px; }
+.carrier-lookup .field { margin:18px 0; }
+.carrier-lookup select { min-height:48px; max-width:100%; }
+.carrier-lookup-warning { background:#fff4df; border-left:3px solid #9b641d; padding:12px; color:#694617; }
+.carrier-lookup-message { background:#f0f6ef; padding:12px; }
+.retrieved-allowance { padding:18px; background:#f5f8f4; border:1px solid #dbe6d9; border-radius:10px; }
+.retrieved-allowance h3 { margin-top:0; }
+.retrieved-limits { font-weight:700; }
+.retrieved-allowance small { display:block; margin-top:12px; line-height:1.6; }
+.carrier-lookup > .text-button { margin-top:16px; min-height:48px; }
+.carrier-provenance { border-left:3px solid #819780; padding:12px; margin:12px 0; background:#f3f6f1; }
+.carrier-provenance span { display:block; margin-top:6px; font-size:12px; }
+.carrier-provenance small { line-height:1.5; }
+@media(max-width:620px) {
+  .carrier-lookup { padding:18px; }
+  .carrier-lookup-heading { flex-direction:column; align-items:stretch; }
+  .carrier-lookup select { width:100%; font-size:14px; }
+}
