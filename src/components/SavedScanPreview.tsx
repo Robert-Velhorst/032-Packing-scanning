@@ -22,16 +22,17 @@ export function SavedScanPreview({ record,onAdopt,onAdoptInterior }: { record: S
   const [reconstructedTopViewOpened,setReconstructedTopViewOpened]=useState(false);
   const [preview,setPreview]=useState<SavedGeometryPreview>();
   const [viewerNearViewport,setViewerNearViewport]=useState(false);
+  const [show3d,setShow3d]=useState(false);
   const [busy,setBusy]=useState(false), [error,setError]=useState('');
   const active=useRef(true), request=useRef(0);
   const viewerRef=useRef<HTMLDivElement>(null);
   useEffect(() => {active.current=true;return()=>{active.current=false;request.current++;};},[]);
-  useEffect(() => {request.current++;setPreview(undefined);setViewerNearViewport(false);setReconstruction(undefined);setSurfaceMode(false);setError('');setBusy(false);},[record.id]);
+  useEffect(() => {request.current++;setPreview(undefined);setShow3d(false);setViewerNearViewport(false);setReconstruction(undefined);setSurfaceMode(false);setError('');setBusy(false);},[record.id]);
   useEffect(() => {
     const element=viewerRef.current;
-    if(!preview||!element)return;
+    if(!preview||!show3d||!element)return;
     return observeNearViewport(element,isNearViewport=>{if(isNearViewport)setViewerNearViewport(true);},'160px 0px');
-  },[preview]);
+  },[preview,show3d]);
   const load=async()=>{
     if(busy)return;
     const token=++request.current;setBusy(true);setError('');
@@ -62,15 +63,16 @@ export function SavedScanPreview({ record,onAdopt,onAdoptInterior }: { record: S
         {reconstruction&&onAdopt&&<button className="button button-secondary" type="button" disabled={busy} onClick={()=>{try{onAdopt(reconstruction,preview);setError('');}catch(reason){setError(reason instanceof Error?reason.message:'The shape could not be adopted.');}}}>Use estimated shape in plan</button>}
         {reconstruction&&<><p className="reconstruction-summary">{reconstruction.solid.occupiedCells.length.toLocaleString()} occupied cells · {reconstruction.solid.resolutionMm} mm cell spacing · {(reconstruction.surface.volumeMm3/1e6).toFixed(3)} litres of reconstructed cells. This is estimated occupied volume, not measured capacity or usable bag space.</p><div className="surface-view-switch"><button type="button" aria-pressed={!surfaceMode} onClick={()=>setSurfaceMode(false)}>Original points</button><button type="button" aria-pressed={surfaceMode} onClick={()=>setSurfaceMode(true)}>Reconstructed surface</button></div>{reconstruction.solid.warnings.map(w=><p className="scan-geometry-caution" key={w}>{w}</p>)}<details onToggle={event=>{if(event.currentTarget.open)setReconstructedTopViewOpened(true);}}><summary>Reconstructed top view and details</summary>{reconstructedTopViewOpened&&<SolidTopView geometry={reconstruction}/>}<p>{reconstruction.surface.faceCount.toLocaleString()} outward boundary faces; closed edge and vertex-fan checks passed. Those checks establish mesh topology, not physical completeness. Top view projects occupied cells at every height; check the 3D view for vertical recesses.</p></details></>}
       </div>}
+      {show3d ? <><button className="text-button" type="button" onClick={()=>setShow3d(false)}>Close interactive 3D view</button>
       <div className="saved-scan-viewer-slot" ref={viewerRef}>
         {viewerNearViewport
           ? <Suspense fallback={<p role="status">Opening 3D scan view…</p>}><ScanCloudCanvas preview={preview} reconstruction={surfaceMode?reconstruction:undefined}/></Suspense>
           : <p className="saved-scan-viewer-placeholder" role="status">3D scan view will open as you reach it.</p>}
-      </div>
+      </div></> : <button className="button button-secondary" type="button" onClick={()=>setShow3d(true)}>Open interactive 3D view</button>}
       {record.target==='container_interior'&&onAdoptInterior&&<InteriorScanReview key={preview.sourceHash} record={record} source={preview} onAdopt={onAdoptInterior}/>}
       <details onToggle={event=>{if(event.currentTarget.open)setSourceTopViewOpened(true);}}><summary>Top view and source details</summary>{sourceTopViewOpened&&<ScanCloudTopView preview={preview}/>}<p>{preview.samplePointCount.toLocaleString()} displayed points from {preview.pointCount.toLocaleString()} saved points. Green points are observed surfaces; the outline is their rectangular envelope.</p><p>{preview.envelope.paddingMm?`${preview.envelope.paddingMm} mm sampling margin on each face; this does not bound sensor error or unseen surfaces.`:'This older capture uses its original camera-aligned envelope, with no added sampling margin.'} Sorted envelope sides do not establish which side must remain upright.</p></details>
       {record.target==='container_interior'&&<p className="scan-geometry-caution">Scanned walls do not establish free usable space. Check wheel/handle intrusions, corners, the floor and the opening with physical measurements.</p>}
-      <button className="text-button" type="button" onClick={()=>{request.current++;setPreview(undefined);setViewerNearViewport(false);setReconstruction(undefined);setSurfaceMode(false);setError('');setBusy(false);}}>Close geometry review</button>
+      <button className="text-button" type="button" onClick={()=>{request.current++;setPreview(undefined);setShow3d(false);setViewerNearViewport(false);setReconstruction(undefined);setSurfaceMode(false);setError('');setBusy(false);}}>Close geometry review</button>
     </>}
   </section>;
 }
