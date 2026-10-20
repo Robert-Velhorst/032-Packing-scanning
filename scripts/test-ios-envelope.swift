@@ -66,6 +66,20 @@ import simd
         precondition(capture.envelope != nil && capture.depthQuality == quality)
         let restored = try PackingPointCapture.restore(captureID: capture.id, metadata: capture.metadata, points: capture.points, now: Date())
         precondition(restored.envelope!.dimensionsMm == capture.envelope!.dimensionsMm)
+        var lowerConfidence = capture.points
+        let payload = lowerConfidence.range(of: Data("end_header\n".utf8))!.upperBound
+        var confidenceBits = Float(0.9).bitPattern.littleEndian
+        withUnsafeBytes(of: &confidenceBits) { lowerConfidence.replaceSubrange((payload+12)..<(payload+16), with: $0) }
+        refuses("Probability-like point confidence must not become ARKit categorical-high data") {
+            _ = try PackingPointCapture.complete(target: .item, points: lowerConfidence, now: Date(), depthQuality: quality)
+        }
+        let lowerGeneric = try PackingPointCapture.complete(target: .item, points: lowerConfidence, now: Date())
+        var forged = try JSONSerialization.jsonObject(with: capture.metadata) as! [String: Any]
+        forged["sourceSHA256"] = lowerGeneric.sourceSHA256
+        let forgedMetadata = try JSONSerialization.data(withJSONObject: forged)
+        refuses("Even matching hash/bounds must not reinterpret a probability as a high-category flag") {
+            _ = try PackingPointCapture.restore(captureID: capture.id, metadata: forgedMetadata, points: lowerConfidence, now: Date())
+        }
         for field in ["sensor", "method", "basis", "paddingMm", "dimensionsMm", "quality"] {
             var object = try JSONSerialization.jsonObject(with: capture.metadata) as! [String: Any]
             var depth = object["depth"] as! [String: Any]

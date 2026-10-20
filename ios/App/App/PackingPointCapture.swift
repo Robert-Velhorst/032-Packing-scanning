@@ -53,7 +53,7 @@ struct PackingPointCapture: Sendable {
     }
 
     static func complete(target: Target, points: Data, now: Date, depthQuality: DepthQuality? = nil) throws -> PackingPointCapture {
-        let decoded = try decodePoints(points), count = decoded.count
+        let decoded = try decodePoints(points, highCategoryOnly: depthQuality != nil), count = decoded.count
         if let depthQuality, !depthQuality.valid(pointCount: count) { throw PackingPointCaptureError.invalidMetadata }
         let envelope = try depthQuality.map { _ in try PackingScanEnvelope.fit(decoded) }
         let depth = envelope.map { DepthMetadata(sensor: "arkit_scene_depth", quality: depthQuality!, method: PackingScanEnvelope.method,
@@ -72,7 +72,7 @@ struct PackingPointCapture: Sendable {
             throw PackingPointCaptureError.invalidMetadata
         }
         let provenance = try JSONDecoder().decode(Provenance.self, from: metadata)
-        let decoded = try decodePoints(points)
+        let decoded = try decodePoints(points, highCategoryOnly: provenance.depth != nil)
         guard (provenance.version == 1 && provenance.depth == nil || provenance.version == 2 && provenance.depth != nil), provenance.id == captureID,
               provenance.format == "ply_point_cloud", provenance.units == "metres",
               provenance.coordinateFrame == "capture_local_right_handed",
@@ -109,7 +109,7 @@ struct PackingPointCapture: Sendable {
     }
 
     /** Bounded binary PLY dialect shared with Android's native depth writer. */
-    private static func decodePoints(_ data: Data) throws -> [SIMD3<Double>] {
+    private static func decodePoints(_ data: Data, highCategoryOnly: Bool = false) throws -> [SIMD3<Double>] {
         guard data.count <= 8_000_000,
               let range = data.prefix(4096).range(of: Data("end_header\n".utf8)) else {
             throw PackingPointCaptureError.invalidPoints
@@ -153,6 +153,7 @@ struct PackingPointCapture: Sendable {
                   index % 4 == 3 ? (value >= 0.8 && value <= 1) : abs(value) <= 1.5 else {
                 throw PackingPointCaptureError.invalidPoints
             }
+            if index % 4 == 3 && highCategoryOnly && value != 1 { throw PackingPointCaptureError.invalidPoints }
             if index % 4 < 3 { position[index % 4] = Double(value) }
             else { decoded.append(position) }
         }
