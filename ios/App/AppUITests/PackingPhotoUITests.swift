@@ -5,13 +5,25 @@ import ImageIO
 final class PackingPhotoUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
+    @MainActor private func retainFailure(_ app: XCUIApplication) {
+        if let testRun, testRun.hasSucceeded { return }
+        let screen = XCTAttachment(screenshot: app.screenshot()); screen.name = "Failure screen"; screen.lifetime = .keepAlways; add(screen)
+        let tree = XCTAttachment(string: app.debugDescription); tree.name = "Failure accessibility tree"; tree.lifetime = .keepAlways; add(tree)
+    }
+
     @MainActor private func tapWeb(_ name: String, app: XCUIApplication) {
         let query = app.webViews.buttons.matching(identifier: name)
         XCTAssertTrue(query.firstMatch.waitForExistence(timeout: 30), "Missing web button: \(name)")
         let done = app.toolbars.buttons["Done"].firstMatch
         if app.keyboards.count > 0, done.exists, done.isHittable { done.tap() }
         for _ in 0..<8 {
-            if let button = query.allElementsBoundByIndex.first(where: { $0.isHittable }) {
+            // WebKit can throw while computing hittability for a zoomed/offscreen
+            // element. Check its screen bounds before asking accessibility to hit-test.
+            let visible = app.frame.insetBy(dx: 2, dy: 2)
+            if let button = query.allElementsBoundByIndex.first(where: {
+                let frame = $0.frame
+                return !frame.isEmpty && visible.contains(CGPoint(x: frame.midX, y: frame.midY)) && $0.isHittable
+            }) {
                 XCTAssertTrue(button.isEnabled, "Disabled web button: \(name)"); button.tap(); return
             }
             if query.firstMatch.frame.midY > app.webViews.firstMatch.frame.midY { app.webViews.firstMatch.swipeUp() }
@@ -68,6 +80,7 @@ final class PackingPhotoUITests: XCTestCase {
     }
     @MainActor func testLibraryCancellationPreservesUnsavedDraft() {
         let app = XCUIApplication(bundleIdentifier: "com.packingscanning.app"), name = "Cancelled photo QA " + String(UUID().uuidString.prefix(8))
+        defer { retainFailure(app) }
         launchGuest(app); prepareDraft(String(name), app: app)
         tapWeb("Choose reference photo", app: app); cancelSystemPicker(app)
         resumeDraft(String(name), app: app)
@@ -79,9 +92,15 @@ final class PackingPhotoUITests: XCTestCase {
     }
     @MainActor func testSelectedPhotoSavesAndReloadsThroughRealBridge() {
         let app = XCUIApplication(bundleIdentifier: "com.packingscanning.app"), name = "Saved photo QA " + String(UUID().uuidString.prefix(8))
+        defer { retainFailure(app) }
         launchGuest(app); prepareDraft(String(name), app: app); tapWeb("Choose reference photo", app: app)
-        let cell = app.collectionViews.cells.firstMatch
-        XCTAssertTrue(cell.waitForExistence(timeout: 30), "Seeded simulator photo is missing"); cell.tap()
+        // iOS 26 exposes PHPicker thumbnails as images, not collection cells.
+        // The fresh simulator also includes six old sample images. Match today's
+        // imported fixture explicitly and still verify its red pixels after save.
+        let date = DateFormatter(); date.locale = Locale(identifier: "en_US"); date.dateFormat = "MMMM dd"
+        let fixture = app.images.matching(NSPredicate(format: "identifier == %@ AND label BEGINSWITH %@",
+            "PXGGridLayout-Info", "Photo, " + date.string(from: Date()) + ",")).firstMatch
+        XCTAssertTrue(fixture.waitForExistence(timeout: 30), "Today's seeded simulator photo is missing"); fixture.tap()
         let add = app.navigationBars.buttons["Add"].firstMatch
         if add.waitForExistence(timeout: 2), add.isHittable { add.tap() }
         resumeDraft(String(name), app: app); assertRedReference(app)
@@ -97,12 +116,22 @@ final class PackingPhotoUITests: XCTestCase {
     }
     @MainActor func testCameraCancellationOrUnavailabilityPreservesUnsavedDraft() {
         let app = XCUIApplication(bundleIdentifier: "com.packingscanning.app"), name = "Camera photo QA " + String(UUID().uuidString.prefix(8))
+        defer { retainFailure(app) }
         launchGuest(app); prepareDraft(String(name), app: app); tapWeb("Take reference photo", app: app)
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        let deny = springboard.alerts.buttons.matching(NSPredicate(format: "label == %@ OR label == %@", "Don't Allow", "Don’t Allow")).firstMatch
-        if deny.waitForExistence(timeout: 5) { deny.tap() }
-        let cancel = app.buttons["packing.camera.cancel"]
-        if cancel.waitForExistence(timeout: 5), cancel.isHittable { cancel.tap() }
+        let denied = NSPredicate(format: "label == %@ OR label == %@", "Don't Allow", "Don’t Allow")
+        let appDeny = app.alerts.buttons.matching(denied).firstMatch
+        let systemDeny = springboard.alerts.buttons.matching(denied).firstMatch
+        // Permission alerts may belong to the app or SpringBoard. A simulator
+        // without a camera may instead immediately return the recovery receipt.
+        for _ in 0..<30 {
+            if app.webViews.buttons["Resume item photo draft"].exists { break }
+            if appDeny.exists { appDeny.tap(); break }
+            if systemDeny.exists { systemDeny.tap(); break }
+            let cancel = app.buttons["packing.camera.cancel"]
+            if cancel.exists, cancel.isHittable { cancel.tap(); break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
         resumeDraft(String(name), app: app)
         XCTAssertFalse(app.webViews.images["Item reference"].exists)
         tapWeb("Close", app: app); XCTAssertFalse(app.webViews.staticTexts[String(name)].exists)
@@ -110,6 +139,7 @@ final class PackingPhotoUITests: XCTestCase {
     }
     @MainActor func testBackupDestinationCancellationDoesNotReportSaved() {
         let app = XCUIApplication(bundleIdentifier: "com.packingscanning.app")
+        defer { retainFailure(app) }
         launchGuest(app); tapWeb("Settings", app: app); tapWeb("Save backup file", app: app)
         cancelSystemPicker(app)
         let cancelled = app.webViews.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Backup saving cancelled.")).firstMatch

@@ -204,6 +204,8 @@ jobs:
           path: |
             ${{ runner.temp }}/packing-ios-ui.*/photo-ui.xcresult
             ${{ runner.temp }}/packing-ios-ui.*/photo-ui.log
+            ${{ runner.temp }}/packing-ios-ui.*/attachments
+            ${{ runner.temp }}/packing-ios-ui.*/attachments-export.log
           retention-days: 7
           if-no-files-found: ignore
       - name: Preserve native build diagnostics

@@ -27,6 +27,11 @@ NODE
       echo 'Simulator ownership could not be confirmed; preserving it.' >&2
     fi
   fi
+  # Export readable failure screenshots/trees using this runner's Xcode tools.
+  if [[ -d "$task_scratch/photo-ui.xcresult" ]]; then
+    xcrun xcresulttool export attachments --path "$task_scratch/photo-ui.xcresult" \
+      --output-path "$task_scratch/attachments" > "$task_scratch/attachments-export.log" 2>&1 || true
+  fi
   # Keep this invocation's synthetic fixtures/log/xcresult for CI artifact upload.
 }
 trap cleanup EXIT
