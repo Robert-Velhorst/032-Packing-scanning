@@ -5,7 +5,9 @@ import simd
 enum PackingDepthSourceError: Error { case invalidFrame, stopped, incomplete, wrongWorkspace }
 
 /** In-memory LiDAR source. Serialized by its lock and the original revocable authority. */
-final class PackingDepthSource {
+// Swift cannot infer NSLock isolation. Every mutable source field is accessed under lock;
+// operations acquire the original authority before that lock, never in the reverse order.
+final class PackingDepthSource: @unchecked Sendable {
     struct Status {
         let pointCount: Int
         let acceptedFrames: Int

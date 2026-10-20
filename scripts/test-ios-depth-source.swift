@@ -135,6 +135,30 @@ import simd
                 imageSize: SIMD2(192, 144), cameraToWorld: pose(0), timestamp: 1, trackingNormal: true)
         }
         for extent in [Float(0), 1.501, .nan] { refuses("Invalid capture bounds") { _ = try source(extent) } }
+        let concurrent = try source()
+        for (offset, angle) in [Float(0), 0, 35, 35, 70, 70].enumerated() {
+            _ = try ingest(concurrent, timestamp: Double(offset + 1), degrees: angle)
+        }
+        try concurrent.freezeForReview()
+        DispatchQueue.concurrentPerform(iterations: 100) { index in
+            do {
+                if index % 2 == 0 { let value = try concurrent.status(); precondition(value.readinessIssue == nil) }
+                else { let value = try concurrent.preview(); precondition(value.points.count <= 2000) }
+            } catch { preconditionFailure("Concurrent frozen read failed: \(error)") }
+        }
+        DispatchQueue.concurrentPerform(iterations: 16) { _ in
+            do {
+                let independent = try store.savePointCapture(target: .item, points: saved.points)
+                let read = try store.readPointCapture(captureID: independent.id)
+                precondition(read.sourceSHA256 == saved.sourceSHA256)
+                let deleted = try store.delete(captureID: independent.id); precondition(deleted)
+            } catch { preconditionFailure("Concurrent store round trip failed: \(error)") }
+        }
+        DispatchQueue.concurrentPerform(iterations: 100) { index in
+            if index % 5 == 0 { concurrent.cancel() }
+            else { _ = try? concurrent.preview(); _ = try? concurrent.status() }
+        }
+        refuses("Concurrent cancellation ends source") { _ = try concurrent.status() }
         let stale = try source(); _ = try ingest(stale, timestamp: 1)
         let before = try manager.contentsOfDirectory(atPath: store.root.path).sorted()
         uptime = 300

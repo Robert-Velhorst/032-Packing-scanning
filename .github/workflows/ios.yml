@@ -79,8 +79,8 @@ jobs:
       - name: Check in-memory depth source and encrypted handoff
         shell: bash
         run: |
-          xcrun swiftc -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingPointCapture.swift ios/App/App/PackingEncryptedCaptureStore.swift ios/App/App/PackingDepthSource.swift scripts/test-ios-depth-source.swift -o "$RUNNER_TEMP/depth-source-checks"
-          "$RUNNER_TEMP/depth-source-checks"
+          xcrun swiftc -sanitize=thread -g -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingPointCapture.swift ios/App/App/PackingEncryptedCaptureStore.swift ios/App/App/PackingDepthSource.swift scripts/test-ios-depth-source.swift -o "$RUNNER_TEMP/depth-source-checks"
+          TSAN_OPTIONS=halt_on_error=1:exitcode=66 "$RUNNER_TEMP/depth-source-checks"
       - name: Check depth capture flow and stale callbacks
         shell: bash
         run: |

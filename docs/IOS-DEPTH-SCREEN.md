@@ -42,6 +42,17 @@ freezing/preview/publication cases. Xcode compiles the actual UIKit/RealityKit
 controller for simulator Debug and unsigned device Release. These are not camera,
 GPU, permission-dialog, accessibility or touch acceptance tests.
 
+The background publication boundary uses explicit `@unchecked Sendable`
+conformances for the source and store: Swift cannot infer their lock isolation.
+Source mutable fields use its private lock, and authority is acquired first when
+needed. Store identity/paths are immutable, filesystem operations serialize
+through the original authority, and injected clock/publication callbacks must be
+`@Sendable`. Capture result values are `Sendable`. These are manual invariants,
+not compiler-proved isolation; future mutable fields or callbacks need the same
+audit. The native source test runs under Thread Sanitizer with concurrent frozen
+reads, encrypted round trips and cancellation/read contention. A passing run does
+not prove every possible schedule or device framework race.
+
 The controller is not yet called from `PackingScanPlugin` or exposed to web UI.
 The workspace handshake, shared result contract, saved quality metadata,
 dimensions and reconstruction remain required before enabling protected scanning.

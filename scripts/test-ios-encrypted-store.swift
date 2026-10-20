@@ -1,6 +1,12 @@
 import Foundation
 
 private enum InjectedStoreFailure: Error { case stop }
+private final class StoreTestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var instant: TimeInterval = 100
+    var value: TimeInterval { lock.lock(); defer { lock.unlock() }; return instant }
+    func advance(_ seconds: TimeInterval) { lock.lock(); defer { lock.unlock() }; instant += seconds }
+}
 @main enum EncryptedStoreChecks {
     static func main() throws {
         let fm = FileManager.default
@@ -17,8 +23,8 @@ private enum InjectedStoreFailure: Error { case stop }
         func id() -> String { UUID().uuidString.lowercased() }
         let workspace = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", account = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
         let key = Data(0..<32), metadata = Data("private metadata fixture".utf8), points = Data("private point fixture".utf8)
-        var now: TimeInterval = 100
-        let authority = PackingCaptureAuthority(clock: { now })
+        let testClock = StoreTestClock()
+        let authority = PackingCaptureAuthority(clock: { testClock.value })
         defer { withExtendedLifetime(authority) {} }
         func open() throws -> PackingCaptureAuthority.Access {
             try authority.openWorkspace(expectedRevision: authority.state().revision, workspaceID: workspace, accountID: account, dataKey: key)
@@ -69,10 +75,10 @@ private enum InjectedStoreFailure: Error { case stop }
         let failed = id()
         let failing = try PackingEncryptedCaptureStore(directory: fixture, access: access, beforePublish: {
             let pending = try fm.contentsOfDirectory(at: store.root, includingPropertiesForKeys: nil).filter { $0.lastPathComponent.hasPrefix(".pending-") }
-            check(pending.count == 1)
+            precondition(pending.count == 1)
             for file in try fm.contentsOfDirectory(at: pending[0], includingPropertiesForKeys: nil) {
                 let data = try Data(contentsOf: file)
-                check(data.starts(with: Data("PSC1".utf8)) && data.range(of: metadata) == nil && data.range(of: points) == nil)
+                precondition(data.starts(with: Data("PSC1".utf8)) && data.range(of: metadata) == nil && data.range(of: points) == nil)
             }
             throw InjectedStoreFailure.stop
         })
@@ -89,7 +95,7 @@ private enum InjectedStoreFailure: Error { case stop }
         try check(Data(contentsOf: racedFolder.appendingPathComponent("unknown.txt")) == Data("keep".utf8))
         stage("expiry cancels publication and revokes original stores")
         let expired = id()
-        let expiring = try PackingEncryptedCaptureStore(directory: fixture, access: access, beforePublish: { now += 300 })
+        let expiring = try PackingEncryptedCaptureStore(directory: fixture, access: access, beforePublish: { testClock.advance(300) })
         refuses("Expired writes must not publish") { try expiring.write(captureID: expired, metadata: metadata, points: points) }
         check(!fm.fileExists(atPath: store.root.appendingPathComponent(expired).path))
         refuses("Old stores must not read after expiry") { _ = try store.readMetadata(captureID: first) }
