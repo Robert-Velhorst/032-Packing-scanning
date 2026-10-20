@@ -16,7 +16,8 @@ this component does not guess ownership of abandoned process files at startup.
 Each entry has a random 256-bit key held only in memory. Authenticated context
 binds purpose, ticket, account/workspace or guest scope, chunk index and terminal
 marker. Plaintext chunks are at most 64 KiB. Short reads are aggregated, total
-size is bounded (80 MiB backup, 256 KiB draft, 12 MiB reference image), and no more
+size is bounded (80 MiB backup, the existing Android draft budget of 68 MiB minus
+8 framing bytes, and 12 MiB reference image), and no more
 than two entries are retained per store. A final authenticated empty record and
 EOF check reject truncation, reordering and appended bytes. A full verification
 pass precedes any consumer output; the second pass also authenticates each chunk.

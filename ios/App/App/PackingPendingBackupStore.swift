@@ -9,7 +9,11 @@ final class PackingPendingBackupStore: @unchecked Sendable {
     enum Purpose: String, Sendable {
         case backup, itemDraft, referencePhoto
         var maximumBytes: Int {
-            switch self { case .backup: return 80 * 1024 * 1024; case .itemDraft: return 256 * 1024; case .referencePhoto: return 12 * 1024 * 1024 }
+            switch self {
+            case .backup: return PackingPendingBackupStore.maximumBytes
+            case .itemDraft: return PackingPendingBackupStore.maximumBytes - 12 * 1024 * 1024 - 8
+            case .referencePhoto: return 12 * 1024 * 1024
+            }
         }
     }
     struct Scope: Equatable, Sendable {
