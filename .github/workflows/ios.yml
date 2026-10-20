@@ -33,6 +33,7 @@ on:
       - 'scripts/check-ios-item-photo.mjs'
       - 'scripts/check-ios-privacy.mjs'
       - 'scripts/check-xcode.cjs'
+      - 'scripts/test-ios-photo-ui.sh'
       - 'scripts/check-ios-depth-result.mjs'
       - 'scripts/test-ios-capture-bridge-values.swift'
       - 'scripts/check-ios-capture-provider.mjs'
@@ -70,6 +71,7 @@ on:
       - 'scripts/check-ios-item-photo.mjs'
       - 'scripts/check-ios-privacy.mjs'
       - 'scripts/check-xcode.cjs'
+      - 'scripts/test-ios-photo-ui.sh'
       - 'scripts/check-ios-depth-result.mjs'
       - 'scripts/test-ios-capture-bridge-values.swift'
       - 'scripts/check-ios-capture-provider.mjs'
@@ -191,6 +193,19 @@ jobs:
       - name: Build bundled web assets and native iOS app
         shell: bash
         run: bash scripts/build-ios.sh 2>&1 | tee "$RUNNER_TEMP/packing-ios-build.log"
+      - name: Check actual WebView/native photo and backup flows on a fresh simulator
+        shell: bash
+        run: bash scripts/test-ios-photo-ui.sh "$RUNNER_TEMP/item-photo-result.json"
+      - name: Preserve simulator photo UI diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-photo-ui
+          path: |
+            ${{ runner.temp }}/packing-ios-ui.*/photo-ui.xcresult
+            ${{ runner.temp }}/packing-ios-ui.*/photo-ui.log
+          retention-days: 7
+          if-no-files-found: ignore
       - name: Preserve native build diagnostics
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
