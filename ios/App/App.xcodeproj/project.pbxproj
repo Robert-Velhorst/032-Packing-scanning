@@ -10,6 +10,7 @@
         AF0321111111111111111111 /* PackingPrintPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0322222222222222222222 /* PackingPrintPlugin.swift */; };
         AB0323333333333333333333 /* PackingVoiceResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0324444444444444444444 /* PackingVoiceResult.swift */; };
         AB0321111111111111111111 /* PackingVoicePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0322222222222222222222 /* PackingVoicePlugin.swift */; };
+        AE0321111111111111111111 /* PackingCaptureFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE0322222222222222222222 /* PackingCaptureFiles.swift */; };
         AC0321111111111111111111 /* PackingAccountPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0322222222222222222222 /* PackingAccountPlugin.swift */; };
 		A51D11111111111111111111 /* PackingScanPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51D22222222222222222222 /* PackingScanPlugin.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
@@ -26,6 +27,7 @@
         AF0322222222222222222222 /* PackingPrintPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingPrintPlugin.swift; sourceTree = "<group>"; };
         AB0324444444444444444444 /* PackingVoiceResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingVoiceResult.swift; sourceTree = "<group>"; };
         AB0322222222222222222222 /* PackingVoicePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingVoicePlugin.swift; sourceTree = "<group>"; };
+        AE0322222222222222222222 /* PackingCaptureFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingCaptureFiles.swift; sourceTree = "<group>"; };
         AC0322222222222222222222 /* PackingAccountPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingAccountPlugin.swift; sourceTree = "<group>"; };
 		A51D22222222222222222222 /* PackingScanPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingScanPlugin.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
@@ -76,6 +78,7 @@
 				A51D22222222222222222222 /* PackingScanPlugin.swift */,
                 AB0322222222222222222222 /* PackingVoicePlugin.swift */,
                 AB0324444444444444444444 /* PackingVoiceResult.swift */,
+                AE0322222222222222222222 /* PackingCaptureFiles.swift */,
                 AC0322222222222222222222 /* PackingAccountPlugin.swift */,
                 AF0322222222222222222222 /* PackingPrintPlugin.swift */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
@@ -173,6 +176,7 @@
 				A51D11111111111111111111 /* PackingScanPlugin.swift in Sources */,
                 AB0321111111111111111111 /* PackingVoicePlugin.swift in Sources */,
                 AB0323333333333333333333 /* PackingVoiceResult.swift in Sources */,
+                AE0321111111111111111111 /* PackingCaptureFiles.swift in Sources */,
                 AC0321111111111111111111 /* PackingAccountPlugin.swift in Sources */,
                 AF0321111111111111111111 /* PackingPrintPlugin.swift in Sources */,
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
