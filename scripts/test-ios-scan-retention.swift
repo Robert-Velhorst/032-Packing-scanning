@@ -64,12 +64,14 @@ private final class RetentionClock: @unchecked Sendable {
         try check(store.clearCaptures()==0)
         // Batch cursor and unrelated top-level entries are preserved.
         let keep=store.root.appendingPathComponent("unknown.keep");try Data([7]).write(to:keep)
+        for index in 0..<1005 { try fm.createDirectory(at:store.root.appendingPathComponent("unknown-\(index)"),withIntermediateDirectories:false) }
         for _ in 0..<101 { _=try capture(100*86400) }
         let first=try store.pruneExpiredSources(.init(days:90,afterID:nil))
         check(first["checkedCount"] as! Int==100 && first["deletedCount"] as! Int==100)
         let second=try store.pruneExpiredSources(.init(days:90,afterID:first["nextCursor"] as? String))
         check(second["checkedCount"] as! Int==1 && second["deletedCount"] as! Int==1 && second["nextCursor"] is NSNull)
         try check(Data(contentsOf:keep)==Data([7]))
+        check(fm.fileExists(atPath:store.root.appendingPathComponent("unknown-1004").path))
         let retained=try capture(20*86400)
         let other=try open("cccccccc-cccc-cccc-cccc-cccccccccccc")
         let otherStore=try PackingEncryptedCaptureStore(directory:root,access:other,clock:{ clock.date })

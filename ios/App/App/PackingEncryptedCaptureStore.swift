@@ -243,6 +243,34 @@ final class PackingEncryptedCaptureStore: @unchecked Sendable {
         else { _ = try PackingPointCapture.validatedDepthCompletionDate(captureID: captureID, metadata: metadata, now: now) }
         return (folder, hasPoints)
     }
+    /** Stream top-level names, retaining only the next 100 IDs and one lookahead ID. */
+    private func retentionWindow(afterID: String?) throws -> [String] {
+        try checkRoot(); try verifyKeyCheck()
+        let original = try inode(root)
+        guard let directory = Darwin.opendir(root.path) else { throw PackingEncryptedStoreError.io }
+        defer { Darwin.closedir(directory) }
+        var candidates: [String] = [], count = 0
+        while true {
+            errno = 0
+            guard let entry = Darwin.readdir(directory) else {
+                guard errno == 0 else { throw PackingEncryptedStoreError.io }
+                break
+            }
+            count += 1
+            guard count <= 1_000_000 else { throw PackingEncryptedStoreError.invalidCapture }
+            if count % 128 == 0 { try access.check() }
+            guard entry.pointee.d_namlen == 36 else { continue }
+            let name = withUnsafeBytes(of: entry.pointee.d_name) { String(decoding: $0.prefix(36), as: UTF8.self) }
+            guard name.utf8.count == 36, UUID(uuidString: name)?.uuidString.lowercased() == name,
+                  afterID == nil || name > afterID! else { continue }
+            var low = 0, high = candidates.count
+            while low < high { let middle = (low + high) / 2; if candidates[middle] < name { low = middle + 1 } else { high = middle } }
+            if low < 101 { candidates.insert(name, at: low); if candidates.count > 101 { candidates.removeLast() } }
+        }
+        try access.check(); try checkRoot(); try verifyKeyCheck()
+        guard try inode(root) == original else { throw PackingEncryptedStoreError.unsafePath }
+        return candidates
+    }
     /** Explicit opt-in policy only; native age, original lease, no web paths or timestamps. */
     func pruneExpiredSources(_ policy: PackingScanRetentionPolicy) throws -> [String: Any] {
         try access.checked {
@@ -253,9 +281,7 @@ final class PackingEncryptedCaptureStore: @unchecked Sendable {
             let now = clock(), age = now.timeIntervalSince1970
             guard age.isFinite, age >= Double(policy.days) * 86400, age <= 253_402_300_799 else { throw PackingEncryptedStoreError.invalidCapture }
             let cutoff = now.addingTimeInterval(-Double(policy.days) * 86400)
-            let entries = try manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
-            guard entries.count <= 1002 else { throw PackingEncryptedStoreError.invalidCapture }
-            let ids = entries.map(\.lastPathComponent).filter { UUID(uuidString: $0)?.uuidString.lowercased() == $0 && (policy.afterID == nil || $0 > policy.afterID!) }.sorted()
+            let ids = try retentionWindow(afterID: policy.afterID)
             let batch = Array(ids.prefix(100))
             var removed: [String] = [], deleted = 0, skipped = 0, failed = 0
             for id in batch {

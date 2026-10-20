@@ -9,8 +9,10 @@ lease, a strict numeric period and an optional canonical UUID cursor.
 
 The native clock and authenticated completed depth metadata establish source
 age. No web timestamp, deletion path or list of IDs is accepted. Each call
-checks up to 100 sorted UUID entries and returns a cursor; directory enumeration
-is bounded to 1,002 entries. Unknown top-level entries remain untouched. Invalid,
+checks up to 100 sorted UUID entries and returns a cursor. Top-level directory
+names are streamed while retaining at most 101 IDs, so retained metadata and
+unrelated entries do not exhaust the batch window. A one-million-entry safety
+limit refuses an excessive scan without mutating sources. Unknown entries remain untouched. Invalid,
 incomplete, generic or future-dated metadata is skipped. Recent sources are kept.
 An invalid native clock refuses the sweep. Supported policies include the exact
 age boundary.
