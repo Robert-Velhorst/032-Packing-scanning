@@ -87,6 +87,8 @@ public class PackingPhotoPlugin: CAPPlugin, CAPBridgedPlugin, PHPickerViewContro
             }
             do {
                 try access.check(); _ = try liveAccess(channel.call)
+                guard let scan = bridge?.plugin(withName: "PackingScan") as? PackingScanPlugin else { throw PackingPhotoFailure.unavailable }
+                try scan.prepareDocumentHandoff(lease: access.lease)
                 if source == "library" { try showLibrary(op) }
                 else {
                     switch AVCaptureDevice.authorizationStatus(for: .video) {

@@ -22,6 +22,13 @@ enum PackingCaptureBridgeValues {
         let state = authority.state()
         if state.protectedWorkspace { authority.close(expectedRevision: state.revision) }
     }
+    /** A native modal need not background the app. Only the original live target may be locked. */
+    static func lockProtectedForHandoff(_ authority: PackingCaptureAuthority, lease: String) throws {
+        let access = try authority.access(lease: lease)
+        if access.workspaceID != nil {
+            guard authority.close(expectedRevision: access.lease) else { throw PackingCaptureAuthorityError.changed }
+        } else { try access.check() }
+    }
 }
 
 /** Lock-isolated pending count for native I/O; no plugin/UI object crosses the worker boundary. */

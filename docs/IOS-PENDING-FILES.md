@@ -79,3 +79,10 @@ inputs and startup ownership boundaries. These run on macOS with Thread Sanitize
 The UIKit plugin is compiled for simulator and unsigned device SDKs; system-picker
 UI, real iCloud/third-party providers, lifecycle and physical-device acceptance
 remain unverified.
+
+Before presenting a native photo/document handoff, the scan bridge explicitly
+revokes the original protected lease and emits its lock event. This does not rely
+on a modal triggering background notifications. Guest leases remain selected,
+and stale handoffs cannot close a different selection. The encrypted pending
+payload keeps only its frozen original target; plaintext review still requires
+a fresh matching lease after unlocking.

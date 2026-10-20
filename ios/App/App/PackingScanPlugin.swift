@@ -99,6 +99,12 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
             return access
         } catch { _ = storageState(); throw error }
     }
+    @MainActor func prepareDocumentHandoff(lease: String) throws {
+        guard !captureBusy else { throw PackingCaptureAuthorityError.changed }
+        _ = try documentAccess(lease: lease)
+        defer { _ = storageState() } // Emits the same lock event used by lifecycle revocation.
+        try PackingCaptureBridgeValues.lockProtectedForHandoff(authority, lease: lease)
+    }
     @MainActor private func didSelect(_ access: PackingCaptureAuthority.Access, store: PackingEncryptedCaptureStore?) {
         let previous = selectedLease
         selectedLease = access.lease; protectedStore = store

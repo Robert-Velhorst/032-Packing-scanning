@@ -108,6 +108,8 @@ public class PackingFilesPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDe
             picker.allowsMultipleSelection = false
             picker.title = prepared.ticket == nil ? "Choose backup file" : "Choose folder for backup"
             picker.delegate = self
+            guard let scan = bridge?.plugin(withName: "PackingScan") as? PackingScanPlugin else { throw PackingFilesFailure.unavailable }
+            try scan.prepareDocumentHandoff(lease: access.lease)
             operation = PackingDocumentOperation(call, prepared, picker)
             controller.present(picker, animated: true)
             picker.presentationController?.delegate = self
