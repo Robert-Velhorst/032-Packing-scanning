@@ -64,3 +64,39 @@ samples before pixel allocation and re-encodes the oriented image to a bounded
 JPEG without copying EXIF/GPS metadata. The existing device tests for bounded
 PNG conversion, orientation and metadata exclusion are compiled by the workflow;
 their execution still requires Android device/emulator acceptance.
+
+## Downloadable QA packages and static verification
+
+Successful Android workflow runs retain `android-guest-qa-apks` for seven days:
+the debug app, its matching instrumentation APK, the unsigned release APK and
+`android-artifacts.json` together in one flat directory. Download the artifact from the matching Actions run;
+compare each file's SHA-256 with that receipt before device testing. The receipt
+records both the checked-out Git commit (a merge commit for PR checks) and the
+PR head commit. These are guest packages, with accounts disabled, bridge logging
+disabled and no live-reload server URL.
+
+The workflow requires SDK `apksigner` verification of the debug app and test
+APK and a matching signer certificate. SDK `zipalign` checks all three APKs
+with 16 KB native-library page alignment. A bounded ELF64 inspection checks
+every packaged ARM64/x86-64 library's load alignment and RELRO page protection,
+following [Android's 16 KB guidance](https://developer.android.com/guide/practices/page-sizes).
+Both app APKs must contain the expected ARM64 libraries and exact web output
+bytes from the current `dist` build. Duplicate/noncanonical ZIP entries and
+unexpected native/web output fail verification before APK upload.
+
+RELRO inspection models [Android Bionic's page-rounded protection](https://android.googlesource.com/platform/bionic/+/main/linker/linker_phdr.cpp).
+It rejects page rounding that makes unrelated writable data read-only or removes
+execute permission. An unaligned raw RELRO end with safe padding before the next
+load segment is allowed. The initial end-modulo check incorrectly rejected this
+valid layout in LiteRT 2.3.0; its program headers and regression cases established
+that this was a verifier false positive, rather than a confirmed vendor defect.
+The runtime dependency and native binaries were not changed to bypass the check.
+
+These checks do not execute a library on a 16 KB device, prove camera behavior,
+or certify production signing. The release APK is unsigned and cannot serve as
+a production installer. CI debug keys are temporary and may differ between runs.
+Use a dedicated test device/emulator with no personal packing records; do not
+uninstall an existing installation containing data to bypass a signing mismatch.
+The instrumentation APK is provided for deliberate test execution, not as proof
+that those tests have already run. iOS device testing still needs operator
+signing/provisioning; an unsigned compiled app is not an installable release.
