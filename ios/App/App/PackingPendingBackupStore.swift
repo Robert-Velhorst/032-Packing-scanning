@@ -7,10 +7,10 @@ enum PackingPendingBackupError: Error { case invalid, unavailable, full, expired
 /** Process-only keys, bounded encrypted chunks, no plaintext app-cache file. */
 final class PackingPendingBackupStore: @unchecked Sendable {
     enum Purpose: String, Sendable {
-        case backup, itemDraft, referencePhoto
+        case backup, itemDraft, referencePhoto, itemPhoto
         var maximumBytes: Int {
             switch self {
-            case .backup: return PackingPendingBackupStore.maximumBytes
+            case .backup, .itemPhoto: return PackingPendingBackupStore.maximumBytes
             case .itemDraft: return PackingPendingBackupStore.maximumBytes - 12 * 1024 * 1024 - 8
             case .referencePhoto: return 12 * 1024 * 1024
             }
@@ -75,7 +75,7 @@ final class PackingPendingBackupStore: @unchecked Sendable {
         try Self.protect(root)
     }
     deinit { try? close() }
-    private static func continuousSeconds() -> TimeInterval {
+    static func continuousSeconds() -> TimeInterval {
         var scale = mach_timebase_info_data_t()
         mach_timebase_info(&scale)
         return Double(mach_continuous_time()) * Double(scale.numer) / Double(scale.denom) / 1_000_000_000

@@ -25,9 +25,14 @@ final class PackingBackupRuntime: @unchecked Sendable {
 
 /** Startup erases only recognizable ciphertext in this app-owned, marked flat directory. */
 enum PackingBackupDirectory {
-    private static let marker = Data("packing-ios-backup-cache-v1\n".utf8)
-    static func prepare(parent: URL) throws -> URL {
-        let fm = FileManager.default, root = parent.appendingPathComponent("PackingPendingBackups-v1", isDirectory: true)
+    enum Kind {
+        case backup, itemPhoto
+        var directory: String { self == .backup ? "PackingPendingBackups-v1" : "PackingPendingItemPhotos-v1" }
+        var marker: Data { Data((self == .backup ? "packing-ios-backup-cache-v1\n" : "packing-ios-item-photo-cache-v1\n").utf8) }
+    }
+    static func prepare(parent: URL, kind: Kind = .backup) throws -> URL {
+        let marker = kind.marker
+        let fm = FileManager.default, root = parent.appendingPathComponent(kind.directory, isDirectory: true)
         var before = stat()
         if lstat(root.path, &before) != 0 {
             guard errno == ENOENT else { throw PackingPendingBackupError.io }

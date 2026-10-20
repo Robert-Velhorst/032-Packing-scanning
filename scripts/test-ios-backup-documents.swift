@@ -90,7 +90,7 @@ private enum SimulatedProviderError: Error { case offline }
         refuses { _ = try PackingBackupDocumentIO.exportFile(to: destinationLink, ticket: receipt.ticket, store: store, scope: guest) }
         // Startup cleanup owns only marked-cache recognizable ciphertext. Unknown data remains.
         let stale = try PackingBackupDocumentIO.importFile(source, store: store, scope: guest)
-        try check(fm.fileExists(atPath: root.appendingPathComponent(stale.ticket + ".sealed").path))
+        check(fm.fileExists(atPath: root.appendingPathComponent(stale.ticket + ".sealed").path))
         let unknown = root.appendingPathComponent("notes.txt"); try sentinel.write(to: unknown)
         let malformed = root.appendingPathComponent(UUID().uuidString.lowercased() + ".sealed"); try sentinel.write(to: malformed)
         let outside = fixture.appendingPathComponent("outside"); try Data("PPB1private".utf8).write(to: outside)

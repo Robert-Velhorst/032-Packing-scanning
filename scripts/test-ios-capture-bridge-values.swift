@@ -26,6 +26,8 @@ import Foundation
         precondition(guestWire["lease"] as? String == guest.lease && guestWire["protectedWorkspace"] as? Bool == false)
         PackingCaptureBridgeValues.lockProtected(authority)
         precondition(authority.state().lease == guest.lease)
+        try PackingCaptureBridgeValues.lockProtectedForHandoff(authority, lease: guest.lease)
+        precondition(authority.state().lease == guest.lease && authority.state().revision == guestState.revision)
         precondition(!authority.close(expectedRevision: locked.revision) && authority.state().lease == guest.lease)
         let access = try authority.openWorkspace(expectedRevision: guestState.revision, workspaceID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
             accountID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", dataKey: key)
@@ -34,6 +36,16 @@ import Foundation
         PackingCaptureBridgeValues.lockProtected(authority)
         refuses("Lifecycle revocation keeps old accesses unusable") { try access.check() }
         precondition(PackingCaptureBridgeValues.state(authority.state())["lease"] is NSNull)
+        let modal = try authority.openWorkspace(expectedRevision: authority.state().revision, workspaceID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            accountID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", dataKey: key)
+        refuses("A stale modal cannot close another selected lease") { try PackingCaptureBridgeValues.lockProtectedForHandoff(authority, lease: access.lease) }
+        try modal.check()
+        try PackingCaptureBridgeValues.lockProtectedForHandoff(authority, lease: modal.lease)
+        refuses("Explicit handoff revokes protected access without lifecycle notifications") { try modal.check() }
+        precondition(PackingCaptureBridgeValues.state(authority.state())["lease"] is NSNull)
+        let resumedGuest = try authority.selectGuest(expectedRevision: authority.state().revision)
+        refuses("An old protected handoff cannot close guest storage") { try PackingCaptureBridgeValues.lockProtectedForHandoff(authority, lease: modal.lease) }
+        try resumedGuest.check()
         let budget = PackingCaptureQueueBudget()
         for _ in 0..<8 { precondition(budget.claim()) }; precondition(!budget.claim())
         for _ in 0..<8 { budget.release() }
