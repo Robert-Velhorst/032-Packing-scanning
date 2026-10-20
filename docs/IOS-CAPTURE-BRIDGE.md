@@ -35,8 +35,11 @@ publication can leave an encrypted capture after a late lock/failed rollback;
 uncertain files are preserved for recovery.
 
 Preview and protected cleanup run on a serial I/O worker with at most eight
-pending requests. The original authority brackets operations and is checked
-again before replying. UI selection/capture fields and completion closures are
+pending requests, including replies queued for the UI. The original authority
+brackets operations. Workers transfer only serialized JSON Data to a main-actor
+reply object, which retains the SDK call, checks original authority again and
+returns completion at most once. SDK calls do not cross into the storage worker.
+UI selection/capture fields and completion closures are
 main-actor isolated. The web capture client separately rejects delayed replies
 after revocation. The access object uses an audited unchecked Sendable contract:
 mutable key/lease state is protected by its owner's recursive lock, with immutable

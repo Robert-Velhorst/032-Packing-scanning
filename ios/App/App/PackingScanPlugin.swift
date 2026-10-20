@@ -4,6 +4,33 @@ import RealityKit
 import SwiftUI
 import UIKit
 
+private enum PackingCaptureIOFailure: Error, Sendable { case unconfirmed }
+
+/** The SDK call remains on the main actor; workers transfer only Sendable JSON bytes. */
+@MainActor private final class PackingCaptureReply {
+    private let call: CAPPluginCall
+    private let access: PackingCaptureAuthority.Access
+    private let budget: PackingCaptureQueueBudget
+    private var completed = false
+    init(call: CAPPluginCall, access: PackingCaptureAuthority.Access, budget: PackingCaptureQueueBudget) {
+        self.call = call; self.access = access; self.budget = budget
+    }
+    func finish(_ result: Result<Data, PackingCaptureIOFailure>) {
+        guard !completed else { return }; completed = true
+        defer { budget.release() }
+        do {
+            let data = try result.get()
+            let reply = try access.checked {
+                guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw PackingCaptureIOFailure.unconfirmed }
+                return object
+            }
+            try access.check(); call.resolve(reply)
+        } catch {
+            call.reject("The original capture workspace or saved source could not be confirmed. Unlock it again before retrying.", "STORAGE_CHANGED")
+        }
+    }
+}
+
 @objc(PackingScanPlugin)
 public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
     @MainActor private var captureBusy = false
@@ -117,10 +144,12 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         let budget = storageBudget
         guard budget.claim() else { call.reject("Wait for the current capture-storage request.", "STORAGE_BUSY"); return }
+        let channel = PackingCaptureReply(call: call, access: access, budget: budget)
         storageWorker.async {
-            defer { budget.release() }
-            do { let reply = try access.checked { try action(store) }; try access.check(); call.resolve(reply) }
-            catch { call.reject("The original capture workspace or saved source could not be confirmed. Unlock it again before retrying.", "STORAGE_CHANGED") }
+            let result: Result<Data, PackingCaptureIOFailure>
+            do { result = .success(try access.checked { try JSONSerialization.data(withJSONObject: action(store)) }) }
+            catch { result = .failure(.unconfirmed) }
+            Task { @MainActor in channel.finish(result) }
         }
     }
     @objc func getCapturePreview(_ call: CAPPluginCall) {
