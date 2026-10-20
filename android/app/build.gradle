@@ -37,7 +37,7 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
-    implementation 'com.google.ar:core:1.56.0'
+    implementation 'com.google.ar:core:1.57.0'
     implementation 'com.google.ai.edge.litert:litert:2.3.0'
     testImplementation "junit:junit:$junitVersion"
     testImplementation 'org.json:json:20260814'
