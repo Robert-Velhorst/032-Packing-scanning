@@ -27,6 +27,7 @@ on:
       - 'scripts/check-ios-cavity-result.mjs'
       - 'scripts/test-ios-scan-retention.swift'
       - 'scripts/check-ios-scan-retention.mjs'
+      - 'scripts/test-ios-pending-backups.swift'
       - 'scripts/check-ios-depth-result.mjs'
       - 'scripts/test-ios-capture-bridge-values.swift'
       - 'scripts/check-ios-capture-provider.mjs'
@@ -58,6 +59,7 @@ on:
       - 'scripts/check-ios-cavity-result.mjs'
       - 'scripts/test-ios-scan-retention.swift'
       - 'scripts/check-ios-scan-retention.mjs'
+      - 'scripts/test-ios-pending-backups.swift'
       - 'scripts/check-ios-depth-result.mjs'
       - 'scripts/test-ios-capture-bridge-values.swift'
       - 'scripts/check-ios-capture-provider.mjs'
@@ -148,6 +150,11 @@ jobs:
           xcrun swiftc -O -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingScanEnvelope.swift ios/App/App/PackingVoxelSolid.swift ios/App/App/PackingVoxelCavity.swift ios/App/App/PackingPointCapture.swift ios/App/App/PackingEncryptedCaptureStore.swift scripts/test-ios-scan-retention.swift -o "$RUNNER_TEMP/retention-checks"
           "$RUNNER_TEMP/retention-checks" "$RUNNER_TEMP/retention-result.json"
           node scripts/check-ios-scan-retention.mjs "$RUNNER_TEMP/retention-result.json"
+      - name: Check encrypted pending document store and lease rebinding
+        shell: bash
+        run: |
+          xcrun swiftc -sanitize=thread -g -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingPendingBackupStore.swift scripts/test-ios-pending-backups.swift -o "$RUNNER_TEMP/pending-backup-checks"
+          TSAN_OPTIONS=halt_on_error=1:exitcode=66 "$RUNNER_TEMP/pending-backup-checks"
       - name: Check depth capture flow and stale callbacks
         shell: bash
         run: |
