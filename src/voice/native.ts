@@ -36,7 +36,7 @@ export function nativeVoiceDriver(): LocalVoiceDriver | undefined {
         if (cancelled) { cleanup(); return; }
         await PackingVoice.listen({ id });
         if (cancelled) await PackingVoice.stop({ id });
-      })().catch((error: unknown) => { cleanup(); throw error; });
+      })().catch((error: unknown) => { cancelled = true; cleanup(); throw error; });
       return { started, abort: () => { cancelled = true; cleanup(); void PackingVoice.stop({ id }).catch(() => { /* Native lifecycle cleanup also stops the recognizer. */ }); } };
     },
     install: async () => { await PackingVoice.installModel(); return true; },

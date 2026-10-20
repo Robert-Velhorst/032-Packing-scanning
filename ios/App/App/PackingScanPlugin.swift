@@ -5,6 +5,7 @@ import UIKit
 
 @objc(PackingScanPlugin)
 public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
+    private var captureBusy = false
     public let identifier = "PackingScanPlugin"
     public let jsName = "PackingScan"
     public let pluginMethods: [CAPPluginMethod] = [
@@ -45,7 +46,10 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject("This iPhone or iPad does not support guided 3D capture.", "UNSUPPORTED_DEVICE")
                 return
             }
-            guard let presenter = self.bridge?.viewController else {
+            guard !self.captureBusy, let presenter = self.bridge?.viewController,
+                  presenter.presentedViewController == nil,
+                  presenter.view.window?.windowScene?.activationState == .foregroundActive,
+                  UIApplication.shared.isProtectedDataAvailable else {
                 call.reject("The camera screen could not be opened.", "PRESENTATION_FAILED")
                 return
             }
@@ -54,7 +58,9 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
             do {
                 let model = try NativeScanModel(scanId: scanId, target: target)
                 let controller = NativeScanViewController(model: model)
-                controller.onComplete = { [weak presenter] result in
+                self.captureBusy = true
+                controller.onComplete = { [weak self, weak presenter] result in
+                    self?.captureBusy = false
                     guard let presenter else {
                         call.reject("The scan screen closed unexpectedly.", "PRESENTATION_FAILED")
                         return
@@ -69,42 +75,29 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
                 controller.modalPresentationStyle = .fullScreen
                 presenter.present(controller, animated: true)
             } catch {
-                call.reject("A private scan folder could not be prepared: \(error.localizedDescription)", "STORAGE_FAILED")
+                call.reject("A private scan folder could not be prepared.", "STORAGE_FAILED")
             }
         }
     }
 
     @objc func deleteCapture(_ call: CAPPluginCall) {
-        guard let id = call.getString("id"), let uuid = UUID(uuidString: id) else {
+        guard let id = call.getString("id"), UUID(uuidString: id)?.uuidString.lowercased() == id else {
             call.reject("The scan identifier is invalid.", "INVALID_SCAN_ID")
             return
         }
-        do {
-            let folder = try captureRoot().appendingPathComponent(uuid.uuidString.lowercased(), isDirectory: true)
-            let exists = FileManager.default.fileExists(atPath: folder.path)
-            if exists { try FileManager.default.removeItem(at: folder) }
-            call.resolve(["deleted": exists])
-        } catch {
-            call.reject("The saved scan could not be removed: \(error.localizedDescription)", "DELETE_FAILED")
+        Task { @MainActor in
+            guard !self.captureBusy else { call.reject("Finish or cancel the current scan before removing originals.", "CAPTURE_BUSY"); return }
+            do { call.resolve(["deleted": try PackingCaptureFiles.appStore().delete(id)]) }
+            catch { call.reject("The saved scan could not be removed.", "DELETE_FAILED") }
         }
     }
 
     @objc func clearCaptures(_ call: CAPPluginCall) {
-        do {
-            let root = try captureRoot()
-            let contents = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
-            for url in contents { try FileManager.default.removeItem(at: url) }
-            call.resolve(["deleted": contents.count])
-        } catch {
-            call.reject("Saved scans could not be removed: \(error.localizedDescription)", "DELETE_FAILED")
+        Task { @MainActor in
+            guard !self.captureBusy else { call.reject("Finish or cancel the current scan before removing originals.", "CAPTURE_BUSY"); return }
+            do { call.resolve(["deleted": try PackingCaptureFiles.appStore().clear()]) }
+            catch { call.reject("Saved scans could not be removed.", "DELETE_FAILED") }
         }
-    }
-
-    private func captureRoot() throws -> URL {
-        let documents = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-        let root = documents.appendingPathComponent("ScanCaptures", isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        return root
     }
 }
 
@@ -117,6 +110,8 @@ private final class NativeScanModel: ObservableObject {
     let scanFolder: URL
     let imagesDirectory: URL
     let checkpointDirectory: URL
+    private let files: PackingCaptureFiles
+    private var reconstruction: PhotogrammetrySession?
 
     @Published var phase = "initializing"
     @Published var passReady = false
@@ -130,12 +125,10 @@ private final class NativeScanModel: ObservableObject {
     init(scanId: String, target: String) throws {
         self.scanId = scanId
         self.target = target
-        let documents = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-        scanFolder = documents.appendingPathComponent("ScanCaptures", isDirectory: true).appendingPathComponent(scanId, isDirectory: true)
+        files = try PackingCaptureFiles.appStore()
+        scanFolder = try files.create(scanId)
         imagesDirectory = scanFolder.appendingPathComponent("Images", isDirectory: true)
         checkpointDirectory = scanFolder.appendingPathComponent("Checkpoints", isDirectory: true)
-        try FileManager.default.createDirectory(at: imagesDirectory, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: checkpointDirectory, withIntermediateDirectories: true)
         var configuration = ObjectCaptureSession.Configuration()
         configuration.checkpointDirectory = checkpointDirectory
         session.start(imagesDirectory: imagesDirectory, configuration: configuration)
@@ -153,7 +146,7 @@ private final class NativeScanModel: ObservableObject {
                 if complete { completedPasses += 1 }
             }
         }
-        defer { feedbackTask.cancel(); passTask.cancel() }
+        defer { feedbackTask.cancel(); passTask.cancel(); if !hasCompleted { cancel() } }
 
         for await state in session.stateUpdates {
             switch state {
@@ -200,15 +193,20 @@ private final class NativeScanModel: ObservableObject {
     }
 
     func cancel() {
+        guard !hasCompleted else { return }
         session.cancel()
+        reconstruction?.cancel()
         cleanup()
         finish(.failure(NativeScanError.cancelled))
     }
 
     private func reconstruct() async throws -> [String: Any] {
+        guard !hasCompleted, !Task.isCancelled else { throw NativeScanError.cancelled }
         guard PhotogrammetrySession.isSupported else { throw NativeScanError.reconstructionUnsupported }
         let modelURL = scanFolder.appendingPathComponent("Model.usdz")
         let reconstruction = try PhotogrammetrySession(input: imagesDirectory, configuration: PhotogrammetrySession.Configuration())
+        self.reconstruction = reconstruction
+        defer { self.reconstruction = nil }
         try reconstruction.process(requests: [
             .modelFile(url: modelURL, detail: .reduced, geometry: nil),
             .bounds,
@@ -216,6 +214,7 @@ private final class NativeScanModel: ObservableObject {
 
         var dimensions: [String: Double]?
         for try await output in reconstruction.outputs {
+            guard !hasCompleted, !Task.isCancelled else { reconstruction.cancel(); throw NativeScanError.cancelled }
             switch output {
             case .requestProgress(_, let fraction): progress = "Making your 3D model · \(Int(fraction * 100))%"
             case .requestComplete(_, let result):
@@ -226,6 +225,7 @@ private final class NativeScanModel: ObservableObject {
             case .requestError(_, let error): throw error
             case .processingComplete:
                 guard let dimensions, FileManager.default.fileExists(atPath: modelURL.path) else { throw NativeScanError.noModelResult }
+                try files.finalize(scanId)
                 let warnings = session.feedback.map(Self.feedbackMessage).sorted()
                 return [
                     "record": [
@@ -253,7 +253,7 @@ private final class NativeScanModel: ObservableObject {
     }
 
     func cleanup() {
-        try? FileManager.default.removeItem(at: scanFolder)
+        _ = try? files.delete(scanId)
     }
 
     private static func feedbackMessage(_ feedback: ObjectCaptureSession.Feedback) -> String {
@@ -306,6 +306,8 @@ private final class NativeScanViewController: UIViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func loadView() {
+        NotificationCenter.default.addObserver(self, selector: #selector(interrupted), name: UIApplication.didEnterBackgroundNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(interrupted), name: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil)
         let content = NativeScanFlow(model: model, onCancel: { [weak self] in self?.model.cancel() })
         let hosting = UIHostingController(rootView: content)
         let container = UIView()
@@ -322,6 +324,13 @@ private final class NativeScanViewController: UIViewController {
         ])
         hosting.didMove(toParent: self)
     }
+
+    @objc private func interrupted() { model.cancel() }
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if isBeingDismissed || presentingViewController == nil { model.cancel() }
+    }
+    deinit { NotificationCenter.default.removeObserver(self) }
 }
 
 @available(iOS 18.0, *)
@@ -395,6 +404,8 @@ private struct NativeScanFlow: View {
 class ScanBridgeViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(PackingScanPlugin())
+        bridge?.registerPluginInstance(PackingVoicePlugin())
         bridge?.registerPluginInstance(PackingAccountPlugin())
+        bridge?.registerPluginInstance(PackingPrintPlugin())
     }
 }
