@@ -68,6 +68,31 @@ private final class StoreTestClock: @unchecked Sendable {
             try check(file.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
         }
         refuses("Existing captures must never be overwritten") { try store.write(captureID: first, metadata: Data("new".utf8), points: points) }
+        stage("scoped clear preflights recognized files and preserves unknown data")
+        let clearBase = fixture.appendingPathComponent("clear-fixture", isDirectory: true)
+        try fm.createDirectory(at: clearBase, withIntermediateDirectories: false)
+        let clearStore = try PackingEncryptedCaptureStore(directory: clearBase, access: access)
+        let clearOtherAuthority = PackingCaptureAuthority()
+        defer { withExtendedLifetime(clearOtherAuthority) {} }
+        let clearOtherAccess = try clearOtherAuthority.openWorkspace(expectedRevision: clearOtherAuthority.state().revision,
+            workspaceID: "cccccccc-cccc-cccc-cccc-cccccccccccc", accountID: account, dataKey: key)
+        let clearOther = try PackingEncryptedCaptureStore(directory: clearBase, access: clearOtherAccess), clearOtherID = id()
+        try clearOther.write(captureID: clearOtherID, metadata: metadata, points: points)
+        let clearA = id(), clearB = id()
+        try clearStore.write(captureID: clearA, metadata: metadata, points: points)
+        try clearStore.write(captureID: clearB, metadata: metadata, points: points)
+        let unknown = clearStore.root.appendingPathComponent("unknown.json")
+        try Data("keep".utf8).write(to: unknown)
+        let extra = clearStore.root.appendingPathComponent(clearB).appendingPathComponent("unknown.txt")
+        try Data("keep".utf8).write(to: extra)
+        refuses("Clear must preflight unknown capture children before deleting known captures") { _ = try clearStore.clearCaptures() }
+        try check(clearStore.readMetadata(captureID: clearA) == metadata)
+        try check(Data(contentsOf: extra) == Data("keep".utf8))
+        try fm.removeItem(at: extra)
+        try check(clearStore.clearCaptures() == 2)
+        try check(Data(contentsOf: unknown) == Data("keep".utf8))
+        try check(clearOther.readMetadata(captureID: clearOtherID) == metadata)
+        try check(store.readMetadata(captureID: first) == metadata)
         refuses("Traversal IDs must fail") { try store.write(captureID: "../outside", metadata: metadata, points: points) }
         refuses("Metadata bounds must precede staging") { try store.write(captureID: id(), metadata: Data(repeating: 0, count: 20001), points: points) }
         refuses("Point bounds must precede staging") { try store.write(captureID: id(), metadata: metadata, points: Data(repeating: 0, count: 8000001)) }

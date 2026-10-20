@@ -231,4 +231,23 @@ final class PackingEncryptedCaptureStore: @unchecked Sendable {
             return true
         }
     }
+    func clearCaptures() throws -> Int {
+        try access.checked {
+            try checkRoot(); try verifyKeyCheck()
+            let entries = try manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+            guard entries.count <= 1002 else { throw PackingEncryptedStoreError.invalidCapture }
+            let ids = entries.map(\.lastPathComponent).filter { UUID(uuidString: $0)?.uuidString.lowercased() == $0 }.sorted()
+            // Authenticate all recognized captures before removing any; unknown/orphan names stay untouched.
+            for id in ids {
+                let folder = try captureURL(id); try check(folder, directory: true)
+                let files = try manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+                guard Set(files.map(\.lastPathComponent)) == Self.names else { throw PackingEncryptedStoreError.invalidCapture }
+                for file in files { try check(file, directory: false) }
+                _ = try readMetadata(captureID: id); _ = try readPoints(captureID: id)
+            }
+            var removed = 0
+            for id in ids { if try delete(captureID: id) { removed += 1 } }
+            return removed
+        }
+    }
 }

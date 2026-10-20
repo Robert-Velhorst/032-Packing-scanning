@@ -84,7 +84,9 @@ final class PackingCaptureAuthority {
     }
     private static func canonical(_ id: String) -> Bool { UUID(uuidString: id)?.uuidString.lowercased() == id }
 
-    final class Access {
+    // Immutable identity plus owner-lock-protected mutable authority/key state.
+    // No caller may inspect or mutate that state without checked()/touch().
+    final class Access: @unchecked Sendable {
         let lease = UUID().uuidString.lowercased()
         let workspaceID: String?
         let accountID: String?

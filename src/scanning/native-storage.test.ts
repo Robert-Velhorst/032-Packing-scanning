@@ -1,11 +1,27 @@
 import {beforeEach,describe,expect,it,vi} from 'vitest';
-const fixture=vi.hoisted(()=>({bridge:{getRetentionCapabilities:vi.fn(),pruneExpiredSources:vi.fn(),getStorageState:vi.fn(),openWorkspaceStorage:vi.fn(),deleteCapture:vi.fn(),clearCaptures:vi.fn(),touchStorage:vi.fn(),getCapabilities:vi.fn(),scanObject:vi.fn()},native:true,platform:'android'}));
+const fixture=vi.hoisted(()=>({bridge:{getCapturePreview:vi.fn(),reconstructCapture:vi.fn(),getRetentionCapabilities:vi.fn(),pruneExpiredSources:vi.fn(),getStorageState:vi.fn(),openWorkspaceStorage:vi.fn(),deleteCapture:vi.fn(),clearCaptures:vi.fn(),touchStorage:vi.fn(),getCapabilities:vi.fn(),scanObject:vi.fn()},native:true,platform:'android'}));
 vi.mock('@capacitor/core',()=>({Capacitor:{isNativePlatform:()=>fixture.native,getPlatform:()=>fixture.platform,isPluginAvailable:()=>true},registerPlugin:()=>fixture.bridge}));
-import {captureClient,getScanRetentionCapabilities} from './native';
+import {captureClient,getScanRetentionCapabilities,canPreviewSavedGeometry,canReconstructSavedGeometry} from './native';
+import type {ScanRecord} from '../types';
 import {getCaptureStorageState,openCaptureWorkspace} from './native-storage';
 const old='11111111-1111-4111-8111-111111111111',next='22222222-2222-4222-8222-222222222222';
 beforeEach(()=>{vi.resetAllMocks();fixture.native=true;fixture.platform='android';fixture.bridge.deleteCapture.mockResolvedValue({deleted:true});fixture.bridge.clearCaptures.mockResolvedValue({deleted:1});fixture.bridge.getCapabilities.mockResolvedValue({supported:true,platform:'android'});});
 describe('native workspace boundary',()=>{
+  it('accepts the iOS handshake and binds supported saved depth review to its original lease',async()=>{
+    fixture.platform='ios';fixture.bridge.getStorageState.mockResolvedValue({version:1,revision:old,lease:old,protectedWorkspace:true});
+    expect((await getCaptureStorageState())?.lease).toBe(old);
+    const record:ScanRecord={id:next,target:'item',createdAt:'2026-10-20T12:00:00Z',platform:'ios',method:'arkit_scene_depth',completedPasses:3,modelStoredLocally:true,
+      geometry:{format:'ply_point_cloud',units:'metres',coordinateFrame:'capture_local_right_handed',pointCount:384}};
+    const preview={id:next,target:'item',format:'point_cloud_preview',units:'millimetres',sourceHash:'a'.repeat(64),pointCount:384,samplePointCount:1,pointsMm:[2.5,2.5,2.5,1],
+      envelope:{method:'oriented_surface_envelope_v1',basis:'capture_aligned',paddingMm:2.5,dimensionsMm:{length:405,width:205,height:105}}};
+    fixture.bridge.getCapturePreview.mockResolvedValue(preview);
+    const client=captureClient(old);expect(canPreviewSavedGeometry(record)).toBe(true);expect(canReconstructSavedGeometry(record)).toBe(false);
+    const loaded=await client.readSavedGeometry(record);expect(loaded).toEqual(preview);expect(fixture.bridge.getCapturePreview).toHaveBeenCalledWith({id:next,lease:old});
+    await expect(client.reconstructSavedCapture(record,loaded)).rejects.toThrow(/Android/);expect(fixture.bridge.reconstructCapture).not.toHaveBeenCalled();
+    expect(canPreviewSavedGeometry({...record,method:'guided_object_capture'})).toBe(false);
+    let finish!:(value:unknown)=>void;fixture.bridge.getCapturePreview.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+    const pending=client.readSavedGeometry(record);client.revoke();finish(preview);await expect(pending).rejects.toThrow(/locked/);
+  });
   it('requires a valid handshake and does not silently fall back after native failure',async()=>{
     fixture.bridge.getStorageState.mockResolvedValue({version:1,revision:old,lease:null,protectedWorkspace:false});expect((await getCaptureStorageState())?.lease).toBeNull();
     fixture.bridge.getStorageState.mockResolvedValue({version:1,revision:old});await expect(getCaptureStorageState()).rejects.toThrow(/invalid/);
