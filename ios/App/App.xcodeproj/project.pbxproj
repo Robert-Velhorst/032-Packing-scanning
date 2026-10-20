@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        DB0321111111111111111111 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = DB0322222222222222222222 /* PrivacyInfo.xcprivacy */; };
         DA0321111111111111111111 /* PackingPendingBackupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0322222222222222222222 /* PackingPendingBackupStore.swift */; };
         FE0321111111111111111111 /* PackingVoxelCavity.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0322222222222222222222 /* PackingVoxelCavity.swift */; };
         FD0321111111111111111111 /* PackingVoxelSolid.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD0322222222222222222222 /* PackingVoxelSolid.swift */; };
@@ -35,6 +36,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        DB0322222222222222222222 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
         DA0322222222222222222222 /* PackingPendingBackupStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingPendingBackupStore.swift; sourceTree = "<group>"; };
         FE0322222222222222222222 /* PackingVoxelCavity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingVoxelCavity.swift; sourceTree = "<group>"; };
         FD0322222222222222222222 /* PackingVoxelSolid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingVoxelSolid.swift; sourceTree = "<group>"; };
@@ -107,6 +109,7 @@
                 EE0322222222222222222222 /* PackingDepthSource.swift */,
                 EF0322222222222222222222 /* PackingDepthFlow.swift */,
                 FA0322222222222222222222 /* PackingDepthViewController.swift */,
+                DB0322222222222222222222 /* PrivacyInfo.xcprivacy */,
                 DA0322222222222222222222 /* PackingPendingBackupStore.swift */,
                 FE0322222222222222222222 /* PackingVoxelCavity.swift */,
                 FD0322222222222222222222 /* PackingVoxelSolid.swift */,
@@ -190,6 +193,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DB0321111111111111111111 /* PrivacyInfo.xcprivacy in Resources */,
 				504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */,
 				50B271D11FEDC1A000F3C39B /* public in Resources */,
 				504EC30F1FED79650016851F /* Assets.xcassets in Resources */,
