@@ -25,6 +25,8 @@ on:
       - 'scripts/test-ios-voxel-cavity.swift'
       - 'scripts/CheckIosVoxelCavity.java'
       - 'scripts/check-ios-cavity-result.mjs'
+      - 'scripts/test-ios-scan-retention.swift'
+      - 'scripts/check-ios-scan-retention.mjs'
       - 'scripts/check-ios-depth-result.mjs'
       - 'scripts/test-ios-capture-bridge-values.swift'
       - 'scripts/check-ios-capture-provider.mjs'
@@ -54,6 +56,8 @@ on:
       - 'scripts/test-ios-voxel-cavity.swift'
       - 'scripts/CheckIosVoxelCavity.java'
       - 'scripts/check-ios-cavity-result.mjs'
+      - 'scripts/test-ios-scan-retention.swift'
+      - 'scripts/check-ios-scan-retention.mjs'
       - 'scripts/check-ios-depth-result.mjs'
       - 'scripts/test-ios-capture-bridge-values.swift'
       - 'scripts/check-ios-capture-provider.mjs'
@@ -138,6 +142,12 @@ jobs:
           node scripts/check-ios-cavity-result.mjs "$RUNNER_TEMP/cavity-result.json"
           javac -cp "$RUNNER_TEMP/envelope-java" -d "$RUNNER_TEMP/envelope-java" android/app/src/main/java/com/packingscanning/app/scanning/VoxelCavity.java scripts/CheckIosVoxelCavity.java
           java -cp "$RUNNER_TEMP/envelope-java" CheckIosVoxelCavity "$RUNNER_TEMP/cavity-parity.txt"
+      - name: Check scoped raw-source retention and metadata preservation
+        shell: bash
+        run: |
+          xcrun swiftc -O -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingScanEnvelope.swift ios/App/App/PackingVoxelSolid.swift ios/App/App/PackingVoxelCavity.swift ios/App/App/PackingPointCapture.swift ios/App/App/PackingEncryptedCaptureStore.swift scripts/test-ios-scan-retention.swift -o "$RUNNER_TEMP/retention-checks"
+          "$RUNNER_TEMP/retention-checks" "$RUNNER_TEMP/retention-result.json"
+          node scripts/check-ios-scan-retention.mjs "$RUNNER_TEMP/retention-result.json"
       - name: Check depth capture flow and stale callbacks
         shell: bash
         run: |

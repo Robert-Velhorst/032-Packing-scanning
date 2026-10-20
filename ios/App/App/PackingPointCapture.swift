@@ -177,6 +177,22 @@ struct PackingPointCapture: Sendable {
         return PackingPointCapture(provenance: provenance, metadata: metadata, points: points, envelope: envelope)
     }
 
+    /** Authenticated native depth provenance remains available after raw points are removed. */
+    static func validatedDepthCompletionDate(captureID: String, metadata: Data, now: Date) throws -> Date {
+        guard !metadata.isEmpty, metadata.count <= 20_000,
+              UUID(uuidString: captureID)?.uuidString.lowercased() == captureID else { throw PackingPointCaptureError.invalidMetadata }
+        let p = try JSONDecoder().decode(Provenance.self, from: metadata)
+        guard p.version == 2, p.id == captureID, p.format == "ply_point_cloud", p.units == "metres",
+              p.coordinateFrame == "capture_local_right_handed", p.completedAtMilliseconds >= 0,
+              p.completedAtMilliseconds <= (try milliseconds(now)),
+              p.sourceSHA256.count == 64, p.sourceSHA256.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 || $0 >= 97 && $0 <= 102 }),
+              let depth = p.depth, depth.sensor == "arkit_scene_depth", depth.quality.valid(pointCount: p.pointCount), p.pointCount <= 60_000,
+              depth.method == PackingScanEnvelope.method, ["capture_aligned","principal_components","orientation_search"].contains(depth.basis),
+              depth.paddingMm == 2.5, depth.dimensionsMm.count == 3,
+              depth.dimensionsMm.allSatisfy({ $0.isFinite && $0 > 0 && $0 <= 10_000 }) else { throw PackingPointCaptureError.invalidMetadata }
+        return Date(timeIntervalSince1970: Double(p.completedAtMilliseconds) / 1000)
+    }
+
     private static func milliseconds(_ date: Date) throws -> Int64 {
         let value = date.timeIntervalSince1970 * 1000
         guard value.isFinite, value >= 0, value <= 253_402_300_799_999 else {

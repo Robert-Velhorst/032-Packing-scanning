@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {parseScanRetentionReply,recordRemovedScanSources} from '../src/scan-retention.ts';
+const reply=parseScanRetentionReply(JSON.parse(await readFile(process.argv[2],'utf8')));
+assert.equal(reply.deletedCount,2);assert.equal(reply.removedIds.length,2);assert.equal(reply.checkedCount,6);
+assert.equal(reply.skippedCount,2);assert.equal(reply.failedCount,1);assert.equal(reply.nextCursor,null);
+const scan={id:reply.removedIds[0],platform:'ios',method:'arkit_scene_depth',modelStoredLocally:true};
+const source={libraryItems:[{scan,dimensions:{length:100,width:80,height:60},photoId:'keep'}],containers:[{scan:{...scan,platform:'android',method:'arcore_depth'}}],trips:[],settings:{}};
+const marked=recordRemovedScanSources(source,reply,'ios');
+assert.equal(marked.libraryItems[0].scan.modelStoredLocally,false);
+assert.equal(marked.libraryItems[0].dimensions,source.libraryItems[0].dimensions);
+assert.equal(marked.libraryItems[0].photoId,'keep');assert.equal(marked.containers[0],source.containers[0]);
+assert.equal(marked.trips,source.trips);assert.equal(source.libraryItems[0].scan.modelStoredLocally,true);
+console.log('Swift/TypeScript raw-source retention confirmation and platform-scoped record update passed.');

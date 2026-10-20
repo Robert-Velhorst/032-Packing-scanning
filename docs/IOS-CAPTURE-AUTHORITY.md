@@ -5,7 +5,7 @@ used by the protected iOS capture bridge.
 It is compiled into the native target and exercised directly by Mac CI.
 `PackingScanPlugin` now exposes the revision/lease handshake and opens encrypted
 capture storage only for the selected workspace. See the [bridge workflow](IOS-CAPTURE-BRIDGE.md).
-File/photo staging, retention and device acceptance remain separate
+File/photo staging and device acceptance remain separate
 unfinished work; the handshake is not proof of those features or server identity.
 
 ## Authority

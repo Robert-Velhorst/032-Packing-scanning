@@ -82,7 +82,9 @@ describe('native workspace boundary',()=>{
     const reply={version:1,confirmedAt:'2026-10-01T00:00:00Z',removedIds:[old],checkedCount:1,deletedCount:1,skippedCount:0,failedCount:0,nextCursor:null};fixture.bridge.pruneExpiredSources.mockResolvedValue(reply);const client=captureClient(old);
     expect(await client.pruneExpiredScanSources(7,next)).toEqual(reply);expect(fixture.bridge.pruneExpiredSources).toHaveBeenCalledWith({lease:old,days:7,afterId:next});
     fixture.bridge.pruneExpiredSources.mockResolvedValue({...reply,removedIds:['../other']});await expect(client.pruneExpiredScanSources(7)).rejects.toThrow(/invalid confirmation/);
-    fixture.platform='ios';await expect(client.pruneExpiredScanSources(7)).rejects.toThrow(/Android/);fixture.platform='android';client.revoke();await expect(client.pruneExpiredScanSources(7)).rejects.toThrow(/locked/);
+    fixture.platform='ios';fixture.bridge.pruneExpiredSources.mockResolvedValue(reply);expect(await client.pruneExpiredScanSources(7,next)).toEqual(reply);
+    expect(fixture.bridge.pruneExpiredSources).toHaveBeenLastCalledWith({lease:old,days:7,afterId:next});
+    fixture.platform='web';await expect(client.pruneExpiredScanSources(7)).rejects.toThrow(/unlocked device/);fixture.platform='android';client.revoke();await expect(client.pruneExpiredScanSources(7)).rejects.toThrow(/locked/);
   });
   it('does not accept a delayed cleanup reply after the workspace is revoked',async()=>{
     let finish!:(value:unknown)=>void;fixture.bridge.pruneExpiredSources.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));const client=captureClient(old),pending=client.pruneExpiredScanSources(30);client.revoke();finish({version:1,confirmedAt:'2026-10-01T00:00:00Z',removedIds:[],checkedCount:0,deletedCount:0,skippedCount:0,failedCount:0,nextCursor:null});await expect(pending).rejects.toThrow(/locked/);

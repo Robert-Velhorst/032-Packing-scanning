@@ -11,8 +11,8 @@ export function useRawScanRetention({ data, savedData, capture, deferred, checkA
   useEffect(() => {
     if (!checkAvailability) return;
     let active = true;
-    const unavailable='Automatic raw scan cleanup is available on supported Android installations. This device cannot remove their native source files.';
-    if(!Capacitor.isNativePlatform()||Capacitor.getPlatform()!=='android'){setSupported(false);setStatus(unavailable);return()=>{active=false;};}
+    const unavailable='Automatic raw scan cleanup requires a supported native workspace on the original device. Other devices and packing backups cannot remove those source files.';
+    if(!Capacitor.isNativePlatform()||!['android','ios'].includes(Capacitor.getPlatform())){setSupported(false);setStatus(unavailable);return()=>{active=false;};}
     import('./native').then(({getScanRetentionCapabilities})=>getScanRetentionCapabilities()).then(value => { if (active) { setSupported(value); setStatus(value ? 'Original scans are kept until you choose a deletion policy.' : unavailable); } }).catch(() => { if (active) setStatus('Raw scan cleanup availability could not be checked. Sources are retained; reopen this workspace to retry.'); });
     return () => { active = false; };
   }, [capture, checkAvailability]);

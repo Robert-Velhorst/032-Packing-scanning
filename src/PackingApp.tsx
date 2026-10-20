@@ -5,6 +5,7 @@ import { checklistInstanceState, type ChecklistInstanceState } from './checklist
 import { OpeningEvidenceNotes } from './components/HandlingPropertyNotes';
 import { useRawScanRetention } from './scanning/useRawScanRetention';
 import { recordRemovedScanSources,type ScanRetentionReply } from './scan-retention';
+import { Capacitor } from '@capacitor/core';
 import { EntryBagAssignment } from './components/EntryBagAssignment';
 import type {ItemEditorDraft} from './item-photo-draft';
 import type { SharedCopyWitness, SharedPackSnapshot } from './shared-packs';
@@ -199,7 +200,10 @@ export function PackingApp() {
     if (data?.settings.automaticPhotoDeletionDays) prunePhotos(data.settings.automaticPhotoDeletionDays).catch(() => undefined);
   }, [data?.settings.automaticPhotoDeletionDays]);
 
-  const confirmRemovedSources=useCallback((reply:ScanRetentionReply)=>setData(current=>current?recordRemovedScanSources(current,reply):current),[]);
+  const confirmRemovedSources=useCallback((reply:ScanRetentionReply)=>{
+    const platform=Capacitor.getPlatform();
+    if(platform==='android'||platform==='ios')setData(current=>current?recordRemovedScanSources(current,reply,platform):current);
+  },[]);
   const scanRetention=useRawScanRetention({data,savedData,capture:device.capture,deferred:!!capture||!!device.pendingPhoto||!!device.pendingBackup||device.fileBusy,checkAvailability:page==='settings'||data?.settings.automaticScanDeletionDays!=null,onRemoved:confirmRemovedSources});
 
   const updateData = useCallback((updater: (current: AppData) => AppData) => setData((current) => current ? updater(current) : current), []);
