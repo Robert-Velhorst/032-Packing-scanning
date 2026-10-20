@@ -33,7 +33,7 @@ export interface BenchmarkCapture {
     id: string;
     referenceId: string;
     platform: 'android' | 'ios';
-    method: 'arcore_depth' | 'guided_object_capture';
+    method: ScanRecord['method'];
     createdAt: string;
     rawDimensionsMm: DimensionsMm | null;
     record?: ScanRecord;
@@ -185,7 +185,7 @@ export function parseBenchmarkSource(value: unknown): BenchmarkSource {
     if (o.version !== 1)
         fail('source.version');
     const refs = array(o.references, 'source.references', 200).map((v, i) => { const r = object(v, 'source.reference.' + i); return { id: text(r.id, 'reference.id'), label: text(r.label, 'reference.label'), target: choice(r.target, ['item', 'container_interior'], 'reference.target'), currentDimensionsMm: dimensions(r.currentDimensionsMm, 'reference.currentDimensionsMm'), currentOpeningMm: opening(r.currentOpeningMm, 'reference.currentOpeningMm'), upperMassGrams: nullableNumber(r.upperMassGrams, 'reference.upperMassGrams'), massSource: nullableText(r.massSource, 'reference.massSource') }; });
-    const captures = array(o.captures, 'source.captures', 2000).map((v, i) => { const r = object(v, 'capture.' + i); const platform = choice(r.platform, ['android', 'ios'], 'capture.platform'), method = choice(r.method, ['arcore_depth', 'guided_object_capture'], 'capture.method'); if (platform === 'android' && method !== 'arcore_depth' || platform === 'ios' && method !== 'guided_object_capture')
+    const captures = array(o.captures, 'source.captures', 2000).map((v, i) => { const r = object(v, 'capture.' + i); const platform = choice(r.platform, ['android', 'ios'], 'capture.platform'), method = choice(r.method, ['arcore_depth', 'guided_object_capture', 'arkit_scene_depth'], 'capture.method'); if (platform === 'android' && method !== 'arcore_depth' || platform === 'ios' && method !== 'guided_object_capture' && method !== 'arkit_scene_depth')
         fail('capture.platform/method'); return { id: text(r.id, 'capture.id'), referenceId: text(r.referenceId, 'capture.referenceId'), platform, method, createdAt: date(r.createdAt, 'capture.createdAt'), rawDimensionsMm: r.rawDimensionsMm === null ? null : dimensions(r.rawDimensionsMm, 'capture.rawDimensionsMm') }; });
     const instances = array(o.instances, 'source.instances', 500).map(v => { const r = object(v, 'instance'); return { id: text(r.id, 'instance.id'), referenceId: text(r.referenceId, 'instance.referenceId'), required: flag(r.required, 'instance.required'), unavailable: flag(r.unavailable, 'instance.unavailable'), packingFormId: nullableText(r.packingFormId, 'instance.packingFormId') }; });
     const source: BenchmarkSource = { format: 'packing-scanning-benchmark-source', version: 1, backupSha256: hash(o.backupSha256, 'source.backupSha256'), exportedAt: nullableDate(o.exportedAt, 'source.exportedAt'), packId: text(o.packId, 'source.packId'), sample: flag(o.sample, 'source.sample'), mode: choice(o.mode, ['balanced', 'maximum_capacity', 'easy_access', 'fragile_protection'], 'source.mode'), references: refs, captures, instances, containerIds: strings(o.containerIds, 'source.containerIds') };

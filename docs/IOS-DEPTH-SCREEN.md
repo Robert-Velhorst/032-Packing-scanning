@@ -54,8 +54,10 @@ reads, encrypted round trips and cancellation/read contention. A passing run doe
 not prove every possible schedule or device framework race.
 
 The controller is not yet called from `PackingScanPlugin` or exposed to web UI.
-The workspace handshake, shared result contract, saved quality metadata,
-dimensions and reconstruction remain required before enabling protected scanning.
+The result/preview formatters and web parsers now share the depth method and
+category semantics; version-2 source metadata retains quality and estimated bounds.
+The workspace/scan bridge handshake and reconstruction remain required before
+enabling the complete protected scan workflow.
 No screenshot or physical-device execution is claimed. Device tests must cover
 orientation/iPad layout, large text/VoiceOver, review gestures, camera denial,
 interruptions during permission/review/save, queued-frame races, memory and storage

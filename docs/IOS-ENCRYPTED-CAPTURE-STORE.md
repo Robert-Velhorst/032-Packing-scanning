@@ -115,5 +115,21 @@ projection containment, deterministic input ordering, an outlier deliberately
 excluded from the search sample, degenerate sources and contradictory stored
 metadata. CI also executes the real Android Java fit against Swift's synthetic
 float-source fixtures with a 0.005 mm comparison tolerance. These synthetic checks
-do not establish physical accuracy or on-device performance. The web result
-contract and native bridge are still required before exposing these estimates.
+do not establish physical accuracy or on-device performance.
+
+`scanResult()` now formats validated depth captures for the shared
+`arkit_scene_depth` result contract; `previewResult()` returns up to 8,000 projected
+point tuples, the source hash and the same original envelope. Neither exports file
+paths, keys, images or raw source files. `completedPasses` retains the shared depth
+contract's legacy meaning of separated viewpoints. Quality explicitly identifies
+`arkit_high_category` with eligibility threshold 1, rather than a probability;
+the point-limit flag is valid only at 60,000 retained points. Native physical-check
+warnings remain part of the result. Generic version-1 sources cannot format a
+depth result or oriented depth preview.
+
+The web parser checks the method/platform, canonical identity, point/frame/view
+bounds, category semantics, envelope and cap consistency. Saved review describes
+the confidence category explicitly, and benchmark provenance retains the distinct
+iOS method. CI passes actual Swift-generated synthetic result/preview JSON through
+the production TypeScript parsers, separately from Swift/Java numeric parity.
+The native workspace/scan bridge is still required before exposing this path.

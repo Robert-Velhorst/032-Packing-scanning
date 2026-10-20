@@ -38,12 +38,12 @@ export function parseScanResult(value: unknown, expectedTarget: ScanTarget): Sca
   if (!record || typeof record.id !== 'string' || !record.id || record.target !== expectedTarget
     || typeof record.createdAt !== 'string' || !Number.isFinite(Date.parse(record.createdAt))
     || !['ios', 'android'].includes(record.platform ?? '')
-    || !['guided_object_capture', 'arcore_depth'].includes(record.method ?? '')
+    || !['guided_object_capture', 'arcore_depth', 'arkit_scene_depth'].includes(record.method ?? '')
     || !Number.isInteger(record.completedPasses) || (record.completedPasses ?? -1) < 1
     || typeof record.modelStoredLocally !== 'boolean') {
     throw new Error('The scanner returned incomplete capture details.');
   }
-  if ((record.platform === 'ios' && record.method !== 'guided_object_capture')
+  if ((record.platform === 'ios' && record.method !== 'guided_object_capture' && record.method !== 'arkit_scene_depth')
     || (record.platform === 'android' && record.method !== 'arcore_depth')) {
     throw new Error('The scanner returned inconsistent capture details.');
   }
@@ -53,7 +53,7 @@ export function parseScanResult(value: unknown, expectedTarget: ScanTarget): Sca
     || (record.geometry.format === 'ply_point_cloud' && (!Number.isInteger(record.geometry.pointCount) || (record.geometry.pointCount ?? 0) < 1)))) {
     throw new Error('The scanner returned invalid geometry details.');
   }
-  if (record.geometry?.envelope && (record.platform !== 'android' || record.geometry.format !== 'ply_point_cloud'
+  if (record.geometry?.envelope && (record.platform !== 'android' && record.method !== 'arkit_scene_depth' || record.geometry.format !== 'ply_point_cloud'
     || record.geometry.coordinateFrame !== 'capture_local_right_handed' || record.geometry.envelope.method !== 'oriented_surface_envelope_v1'
     || !['capture_aligned','principal_components','orientation_search'].includes(record.geometry.envelope.basis)
     || record.geometry.envelope.paddingMm !== 2.5)) throw new Error('The scanner returned invalid envelope details.');
@@ -63,7 +63,19 @@ export function parseScanResult(value: unknown, expectedTarget: ScanTarget): Sca
     || !Number.isFinite(record.quality.voxelSizeMm) || record.quality.voxelSizeMm <= 0)) {
     throw new Error('The scanner returned invalid quality details.');
   }
+  if(record.quality?.confidenceKind!==undefined&&(record.method!=='arkit_scene_depth'||record.quality.confidenceKind!=='arkit_high_category'))throw new Error('The scanner returned invalid confidence semantics.');
+  if(record.method==='arkit_scene_depth'){
+    const g=record.geometry,q=record.quality;
+    if(!/^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(record.id)||!g||g.format!=='ply_point_cloud'||g.coordinateFrame!=='capture_local_right_handed'||!g.envelope
+      ||!Number.isSafeInteger(g.pointCount)||(g.pointCount??0)<300||(g.pointCount??0)>60000
+      ||!q||q.confidenceKind!=='arkit_high_category'||q.confidenceThreshold!==1||q.voxelSizeMm!==5
+      ||!Number.isSafeInteger(q.depthFrames)||q.depthFrames<6||q.depthFrames>12000
+      ||!Number.isSafeInteger(q.viewCount)||q.viewCount<3||q.viewCount>Math.min(q.depthFrames,1000)||record.completedPasses!==q.viewCount
+      ||typeof q.pointLimitReached!=='boolean'||q.pointLimitReached&&g.pointCount!==60000||q.coverage!==undefined)
+      throw new Error('The scanner returned inconsistent iOS depth details.');
+  }
   const dimensionsMm = normalizeScanDimensions(result.dimensionsMm);
+  if(record.method==='arkit_scene_depth'&&Object.values(dimensionsMm).some(side=>side>10000))throw new Error('The scanner returned invalid iOS depth dimensions.');
   if(!validScanCoverageRecord(record))throw new Error('The scanner returned invalid capture diagnostics.');
   const warnings = Array.isArray(result.warnings) && result.warnings.every((warning) => typeof warning === 'string')
     ? result.warnings : [];

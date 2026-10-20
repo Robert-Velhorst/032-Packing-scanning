@@ -50,7 +50,7 @@ export function SavedScanPreview({ record,onAdopt,onAdoptInterior }: { record: S
     finally{if(active.current&&token===request.current)setBusy(false);}
   };
   return <section className="saved-scan-preview" aria-label="Saved scan review">
-    {record.quality?.coverage&&<details className="scan-geometry-caution"><summary>Capture directions and depth diagnostics</summary>{captureGuidanceNotes(record).map(note=><p key={note}>{note}</p>)}</details>}
+    {(record.quality?.coverage||record.quality?.confidenceKind)&&<details className="scan-geometry-caution"><summary>Capture directions and depth diagnostics</summary>{captureGuidanceNotes(record).map(note=><p key={note}>{note}</p>)}</details>}
     {record.sourceRetention?.reason==='raw_scan_retention'&&<p className="scan-geometry-caution">Original source removed by raw scan retention. Saved measurements and explicitly adopted item shapes or bag cavities remain available; a new scan is needed for source review or reconstruction. Removal confirmed {new Date(record.sourceRetention.confirmedAt).toLocaleString()}.</p>}
     {record.sourceRetention?.reason!=='raw_scan_retention'&&<p>Review the original captured surface before relying on its size. Missing surfaces, reflections and surrounding objects can affect the estimate.</p>}
     {canPreviewSavedGeometry(record)?<button className="button button-secondary" type="button" disabled={busy} onClick={()=>void load()}>{busy?'Opening saved geometry…':preview?'Reload saved geometry':'Review saved scan'}</button>:record.sourceRetention?.reason==='raw_scan_retention'?null:<small>Original surface review requires its saved point cloud on a supported Android installation. Backups retain scan details and dimensions but exclude the original points.</small>}

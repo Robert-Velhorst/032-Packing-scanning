@@ -12,6 +12,7 @@ struct PackingPointCapture: Sendable {
         let capped: Bool
         func valid(pointCount: Int) -> Bool {
             pointCount >= 300 && (6...12000).contains(depthFrames) && viewCount >= 3 && viewCount <= min(depthFrames, 1000)
+                && (!capped || pointCount == 60_000)
         }
     }
     private struct DepthMetadata: Codable {
@@ -43,6 +44,43 @@ struct PackingPointCapture: Sendable {
     let points: Data
     let depthQuality: DepthQuality?
     let envelope: PackingScanEnvelope?
+
+    /** Shared bridge payload. Generic point records cannot acquire invented depth provenance. */
+    func scanResult() throws -> [String: Any] {
+        guard let envelope, let quality = depthQuality else { throw PackingPointCaptureError.invalidMetadata }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var warnings = [
+            "Depth geometry is an estimate. Check all dimensions physically; this is not a watertight mesh or a closure guarantee.",
+            "Neighbouring objects may enter the capture, and hidden surfaces may be missing. Restart if the preview includes background geometry.",
+            "The oriented envelope includes a 2.5 mm sampling margin on every face. This does not bound sensor error or hidden surfaces, and its sorted sides do not establish which side must remain upright.",
+            "Only ARKit's high confidence category was retained. Its numeric eligibility flag is not a calibrated probability or measurement-accuracy guarantee."]
+        if target == .containerInterior { warnings.append("Visible interior surfaces do not establish the usable cavity or narrowest opening. Measure and confirm these manually.") }
+        if quality.capped { warnings.append("The capture reached its point limit; additional detail was omitted.") }
+        let geometry: [String: Any] = ["format": "ply_point_cloud", "units": "metres", "coordinateFrame": "capture_local_right_handed", "pointCount": pointCount,
+            "envelope": ["method": PackingScanEnvelope.method, "basis": envelope.basis, "paddingMm": envelope.paddingMm]]
+        let qualityRecord: [String: Any] = ["depthFrames": quality.depthFrames, "viewCount": quality.viewCount, "confidenceThreshold": 1,
+            "confidenceKind": "arkit_high_category", "pointLimitReached": quality.capped, "voxelSizeMm": 5]
+        let record: [String: Any] = ["id": id, "target": target.rawValue, "createdAt": formatter.string(from: completedAt),
+            "platform": "ios", "method": "arkit_scene_depth", "completedPasses": quality.viewCount, "modelStoredLocally": true,
+            "geometry": geometry, "quality": qualityRecord]
+        return ["record": record, "dimensionsMm": dimensions(envelope), "warnings": warnings]
+    }
+    func previewResult() throws -> [String: Any] {
+        guard let envelope, depthQuality != nil else { throw PackingPointCaptureError.invalidMetadata }
+        let decoded = try Self.decodePoints(points, highCategoryOnly: true)
+        let step = max(1, Int(ceil(Double(decoded.count) / 8000)))
+        var projected: [Double] = []; projected.reserveCapacity(min(8000, decoded.count) * 4)
+        for index in stride(from: 0, to: decoded.count, by: step) {
+            let p = envelope.projectMm(decoded[index]); projected.append(contentsOf: [p.x, p.y, p.z, 1])
+        }
+        return ["id": id, "target": target.rawValue, "format": "point_cloud_preview", "units": "millimetres",
+            "sourceHash": sourceSHA256, "pointCount": pointCount, "samplePointCount": projected.count / 4, "pointsMm": projected,
+            "envelope": ["method": PackingScanEnvelope.method, "basis": envelope.basis, "paddingMm": envelope.paddingMm, "dimensionsMm": dimensions(envelope)]]
+    }
+    private func dimensions(_ envelope: PackingScanEnvelope) -> [String: Double] {
+        ["length": envelope.dimensionsMm.x, "width": envelope.dimensionsMm.y, "height": envelope.dimensionsMm.z]
+    }
 
     private init(provenance: Provenance, metadata: Data, points: Data, envelope: PackingScanEnvelope?) {
         id = provenance.id; target = provenance.target

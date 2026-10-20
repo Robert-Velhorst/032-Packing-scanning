@@ -29,6 +29,17 @@ export function validScanCoverageRecord(value:unknown):boolean {
     &&coverage.elevatedViews+coverage.loweredViews<=record.quality!.viewCount);
 }
 export function captureGuidanceNotes(record:ScanRecord):string[] {
+  if(record.method==='arkit_scene_depth'){
+    const q=record.quality;
+    if(record.platform!=='ios'||!q||q.confidenceKind!=='arkit_high_category'||q.confidenceThreshold!==1
+      ||!Number.isSafeInteger(q.depthFrames)||q.depthFrames<6||!Number.isSafeInteger(q.viewCount)||q.viewCount<3||q.viewCount>q.depthFrames)
+      return ['Capture diagnostics are invalid. Review the original source or measure manually.'];
+    return [
+      `${q.depthFrames.toLocaleString()} depth frames and ${q.viewCount.toLocaleString()} separated camera viewpoints contributed retained points. These counts do not prove complete surface coverage.`,
+      "Only ARKit's high confidence category was retained. The numeric 1 eligibility flag is not a calibrated probability or a measurement-accuracy guarantee.",
+      ...(q.pointLimitReached?['The capture reached its point limit; additional detail was omitted.']:[]),
+    ];
+  }
   const g=record.quality?.coverage;
   if(g===undefined)return [];
   if(!validScanCoverageRecord(record))return ['Capture diagnostics are invalid. Review the original source or measure manually.'];

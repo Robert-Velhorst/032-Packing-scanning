@@ -64,6 +64,13 @@ import simd
         let quality = PackingPointCapture.DepthQuality(depthFrames: 6, viewCount: 3, capped: false)
         let capture = try PackingPointCapture.complete(target: .item, points: ply(fixtures[1].0), now: Date(), depthQuality: quality)
         precondition(capture.envelope != nil && capture.depthQuality == quality)
+        let result = try capture.scanResult(), preview = try capture.previewResult()
+        precondition((result["record"] as? [String: Any])?["method"] as? String == "arkit_scene_depth")
+        precondition(preview["sourceHash"] as? String == capture.sourceSHA256)
+        let invalidCap = PackingPointCapture.DepthQuality(depthFrames: 6, viewCount: 3, capped: true)
+        refuses("Point-limit diagnostic requires the actual point cap") {
+            _ = try PackingPointCapture.complete(target: .item, points: capture.points, now: Date(), depthQuality: invalidCap)
+        }
         let restored = try PackingPointCapture.restore(captureID: capture.id, metadata: capture.metadata, points: capture.points, now: Date())
         precondition(restored.envelope!.dimensionsMm == capture.envelope!.dimensionsMm)
         var lowerConfidence = capture.points
@@ -99,8 +106,10 @@ import simd
         refuses("Thin scans must not become depth captures") { _ = try PackingPointCapture.complete(target: .item, points: ply(flat), now: Date(), depthQuality: quality) }
         // Plain point-storage v1 stays readable and does not acquire invented depth quality.
         let generic = try PackingPointCapture.complete(target: .item, points: ply(flat), now: Date())
+        refuses("Generic points cannot become a native depth result") { _ = try generic.scanResult() }
+        refuses("Generic points cannot become an oriented depth preview") { _ = try generic.previewResult() }
         try check(PackingPointCapture.restore(captureID: generic.id, metadata: generic.metadata, points: generic.points, now: Date()).depthQuality == nil)
-        if CommandLine.arguments.count == 2 {
+        if CommandLine.arguments.count >= 2 {
             var lines = ["packing-envelope-parity-v1", String(fixtures.count)]
             for (points, envelope) in fixtures {
                 lines.append("\(points.count) \(envelope.basis)")
@@ -108,6 +117,10 @@ import simd
                 for point in points { lines.append("\(Float(point.x)) \(Float(point.y)) \(Float(point.z))") }
             }
             try (lines.joined(separator: "\n") + "\n").write(toFile: CommandLine.arguments[1], atomically: true, encoding: .utf8)
+        }
+        if CommandLine.arguments.count >= 3 {
+            let data = try JSONSerialization.data(withJSONObject: ["scan": result, "preview": preview], options: [.sortedKeys])
+            try data.write(to: URL(fileURLWithPath: CommandLine.arguments[2]))
         }
         print("iOS envelope checks passed: metric oriented bounds, handed axes, deterministic ordering, unsampled outlier containment, thin-source refusal and authenticated quality/bounds provenance.")
     }

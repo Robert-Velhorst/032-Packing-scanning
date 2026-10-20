@@ -18,6 +18,7 @@ on:
       - 'scripts/test-ios-depth-flow.swift'
       - 'scripts/test-ios-envelope.swift'
       - 'scripts/CheckIosEnvelope.java'
+      - 'scripts/check-ios-depth-result.mjs'
       - 'scripts/check-ios-capture-provider.mjs'
       - '.github/workflows/ios.yml'
   push:
@@ -38,6 +39,7 @@ on:
       - 'scripts/test-ios-depth-flow.swift'
       - 'scripts/test-ios-envelope.swift'
       - 'scripts/CheckIosEnvelope.java'
+      - 'scripts/check-ios-depth-result.mjs'
       - 'scripts/check-ios-capture-provider.mjs'
       - '.github/workflows/ios.yml'
   workflow_dispatch:
@@ -89,7 +91,8 @@ jobs:
         shell: bash
         run: |
           xcrun swiftc -O -parse-as-library ios/App/App/PackingScanEnvelope.swift ios/App/App/PackingPointCapture.swift scripts/test-ios-envelope.swift -o "$RUNNER_TEMP/envelope-checks"
-          "$RUNNER_TEMP/envelope-checks" "$RUNNER_TEMP/envelope-parity.txt"
+          "$RUNNER_TEMP/envelope-checks" "$RUNNER_TEMP/envelope-parity.txt" "$RUNNER_TEMP/depth-result.json"
+          node scripts/check-ios-depth-result.mjs "$RUNNER_TEMP/depth-result.json"
           mkdir -p "$RUNNER_TEMP/envelope-java"
           javac -d "$RUNNER_TEMP/envelope-java" android/app/src/main/java/com/packingscanning/app/scanning/ScanEnvelope.java android/app/src/main/java/com/packingscanning/app/scanning/DepthCloud.java android/app/src/main/java/com/packingscanning/app/scanning/CaptureGuidance.java scripts/CheckIosEnvelope.java
           java -cp "$RUNNER_TEMP/envelope-java" CheckIosEnvelope "$RUNNER_TEMP/envelope-parity.txt"
