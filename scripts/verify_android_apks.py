@@ -103,6 +103,8 @@ def inspect_archive(archive, expected_assets=None):
     names = [entry.filename for entry in entries]
     if len(names) != len(set(names)):
         raise ValueError("APK contains duplicate entry names")
+    if "AndroidManifest.xml" not in names or "classes.dex" not in names:
+        raise ValueError("APK is missing its manifest or primary bytecode")
     if sum(entry.file_size for entry in entries) > 512 * 1024 * 1024:
         raise ValueError("APK exceeds the uncompressed verification size limit")
     libraries = []

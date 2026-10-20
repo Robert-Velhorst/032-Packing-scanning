@@ -69,7 +69,7 @@ their execution still requires Android device/emulator acceptance.
 
 Successful Android workflow runs retain `android-guest-qa-apks` for seven days:
 the debug app, its matching instrumentation APK, the unsigned release APK and
-`android-artifacts.json`. Download the artifact from the matching Actions run;
+`android-artifacts.json` together in one flat directory. Download the artifact from the matching Actions run;
 compare each file's SHA-256 with that receipt before device testing. The receipt
 records both the checked-out Git commit (a merge commit for PR checks) and the
 PR head commit. These are guest packages, with accounts disabled, bridge logging

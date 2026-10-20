@@ -148,7 +148,8 @@ class ApkContentsTests(unittest.TestCase):
     def entries(self):
         config = {"appId": "com.packingscanning.app", "loggingBehavior": "none",
                   "plugins": {"PackingAccount": {"serviceOrigin": ""}}}
-        return [("lib/arm64-v8a/libsynthetic.so", elf()), ("assets/public/index.html", b"app"),
+        return [("lib/arm64-v8a/libsynthetic.so", elf()), ("AndroidManifest.xml", b"synthetic"),
+                ("classes.dex", b"synthetic"), ("assets/public/index.html", b"app"),
                 ("assets/capacitor.config.json", json.dumps(config).encode())]
 
     def expected(self):
@@ -188,8 +189,14 @@ class ApkContentsTests(unittest.TestCase):
                     inspect_archive(value, self.expected())
 
     def test_allows_instrumentation_apk_without_bundled_web_or_native_code(self):
-        with archive([("classes.dex", b"synthetic")]) as value:
+        with archive([("AndroidManifest.xml", b"synthetic"), ("classes.dex", b"synthetic")]) as value:
             self.assertEqual(inspect_archive(value), [])
+
+    def test_refuses_archives_without_android_package_contents(self):
+        for missing in ["AndroidManifest.xml", "classes.dex"]:
+            with self.subTest(missing=missing), archive([item for item in self.entries() if item[0] != missing]) as value:
+                with self.assertRaisesRegex(ValueError, "manifest or primary"):
+                    inspect_archive(value, self.expected())
 
 
 if __name__ == "__main__":

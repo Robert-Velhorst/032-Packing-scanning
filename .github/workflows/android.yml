@@ -62,22 +62,22 @@ jobs:
           PACKING_HEAD_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           python3 -B -m unittest discover -s scripts -p 'test_android_apks.py'
+          mkdir "$RUNNER_TEMP/android-guest-qa"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/android-guest-qa/"
+          cp android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk "$RUNNER_TEMP/android-guest-qa/"
+          cp android/app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/android-guest-qa/"
           python3 -B scripts/verify_android_apks.py \
-            --debug android/app/build/outputs/apk/debug/app-debug.apk \
-            --instrumentation android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk \
-            --release android/app/build/outputs/apk/release/app-release-unsigned.apk \
+            --debug "$RUNNER_TEMP/android-guest-qa/app-debug.apk" \
+            --instrumentation "$RUNNER_TEMP/android-guest-qa/app-debug-androidTest.apk" \
+            --release "$RUNNER_TEMP/android-guest-qa/app-release-unsigned.apk" \
             --dist dist --build-tools "$ANDROID_HOME/build-tools/36.0.0" \
             --source-revision "$(git rev-parse HEAD)" --head-revision "$PACKING_HEAD_REVISION" \
-            --output "$RUNNER_TEMP/android-artifacts.json"
+            --output "$RUNNER_TEMP/android-guest-qa/android-artifacts.json"
       - name: Preserve verified guest QA APKs
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: android-guest-qa-apks
-          path: |
-            android/app/build/outputs/apk/debug/app-debug.apk
-            android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-            android/app/build/outputs/apk/release/app-release-unsigned.apk
-            ${{ runner.temp }}/android-artifacts.json
+          path: ${{ runner.temp }}/android-guest-qa/
           retention-days: 7
           if-no-files-found: error
       - name: Preserve native build diagnostics
