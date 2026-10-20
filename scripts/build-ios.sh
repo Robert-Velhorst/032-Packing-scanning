@@ -28,12 +28,22 @@ fi
 
 npm run build
 node node_modules/@capacitor/cli/bin/capacitor sync ios
-xcodebuild \
-  -project ios/App/App.xcodeproj \
-  -scheme App \
-  -configuration Debug \
-  -sdk iphonesimulator \
-  -destination 'generic/platform=iOS Simulator' \
-  -derivedDataPath "$task_repo/ios/App/DerivedData" \
-  CODE_SIGNING_ALLOWED=NO \
-  build
+for task_sdk in iphonesimulator iphoneos; do
+  if [[ "$task_sdk" == iphonesimulator ]]; then
+    task_configuration=Debug
+    task_destination='generic/platform=iOS Simulator'
+  else
+    task_configuration=Release
+    task_destination='generic/platform=iOS'
+  fi
+  printf 'Building %s for %s\n' "$task_configuration" "$task_sdk"
+  xcodebuild \
+    -project ios/App/App.xcodeproj \
+    -scheme App \
+    -configuration "$task_configuration" \
+    -sdk "$task_sdk" \
+    -destination "$task_destination" \
+    -derivedDataPath "$task_repo/ios/App/DerivedData" \
+    CODE_SIGNING_ALLOWED=NO \
+    build
+done

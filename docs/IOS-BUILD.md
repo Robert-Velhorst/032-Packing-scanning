@@ -17,8 +17,9 @@ DEVELOPER_DIR=/Applications/Xcode_26.3.app/Contents/Developer bash scripts/build
 
 Use the actual installed Xcode path. The script checks the host and toolchain,
 builds the real production web bundle, synchronizes it into the native project,
-resolves its pinned Swift package dependency and compiles the App scheme for
-the generic iOS simulator destination. Derived data stays in the ignored
+resolves its pinned Swift package dependency and compiles the App scheme in
+Debug for the generic iOS simulator and in Release for generic iOS devices.
+Both builds disable code signing. Derived data stays in the ignored
 `ios/App/DerivedData` directory. The script does not install Xcode, accept
 licenses, configure signing, submit an app or change system Xcode selection.
 The same script is used by `.github/workflows/ios.yml`.
@@ -40,7 +41,7 @@ key, password, session or other credential in native build variables.
 
 This workflow is being introduced to obtain actual compilation evidence; adding
 it does not itself prove that iOS builds. Inspect the exact-head Actions run and
-its build log. A successful unsigned simulator build still does not establish
+its build log. Successful unsigned simulator/device builds still do not establish
 runtime behavior, native feature parity, release signing or App Store acceptance.
 
 Physical iPhone/iPad camera and reconstruction, permissions, file providers,

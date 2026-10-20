@@ -31,7 +31,7 @@ concurrency:
 
 jobs:
   simulator:
-    name: Unsigned iOS simulator build
+    name: Unsigned iOS simulator and device builds
     runs-on: macos-15
     timeout-minutes: 30
     env:
