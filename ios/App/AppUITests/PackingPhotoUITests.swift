@@ -6,9 +6,13 @@ final class PackingPhotoUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
     @MainActor private func retainFailure(_ app: XCUIApplication) {
-        if let testRun, testRun.hasSucceeded { return }
-        let screen = XCTAttachment(screenshot: app.screenshot()); screen.name = "Failure screen"; screen.lifetime = .keepAlways; add(screen)
-        let tree = XCTAttachment(string: app.debugDescription); tree.name = "Failure accessibility tree"; tree.lifetime = .keepAlways; add(tree)
+        // hasSucceeded remains false until XCTest stops this running case.
+        // Looking at it from defer misclassified successful, terminated apps.
+        guard let testRun, testRun.failureCount > 0 else { return }
+        let screen = XCTAttachment(screenshot: XCUIScreen.main.screenshot()); screen.name = "Failure screen"; screen.lifetime = .keepAlways; add(screen)
+        if app.state == .runningForeground {
+            let tree = XCTAttachment(string: app.debugDescription); tree.name = "Failure accessibility tree"; tree.lifetime = .keepAlways; add(tree)
+        }
     }
 
     @MainActor private func tapWeb(_ name: String, app: XCUIApplication) {
@@ -100,7 +104,12 @@ final class PackingPhotoUITests: XCTestCase {
         let date = DateFormatter(); date.locale = Locale(identifier: "en_US"); date.dateFormat = "MMMM dd"
         let fixture = app.images.matching(NSPredicate(format: "identifier == %@ AND label BEGINSWITH %@",
             "PXGGridLayout-Info", "Photo, " + date.string(from: Date()) + ",")).firstMatch
-        XCTAssertTrue(fixture.waitForExistence(timeout: 30), "Today's seeded simulator photo is missing"); fixture.tap()
+        XCTAssertTrue(fixture.waitForExistence(timeout: 30), "Today's seeded simulator photo is missing")
+        XCTAssertFalse(fixture.frame.isEmpty); XCTAssertTrue(app.frame.contains(fixture.frame), "Seeded thumbnail is offscreen")
+        // PHPicker's remote image snapshot has no accessibility activation point.
+        // Tap its verified visible thumbnail center; the later red-pixel check
+        // still proves that the intended fixture actually arrived and rendered.
+        fixture.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         let add = app.navigationBars.buttons["Add"].firstMatch
         if add.waitForExistence(timeout: 2), add.isHittable { add.tap() }
         resumeDraft(String(name), app: app); assertRedReference(app)
