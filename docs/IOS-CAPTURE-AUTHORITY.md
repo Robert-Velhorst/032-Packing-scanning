@@ -48,6 +48,10 @@ and 20,000 plaintext bytes, plus the exact 32-byte envelope overhead when sealed
 Guest accesses cannot use protected encryption. Unknown names, traversal,
 malformed/oversized envelopes, wrong keys, identity changes and corrupted data
 fail before plaintext is returned. There is no plaintext fallback.
+The iOS persistence module additionally uses a dedicated workspace/account-bound
+key-check context for an encrypted public constant. This confirms that a supplied
+key matches an existing store; it neither persists the key nor reuses a capture's
+authenticated purpose.
 
 This primitive does not yet encrypt Object Capture images, checkpoints or USDZ
 models, provide atomic file publication or manage scratch files. Those files

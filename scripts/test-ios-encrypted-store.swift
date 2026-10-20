@@ -57,7 +57,7 @@ private enum InjectedStoreFailure: Error { case stop }
         })
         refuses("Pre-publication failure must roll back") { try failing.write(captureID: failed, metadata: metadata, points: points) }
         check(!fm.fileExists(atPath: store.root.appendingPathComponent(failed).path))
-        try check(fm.contentsOfDirectory(atPath: store.root.path) == [first])
+        try check(Set(fm.contentsOfDirectory(atPath: store.root.path)) == Set([first, ".keycheck"]))
         stage("occupied destination must survive publication race")
         let raced = id(), racedFolder = store.root.appendingPathComponent(raced, isDirectory: true)
         let racing = try PackingEncryptedCaptureStore(directory: fixture, access: access, beforePublish: {
@@ -79,9 +79,7 @@ private enum InjectedStoreFailure: Error { case stop }
         let wrongAuthority = PackingCaptureAuthority()
         defer { withExtendedLifetime(wrongAuthority) {} }
         let wrongAccess = try wrongAuthority.openWorkspace(expectedRevision: wrongAuthority.state().revision, workspaceID: workspace, accountID: account, dataKey: Data(repeating: 255, count: 32))
-        let wrong = try PackingEncryptedCaptureStore(directory: fixture, access: wrongAccess)
-        refuses("Wrong key must not read") { _ = try wrong.readMetadata(captureID: first) }
-        refuses("Wrong key must not delete") { _ = try wrong.delete(captureID: first) }
+        refuses("Wrong key must not open a root for reads, writes or deletion") { _ = try PackingEncryptedCaptureStore(directory: fixture, access: wrongAccess) }
         let copyID = id(), copied = reopened.root.appendingPathComponent(copyID, isDirectory: true)
         try fm.copyItem(at: firstFolder, to: copied)
         refuses("Cross-capture ciphertext must not authenticate") { _ = try reopened.readPoints(captureID: copyID) }
@@ -94,6 +92,12 @@ private enum InjectedStoreFailure: Error { case stop }
         try otherStore.write(captureID: first, metadata: Data("other account".utf8), points: points)
         try check(otherStore.delete(captureID: first))
         try check(reopened.readMetadata(captureID: first) == metadata)
+        let marker = reopened.root.appendingPathComponent(".keycheck"), originalMarker = try Data(contentsOf: marker)
+        var damagedMarker = originalMarker; damagedMarker[damagedMarker.count - 1] ^= 1
+        try damagedMarker.write(to: marker)
+        refuses("Changed root key checks must stop retained stores") { _ = try reopened.readMetadata(captureID: first) }
+        refuses("Changed root key checks must block new files") { try reopened.write(captureID: id(), metadata: metadata, points: points) }
+        try originalMarker.write(to: marker)
         let workspaceAccess = try otherAuthority.openWorkspace(expectedRevision: otherAuthority.state().revision, workspaceID: otherID, accountID: account, dataKey: key)
         let workspaceStore = try PackingEncryptedCaptureStore(directory: fixture, access: workspaceAccess)
         check(workspaceStore.root != reopened.root)

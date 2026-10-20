@@ -29,6 +29,7 @@ final class PackingEncryptedCaptureStore {
                 try check(url, directory: true)
                 try protect(url)
             }
+            try ensureKeyCheck()
         }
     }
 
@@ -78,6 +79,24 @@ final class PackingEncryptedCaptureStore {
         try handle.synchronize()
         try handle.close()
     }
+    private func ensureKeyCheck() throws {
+        let marker = root.appendingPathComponent(".keycheck")
+        if manager.fileExists(atPath: marker.path) { try verifyKeyCheck(); return }
+        guard try manager.contentsOfDirectory(atPath: root.path).isEmpty else { throw PackingEncryptedStoreError.unsafePath }
+        let temporary = root.appendingPathComponent(".keycheck.pending-" + UUID().uuidString.lowercased())
+        try writeExclusive(access.sealStoreKeyCheck(), to: temporary)
+        if renamex_np(temporary.path, marker.path, UInt32(RENAME_EXCL)) != 0 {
+            let failure = errno
+            // Only this newly written regular file is eligible for cleanup.
+            do { try check(temporary, directory: false); try manager.removeItem(at: temporary) } catch {}
+            guard failure == EEXIST else { throw PackingEncryptedStoreError.io }
+        }
+        try syncDirectory(root)
+        try verifyKeyCheck()
+    }
+    private func verifyKeyCheck() throws {
+        try access.verifyStoreKeyCheck(readFile(root.appendingPathComponent(".keycheck"), maximum: 128))
+    }
     private func inode(_ url: URL) throws -> UInt64 {
         try check(url, directory: true)
         guard let number = try manager.attributesOfItem(atPath: url.path)[.systemFileNumber] as? NSNumber else { throw PackingEncryptedStoreError.unsafePath }
@@ -101,6 +120,7 @@ final class PackingEncryptedCaptureStore {
         do {
             try access.checked {
                 let destination = try captureURL(captureID)
+                try verifyKeyCheck()
                 guard !metadata.isEmpty, !points.isEmpty else { throw PackingEncryptedStoreError.invalidCapture }
                 let sealedMetadata = try access.seal(captureID: captureID, name: "capture.json", plaintext: metadata)
                 let sealedPoints = try access.seal(captureID: captureID, name: "points.ply", plaintext: points)
@@ -114,7 +134,7 @@ final class PackingEncryptedCaptureStore {
                 try writeExclusive(sealedPoints, to: staging.appendingPathComponent("points.ply.sealed"))
                 try syncDirectory(staging)
                 try beforePublish()
-                try access.check(); try checkRoot()
+                try access.check(); try checkRoot(); try verifyKeyCheck()
                 if renamex_np(staging.path, destination.path, UInt32(RENAME_EXCL)) != 0 {
                     if errno == EEXIST { throw PackingEncryptedStoreError.occupied }
                     throw PackingEncryptedStoreError.io
@@ -132,6 +152,9 @@ final class PackingEncryptedCaptureStore {
         let folder = try captureURL(captureID)
         try check(folder, directory: true)
         let url = folder.appendingPathComponent(name + ".sealed")
+        return try readFile(url, maximum: maximum)
+    }
+    private func readFile(_ url: URL, maximum: Int) throws -> Data {
         try check(url, directory: false)
         let descriptor = Darwin.open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
         guard descriptor >= 0 else { throw PackingEncryptedStoreError.io }
@@ -149,13 +172,22 @@ final class PackingEncryptedCaptureStore {
         return data
     }
     func readMetadata(captureID: String) throws -> Data {
-        try access.checked { try access.unseal(captureID: captureID, name: "capture.json", ciphertext: readSealed("capture.json", captureID: captureID, maximum: 20000)) }
+        try access.checked {
+            try verifyKeyCheck()
+            let data = try access.unseal(captureID: captureID, name: "capture.json", ciphertext: readSealed("capture.json", captureID: captureID, maximum: 20000))
+            try verifyKeyCheck(); return data
+        }
     }
     func readPoints(captureID: String) throws -> Data {
-        try access.checked { try access.unseal(captureID: captureID, name: "points.ply", ciphertext: readSealed("points.ply", captureID: captureID, maximum: 8_000_000)) }
+        try access.checked {
+            try verifyKeyCheck()
+            let data = try access.unseal(captureID: captureID, name: "points.ply", ciphertext: readSealed("points.ply", captureID: captureID, maximum: 8_000_000))
+            try verifyKeyCheck(); return data
+        }
     }
     @discardableResult func delete(captureID: String) throws -> Bool {
         try access.checked {
+            try verifyKeyCheck()
             let folder = try captureURL(captureID)
             guard manager.fileExists(atPath: folder.path) else { return false }
             try check(folder, directory: true)

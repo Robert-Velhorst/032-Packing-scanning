@@ -93,6 +93,7 @@ final class PackingCaptureAuthority {
         fileprivate var lastInteraction: TimeInterval
         private var key: [UInt8]?
         private static let magic = Data([0x50, 0x53, 0x43, 0x31])
+        private static let storeMarker = Data("packing-protected-store-key-v1".utf8)
 
         fileprivate init(owner: PackingCaptureAuthority, workspace: String?, account: String?, key: [UInt8]?, now: TimeInterval) {
             self.owner = owner; workspaceID = workspace; accountID = account; self.key = key; lastInteraction = now
@@ -153,6 +154,30 @@ final class PackingCaptureAuthority {
                 do {
                     let box = try AES.GCM.SealedBox(combined: ciphertext.dropFirst(4))
                     return try AES.GCM.open(box, using: SymmetricKey(data: Data(key)), authenticating: context)
+                } catch { throw PackingCaptureAuthorityError.authentication }
+            }
+        }
+        private func storeKeyContext() throws -> Data {
+            guard let workspaceID, let accountID, key != nil else { throw PackingCaptureAuthorityError.guest }
+            return Data("packing-scanning-ios-store-key-v1:\(workspaceID):\(accountID)".utf8)
+        }
+        func sealStoreKeyCheck() throws -> Data {
+            try checked {
+                let context = try storeKeyContext()
+                guard let key else { throw PackingCaptureAuthorityError.guest }
+                let box = try AES.GCM.seal(Self.storeMarker, using: SymmetricKey(data: Data(key)), authenticating: context)
+                guard let combined = box.combined else { throw PackingCaptureAuthorityError.authentication }
+                return Self.magic + combined
+            }
+        }
+        func verifyStoreKeyCheck(_ data: Data) throws {
+            try checked {
+                let context = try storeKeyContext()
+                guard let key, data.count == Self.storeMarker.count + 32, data.starts(with: Self.magic) else { throw PackingCaptureAuthorityError.invalidFile }
+                do {
+                    let box = try AES.GCM.SealedBox(combined: data.dropFirst(4))
+                    let plaintext = try AES.GCM.open(box, using: SymmetricKey(data: Data(key)), authenticating: context)
+                    guard plaintext == Self.storeMarker else { throw PackingCaptureAuthorityError.authentication }
                 } catch { throw PackingCaptureAuthorityError.authentication }
             }
         }

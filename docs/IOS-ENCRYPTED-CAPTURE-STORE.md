@@ -15,7 +15,15 @@ images, checkpoints and USDZ files are not encrypted by this module.
 
 ## Publication and reads
 
-Only `capture.json.sealed` and `points.ply.sealed` are written. Encryption and
+Capture directories contain only `capture.json.sealed` and `points.ply.sealed`.
+The workspace root also has an authenticated encrypted `.keycheck` constant,
+bound to account/workspace in a separate cryptographic context. It contains no
+raw key. Constructor and operation checks reject a wrong key or changed marker
+before accepting new files, preventing mixed-key writes under one workspace.
+The marker is synchronized and published exclusively. Missing/corrupted markers
+alongside existing files refuse automatic repair.
+
+Encryption and
 size/authority checks precede staging. A fresh private staging directory receives
 only ciphertext, with exclusive no-follow file creation and owner-only file
 permissions. Files are synchronized and closed, then the directory is synchronized.
