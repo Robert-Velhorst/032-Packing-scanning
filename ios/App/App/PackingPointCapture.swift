@@ -98,6 +98,28 @@ struct PackingPointCapture: Sendable {
                 "Exterior-connected concavities stay open. Hidden cavities are filled; narrow openings can disappear at this resolution. No holes were deliberately patched.",
                 "Cell rounding is a sampling allowance, not a sensor-error bound. Only an explicitly adopted, uniformly scaled shape is used for occupied-cell packing; physical fit remains unverified."]]
     }
+    func interiorResult(review: PackingInteriorReview) throws -> [String: Any] {
+        guard target == .containerInterior, let envelope, let quality = depthQuality,
+              quality.valid(pointCount: pointCount), !quality.capped, pointCount < 60_000 else {
+            throw PackingVoxelCavityError.ineligibleCapture
+        }
+        let decoded = try Self.decodePoints(points, highCategoryOnly: true)
+        let cavity = try PackingVoxelCavity.reconstruct(points: decoded.map { envelope.projectMm($0) }, boundsMm: envelope.dimensionsMm, review: review)
+        func dimensions(_ p: SIMD3<Double>) -> [String: Double] { ["length": p.x,"width": p.y,"height": p.z] }
+        return ["id": id, "target": "container_interior", "format": "voxel_cavity_v1", "units": "millimetres",
+            "sourceHash": sourceSHA256, "sourcePointCount": pointCount, "method": PackingVoxelCavity.method,
+            "grid": ["x": cavity.grid.x,"y": cavity.grid.y,"z": cavity.grid.z],
+            "boundsMm": dimensions(cavity.boundsMm), "cellSizeMm": dimensions(cavity.cellSizeMm),
+            "seedMm": ["x": review.seedMm.x,"y": review.seedMm.y,"z": review.seedMm.z],
+            "opening": ["axis": review.axis,"sign": review.sign,"planeMm": review.sign == 1 ? cavity.boundsMm[review.axis] : 0,"cells": cavity.openingCells],
+            "freeCells": cavity.freeCells,"observedCells": cavity.observedCells,"wallCellCount": cavity.observedCells.count,
+            "surfaceFaceCount": cavity.surfaceFaceCount,"estimatedVolumeMm3": cavity.estimatedVolumeMm3,
+            "warnings": [
+                "This is one estimated empty component selected by an interior seed. Other compartments and hidden cavities are not included.",
+                "The selected opening plane is a reviewed assumption, not an observed wall or a measured narrowest entry. Source axes do not infer travel orientation.",
+                "Observed cells stay unavailable. Only the selected opening is capped for boundary checking; missing walls or floor reaching other envelope faces are rejected.",
+                "Finite cells can hide narrow gaps, thicken walls or miss unobserved intrusions. Sampling spacing does not bound physical error, usable capacity or closure. Nothing was adopted into the packing plan."]]
+    }
     private func dimensions(_ envelope: PackingScanEnvelope) -> [String: Double] {
         ["length": envelope.dimensionsMm.x, "width": envelope.dimensionsMm.y, "height": envelope.dimensionsMm.z]
     }

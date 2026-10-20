@@ -73,7 +73,7 @@ export function canPreviewSavedGeometry(record: ScanRecord): boolean {
     && (record.platform === 'android' || record.platform === 'ios' && record.method === 'arkit_scene_depth' && record.geometry?.format === 'ply_point_cloud');
 }
 export function canReconstructSavedGeometry(record:ScanRecord):boolean{
-  return canPreviewSavedGeometry(record)&&(record.platform==='android'||record.platform==='ios'&&record.target==='item');
+  return canPreviewSavedGeometry(record);
 }
 
 export async function readSavedGeometry(record: ScanRecord,lease?:string): Promise<SavedGeometryPreview> {
@@ -90,7 +90,7 @@ export async function reconstructSavedCapture(record: ScanRecord, source: SavedG
 
 export async function reconstructSavedInterior(record:ScanRecord,source:SavedGeometryPreview,review:InteriorReview,lease?:string):Promise<ReconstructedInterior> {
   if(!canReconstructSavedGeometry(record)||record.target!=='container_interior'||source.id!==record.id||source.target!==record.target)
-    throw new Error('Interior reconstruction requires the original empty bag scan on its Android device.');
+    throw new Error('Interior reconstruction requires the original empty bag point-cloud scan on its supported device.');
   if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(record.id))throw new Error('The saved scan identifier is invalid.');
   return parseInteriorCavity(await PackingScan.reconstructInterior({id:record.id,openingAxis:review.openingAxis,openingSign:review.openingSign,seedMm:review.seedMm,...(lease?{lease}:{})}),source,review);
 }

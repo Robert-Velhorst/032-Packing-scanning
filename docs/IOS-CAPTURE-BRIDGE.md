@@ -57,8 +57,9 @@ legacy UNIMPLEMENTED handshake falls back to guest-only behavior. Saved ARKit
 point review and item-shape reconstruction are available through the original iOS
 source. Reconstruction checks every saved point and the shared web parser binds
 the result to the reviewed source before explicit adoption. See
-[iOS reconstruction](IOS-VOXEL-RECONSTRUCTION.md). Interior/cavity reconstruction
-controls remain Android-only. iOS backup/file/photo and retention parity also
+[iOS reconstruction](IOS-VOXEL-RECONSTRUCTION.md). Bag interiors use a separate
+[reviewed cavity path](IOS-CAVITY-RECONSTRUCTION.md) with explicit opening and seed.
+iOS backup/file/photo and retention parity also
 remain unfinished. Accounts/service deployment settings are unchanged.
 
 Mac checks execute production key/state encoding, revision/key authority, pending

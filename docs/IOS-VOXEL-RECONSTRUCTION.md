@@ -9,8 +9,9 @@ and capped sources are refused. The source and its metadata remain unchanged.
 
 The existing saved-scan review flow parses the native result against its original
 ID, hash, point count and envelope before constructing the surface. It enables
-explicit item-shape adoption on the original iOS device. Interior/cavity controls
-remain Android-only because those need a separate reconstruction model.
+explicit item-shape adoption on the original iOS device. Bag interiors use the
+separate [seeded cavity model](IOS-CAVITY-RECONSTRUCTION.md), which cannot be
+substituted for occupied item geometry.
 
 The bridge retains the original workspace lease on the serial storage worker,
 limits pending requests, and rechecks access before returning JSON on the main

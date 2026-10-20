@@ -4,7 +4,7 @@ import RealityKit
 import SwiftUI
 import UIKit
 
-private enum PackingCaptureIOFailure: Error, Sendable { case unconfirmed, reconstructionUnavailable(String) }
+private enum PackingCaptureIOFailure: Error, Sendable { case unconfirmed, reconstructionUnavailable(String), interiorUnavailable(String) }
 
 /** The SDK call remains on the main actor; workers transfer only Sendable JSON bytes. */
 @MainActor private final class PackingCaptureReply {
@@ -22,6 +22,9 @@ private enum PackingCaptureIOFailure: Error, Sendable { case unconfirmed, recons
             try access.check()
             if case .failure(.reconstructionUnavailable(let message)) = result {
                 call.reject("Reconstruction unavailable. " + message, "RECONSTRUCTION_UNAVAILABLE"); return
+            }
+            if case .failure(.interiorUnavailable(let message)) = result {
+                call.reject("Interior reconstruction unavailable. " + message, "INTERIOR_UNAVAILABLE"); return
             }
             let data = try result.get()
             let reply = try access.checked {
@@ -58,6 +61,7 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "touchStorage", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getCapturePreview", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "reconstructCapture", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "reconstructInterior", returnType: CAPPluginReturnPromise),
     ]
 
     public override func load() {
@@ -154,6 +158,7 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
             let result: Result<Data, PackingCaptureIOFailure>
             do { result = .success(try access.checked { try JSONSerialization.data(withJSONObject: action(store)) }) }
             catch let error as PackingVoxelSolidError { result = .failure(.reconstructionUnavailable(error.localizedDescription)) }
+            catch let error as PackingVoxelCavityError { result = .failure(.interiorUnavailable(error.localizedDescription)) }
             catch { result = .failure(.unconfirmed) }
             Task { @MainActor in channel.finish(result) }
         }
@@ -174,6 +179,18 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
                 let access = try self.bound(call)
                 self.runProtected(call, access: access) { try $0.readPointCapture(captureID: id).reconstructedResult() }
             } catch { call.reject("The capture workspace is locked.", "STORAGE_CHANGED") }
+        }
+    }
+
+    @objc func reconstructInterior(_ call: CAPPluginCall) {
+        Task { @MainActor in
+            guard !self.captureBusy, let id = call.getString("id") else { call.reject("Finish the active scan before reviewing an interior.", "CAPTURE_BUSY"); return }
+            do {
+                let access = try self.bound(call)
+                let review = try PackingInteriorReview.parse(call.jsObjectRepresentation)
+                self.runProtected(call, access: access) { try $0.readPointCapture(captureID: id).interiorResult(review: review) }
+            } catch let error as PackingVoxelCavityError { call.reject(error.localizedDescription, "INTERIOR_UNAVAILABLE") }
+            catch { call.reject("The capture workspace is locked.", "STORAGE_CHANGED") }
         }
     }
 
