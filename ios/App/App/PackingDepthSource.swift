@@ -205,7 +205,8 @@ final class PackingDepthSource: @unchecked Sendable {
                 var bits = point[axis].bitPattern.littleEndian
                 withUnsafeBytes(of: &bits) { ply.append(contentsOf: $0) }
             } }
-            let capture = try store.savePointCapture(target: target, points: ply)
+            let capture = try store.savePointCapture(target: target, points: ply,
+                depthQuality: PackingPointCapture.DepthQuality(depthFrames: frames, viewCount: directions.count, capped: capped))
             stopped = true; erase()
             return capture
         } } catch PackingDepthSourceError.incomplete { throw PackingDepthSourceError.incomplete }

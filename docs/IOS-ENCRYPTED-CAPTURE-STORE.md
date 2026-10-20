@@ -90,3 +90,30 @@ non-future completion time. This internal metadata is not the shared web
 The native caller must invoke save only after its real capture has completed.
 No age-based deletion, raw-source pruning, bridge capability or public endpoint
 is enabled by this change.
+
+## Native depth records and envelope estimates
+
+Completed `PackingDepthSource` captures now use metadata version 2. The native
+source supplies frame/view counters and a point-cap flag; the codec validates
+their ranges and requires at least 300 points. The record identifies ARKit scene
+depth and stores the oriented envelope's method, basis, 2.5 mm face margin and
+dimensions. Reads regenerate those bounds from the authenticated PLY and require
+matching dimensions (within 0.001 mm) and basis. Counters are native diagnostics,
+not independent proof of physical coverage or sensor origin. Generic version-1
+point records remain readable and do not acquire invented depth diagnostics.
+
+`PackingScanEnvelope` ports Android's candidate fit: capture-aligned and principal
+axes, plus a bounded deterministic orientation search over up to 1,200 samples.
+Every original point determines each candidate's final bounds. Packing axes sort
+by side length and retain a right-handed frame; this does not infer an upright
+side. A principal-axis spread under 5 mm refuses a dimension-bearing depth capture
+instead of turning a flat source into a padded volume. The 2.5 mm sampling margin
+does not bound sensor error, missing surfaces, occupied volume or usable cavity.
+
+Native geometry checks include rotated boxes/cubes, hand-calculated metric sides,
+projection containment, deterministic input ordering, an outlier deliberately
+excluded from the search sample, degenerate sources and contradictory stored
+metadata. CI also executes the real Android Java fit against Swift's synthetic
+float-source fixtures with a 0.005 mm comparison tolerance. These synthetic checks
+do not establish physical accuracy or on-device performance. The web result
+contract and native bridge are still required before exposing these estimates.

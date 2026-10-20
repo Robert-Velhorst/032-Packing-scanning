@@ -16,6 +16,8 @@ on:
       - 'scripts/test-ios-point-capture.swift'
       - 'scripts/test-ios-depth-source.swift'
       - 'scripts/test-ios-depth-flow.swift'
+      - 'scripts/test-ios-envelope.swift'
+      - 'scripts/CheckIosEnvelope.java'
       - 'scripts/check-ios-capture-provider.mjs'
       - '.github/workflows/ios.yml'
   push:
@@ -34,6 +36,8 @@ on:
       - 'scripts/test-ios-point-capture.swift'
       - 'scripts/test-ios-depth-source.swift'
       - 'scripts/test-ios-depth-flow.swift'
+      - 'scripts/test-ios-envelope.swift'
+      - 'scripts/CheckIosEnvelope.java'
       - 'scripts/check-ios-capture-provider.mjs'
       - '.github/workflows/ios.yml'
   workflow_dispatch:
@@ -69,18 +73,26 @@ jobs:
       - name: Check protected capture persistence
         shell: bash
         run: |
-          xcrun swiftc -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingPointCapture.swift ios/App/App/PackingEncryptedCaptureStore.swift scripts/test-ios-encrypted-store.swift -o "$RUNNER_TEMP/encrypted-store-checks"
+          xcrun swiftc -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingScanEnvelope.swift ios/App/App/PackingPointCapture.swift ios/App/App/PackingEncryptedCaptureStore.swift scripts/test-ios-encrypted-store.swift -o "$RUNNER_TEMP/encrypted-store-checks"
           "$RUNNER_TEMP/encrypted-store-checks"
       - name: Check point capture provenance
         shell: bash
         run: |
-          xcrun swiftc -parse-as-library ios/App/App/PackingPointCapture.swift scripts/test-ios-point-capture.swift -o "$RUNNER_TEMP/point-capture-checks"
+          xcrun swiftc -parse-as-library ios/App/App/PackingScanEnvelope.swift ios/App/App/PackingPointCapture.swift scripts/test-ios-point-capture.swift -o "$RUNNER_TEMP/point-capture-checks"
           "$RUNNER_TEMP/point-capture-checks"
       - name: Check in-memory depth source and encrypted handoff
         shell: bash
         run: |
-          xcrun swiftc -sanitize=thread -g -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingPointCapture.swift ios/App/App/PackingEncryptedCaptureStore.swift ios/App/App/PackingDepthSource.swift scripts/test-ios-depth-source.swift -o "$RUNNER_TEMP/depth-source-checks"
+          xcrun swiftc -sanitize=thread -g -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingScanEnvelope.swift ios/App/App/PackingPointCapture.swift ios/App/App/PackingEncryptedCaptureStore.swift ios/App/App/PackingDepthSource.swift scripts/test-ios-depth-source.swift -o "$RUNNER_TEMP/depth-source-checks"
           TSAN_OPTIONS=halt_on_error=1:exitcode=66 "$RUNNER_TEMP/depth-source-checks"
+      - name: Check oriented bounds and Android-native parity
+        shell: bash
+        run: |
+          xcrun swiftc -O -parse-as-library ios/App/App/PackingScanEnvelope.swift ios/App/App/PackingPointCapture.swift scripts/test-ios-envelope.swift -o "$RUNNER_TEMP/envelope-checks"
+          "$RUNNER_TEMP/envelope-checks" "$RUNNER_TEMP/envelope-parity.txt"
+          mkdir -p "$RUNNER_TEMP/envelope-java"
+          javac -d "$RUNNER_TEMP/envelope-java" android/app/src/main/java/com/packingscanning/app/scanning/ScanEnvelope.java android/app/src/main/java/com/packingscanning/app/scanning/DepthCloud.java android/app/src/main/java/com/packingscanning/app/scanning/CaptureGuidance.java scripts/CheckIosEnvelope.java
+          java -cp "$RUNNER_TEMP/envelope-java" CheckIosEnvelope "$RUNNER_TEMP/envelope-parity.txt"
       - name: Check depth capture flow and stale callbacks
         shell: bash
         run: |

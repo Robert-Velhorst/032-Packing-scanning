@@ -128,9 +128,9 @@ final class PackingEncryptedCaptureStore: @unchecked Sendable {
     }
 
     /** Native-owned identity/time; invalid geometry never reaches staging. */
-    func savePointCapture(target: PackingPointCapture.Target, points: Data) throws -> PackingPointCapture {
+    func savePointCapture(target: PackingPointCapture.Target, points: Data, depthQuality: PackingPointCapture.DepthQuality? = nil) throws -> PackingPointCapture {
         try access.checked {
-            let capture = try PackingPointCapture.complete(target: target, points: points, now: clock())
+            let capture = try PackingPointCapture.complete(target: target, points: points, now: clock(), depthQuality: depthQuality)
             try write(captureID: capture.id, metadata: capture.metadata, points: capture.points)
             return capture
         }

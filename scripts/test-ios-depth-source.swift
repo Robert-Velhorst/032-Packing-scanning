@@ -76,6 +76,7 @@ import simd
         let otherStore = try PackingEncryptedCaptureStore(directory: fixture, access: otherAccess)
         refuses("Never redirect to another selection") { _ = try capture.finish(target: .item, store: otherStore) }
         let saved = try capture.finish(target: .item, store: store)
+        precondition(saved.depthQuality?.depthFrames == status.acceptedFrames && saved.depthQuality?.viewCount == status.viewCount && saved.envelope != nil)
         try check(store.readPointCapture(captureID: saved.id).pointCount == status.pointCount)
         let headerEnd = saved.points.range(of: Data("end_header\n".utf8))!.upperBound
         func first(_ axis: Int) -> Float {
