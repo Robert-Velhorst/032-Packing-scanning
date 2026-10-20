@@ -35,6 +35,7 @@ cd android
 bash ./gradlew --no-daemon --console=plain --max-workers=2 \
   :app:testDebugUnitTest \
   :app:assembleDebug \
+  :app:assembleDebugAndroidTest \
   :app:assembleRelease \
   :app:lintDebug \
   :app:lintRelease

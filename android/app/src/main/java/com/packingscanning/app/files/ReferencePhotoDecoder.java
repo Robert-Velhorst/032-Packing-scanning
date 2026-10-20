@@ -3,7 +3,7 @@ package com.packingscanning.app.files;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
-import android.media.ExifInterface;
+import androidx.exifinterface.media.ExifInterface;
 import java.io.*;
 
 /** Sample before pixel allocation; render to JPEG to exclude source EXIF/GPS and active formats. */

@@ -33,7 +33,7 @@ with the checked-in SHA-256. The app uses [SDK 36 as required for Capacitor
 
 The shell helper builds the production web assets, synchronizes Android assets,
 then runs app-specific native unit tests, debug assembly, unsigned release
-assembly, debug lint and release lint. Gradle uses at most two workers and no
+assembly, instrumentation-test assembly, debug lint and release lint. Gradle uses at most two workers and no
 persistent daemon. SDK tools/dependencies required by Gradle must already be
 available under the operator's accepted SDK installation.
 
@@ -56,3 +56,11 @@ Device acceptance, release signing and the outstanding product requirements
 remain separate gates. See [iOS compilation](IOS-BUILD.md) for the other native
 platform and [release readiness](RELEASE-READINESS-20261020.md) for verified
 hosting and backup evidence.
+
+Reference photo metadata parsing now uses the maintained [AndroidX ExifInterface
+1.4.2](https://developer.android.com/jetpack/androidx/releases/exifinterface),
+following lint's warning about the older platform parser. The decoder still
+samples before pixel allocation and re-encodes the oriented image to a bounded
+JPEG without copying EXIF/GPS metadata. The existing device tests for bounded
+PNG conversion, orientation and metadata exclusion are compiled by the workflow;
+their execution still requires Android device/emulator acceptance.
