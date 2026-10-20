@@ -1,6 +1,7 @@
 import type { AccountApi } from './account-http.ts';
 import { createServer } from 'node:http';
-import { readFile, realpath } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
+import { access, readFile, realpath, stat } from 'node:fs/promises';
 import { resolve, sep, extname } from 'node:path';
 import { brotliCompress, constants as zlibConstants, gzip } from 'node:zlib';
 import type { CarrierService } from './carrier-service.ts';
@@ -29,7 +30,7 @@ const compressBuffer = (content: Buffer, encoding: StaticEncoding) => new Promis
   if (encoding === 'br') brotliCompress(content, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 5 } }, complete);
   else gzip(content, complete);
 });
-export function createAppServer(options: { dist: string; carrierService: CarrierService; weatherService?: WeatherService; allowedOrigins?: string[]; accountApi?: AccountApi }) {
+export function createAppServer(options: { dist: string; carrierService: CarrierService; weatherService?: WeatherService; allowedOrigins?: string[]; accountApi?: AccountApi; checkReady?: () => void | Promise<void> }) {
   const root = resolve(options.dist), allowedOrigins = new Set(options.allowedOrigins ?? []);
   const immutableAssetLimit = 8 * 1024 * 1024;
   const immutableAssets = new Map<string, Buffer>();
@@ -71,6 +72,27 @@ export function createAppServer(options: { dist: string; carrierService: Carrier
     };
     let url: URL;
     try { url = new URL(request.url ?? '/', 'http://localhost'); } catch { json(400, { error: { code: 'invalid_request', message: 'Invalid request.' } }); return; }
+    if (url.pathname === '/health/live' || url.pathname === '/health/ready') {
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        response.setHeader('Allow', 'GET, HEAD'); json(405, { status: 'method_not_allowed' }); return;
+      }
+      if (url.search || Number(request.headers['content-length'] ?? 0) > 0 || request.headers['transfer-encoding']) {
+        json(400, { status: 'invalid_request' }); return;
+      }
+      try {
+        if (url.pathname === '/health/ready') {
+          const index = resolve(root, 'index.html');
+          const actual = await realpath(index);
+          if (!actual.startsWith(`${root}${sep}`)) throw new Error('Outside static root');
+          await access(actual, fsConstants.R_OK);
+          const info = await stat(actual);
+          if (!info.isFile() || info.size === 0) throw new Error('Missing app build');
+          await options.checkReady?.();
+        }
+        json(200, { status: 'ok' });
+      } catch { json(503, { status: 'unavailable' }); }
+      return;
+    }
     if (url.pathname === '/api/v1/account' || url.pathname.startsWith('/api/v1/account/')) {
       if (options.accountApi) { await options.accountApi.handle(request, response, url); return; }
       if (url.pathname === '/api/v1/account/session' && request.method === 'GET' && !url.search) json(200, { data: { available: false, registrations: false, profile: null, csrf: null } });

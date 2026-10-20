@@ -10,6 +10,12 @@ import { createTestTempDirectory } from '../src/test-temp.ts';
 const input = { username: 'qa-traveller', name: 'Synthetic account', password: 'synthetic passphrase 032 only' };
 const key = Buffer.alloc(32, 7);
 describe('private account store', () => {
+  it('reports whether the configured account store can be queried', () => {
+    const store = new AccountStore(':memory:', key);
+    expect(() => store.checkReady()).not.toThrow();
+    store.close();
+    expect(() => store.checkReady()).toThrow();
+  });
   it('keeps private records encrypted, preserves source records, and survives restart with the correct key', async () => {
     const root = await createTestTempDirectory('packing-account-'), file = join(root, 'accounts.sqlite');
     let store = new AccountStore(file, key);

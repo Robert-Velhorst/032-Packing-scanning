@@ -58,6 +58,9 @@ export class AccountStore {
     if (existing && !safeEqual(existing.key_check, check)) { this.db.close(); this.master.fill(0); throw new Error('The configured account encryption key does not match this store.'); }
     if (!existing) this.db.prepare('INSERT INTO metadata VALUES(1,?)').run(Buffer.from(check));
   }
+  checkReady() {
+    if (!this.db.prepare('SELECT id FROM metadata WHERE id=1').get()) throw new Error('Account store is unavailable.');
+  }
   close() { this.db.close(); this.master.fill(0); }
   private mac(purpose: string, value: string): string { return createHmac('sha256', this.master).update(purpose).update('\0').update(value).digest('hex'); }
   private cryptKey() { return createHmac('sha256', this.master).update('packing-account-encryption-v1').digest(); }

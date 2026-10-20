@@ -23,7 +23,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY . .
-RUN npm test && npm run build
+RUN npm run check:benchmarks && npm test && npm run build
 
 FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS runtime
 RUN apt-get update \
@@ -39,5 +39,5 @@ COPY --from=build --chown=1000:1000 /app/package.json ./package.json
 RUN mkdir .carrier-cache .account-data && chown 1000:1000 .carrier-cache .account-data
 USER 1000:1000
 EXPOSE 3001
-HEALTHCHECK --interval=30s --timeout=6s --start-period=10s CMD node -e "fetch('http://127.0.0.1:3001/',{signal:AbortSignal.timeout(5000)}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+HEALTHCHECK --interval=30s --timeout=6s --start-period=10s CMD node -e "fetch('http://127.0.0.1:'+process.env.APP_PORT+'/health/ready',{signal:AbortSignal.timeout(5000)}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 CMD ["node", "server/index.ts"]

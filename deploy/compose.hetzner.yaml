@@ -1,0 +1,19 @@
+# Combine with compose.yaml. Load a locally built, tested image on the server;
+# avoid compiling on the shared 1-vCPU/2-GB host.
+services:
+  packing:
+    mem_limit: 768m
+    cpus: 0.50
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    networks:
+      edge:
+        aliases:
+          - packing032
+networks:
+  edge:
+    name: packing032_edge

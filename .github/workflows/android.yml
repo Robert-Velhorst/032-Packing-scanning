@@ -1,0 +1,65 @@
+name: Android build
+
+on:
+  pull_request:
+    paths:
+      - 'android/**'
+      - 'src/**'
+      - 'package*.json'
+      - 'capacitor.config.ts'
+      - 'vite.config.ts'
+      - 'scripts/build-android.sh'
+      - '.github/workflows/android.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'android/**'
+      - 'src/**'
+      - 'package*.json'
+      - 'capacitor.config.ts'
+      - 'vite.config.ts'
+      - 'scripts/build-android.sh'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: Android tests, lint and assemblies
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PACKING_ACCOUNT_ORIGIN: ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.12.0
+          cache: npm
+      - name: Select preinstalled Java 21
+        shell: bash
+        run: |
+          test -x "$JAVA_HOME_21_X64/bin/java"
+          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+      - run: npm ci --ignore-scripts
+      - name: Build bundled app, run native tests and lint
+        shell: bash
+        run: bash scripts/build-android.sh 2>&1 | tee "$RUNNER_TEMP/packing-android-build.log"
+      - name: Preserve native build diagnostics
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: android-build-diagnostics
+          path: |
+            ${{ runner.temp }}/packing-android-build.log
+            android/app/build/test-results/testDebugUnitTest/*.xml
+            android/app/build/reports/lint-results-*.html
+          retention-days: 7
+          if-no-files-found: ignore

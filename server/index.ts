@@ -22,7 +22,12 @@ const accountStore = accountOrigin && accountKeyFile ? new AccountStore(resolve(
 const accountApi = accountStore && accountOrigin ? new AccountApi(accountStore, accountOrigin, process.env.APP_ACCOUNT_ALLOW_REGISTRATION === 'true') : undefined;
 if(process.env.WEATHER_API_KEY&&process.env.WEATHER_API_KEY_FILE)throw Error('Configure only one weather key source.');
 const weatherKey=process.env.WEATHER_API_KEY_FILE?readFileSync(resolve(project,process.env.WEATHER_API_KEY_FILE),'utf8').trim():process.env.WEATHER_API_KEY;
+let stopping = false;
 const server = createAppServer({
+  checkReady: () => {
+    if (stopping) throw new Error('Server is stopping.');
+    accountStore?.checkReady();
+  },
   weatherService: new WeatherService((process.env.WEATHER_ACCESS ?? 'off') as 'off'|'noncommercial'|'commercial',weatherKey),
   dist: resolve(project, 'dist'), allowedOrigins, accountApi,
   carrierService: new CarrierService(resolve(project, process.env.CARRIER_CACHE_FILE ?? '.carrier-cache/easyjet.json')),
@@ -30,4 +35,10 @@ const server = createAppServer({
 server.requestTimeout = 20000;
 server.headersTimeout = 10000;
 server.listen(port, process.env.APP_HOST ?? '127.0.0.1', () => console.log(`Packing app and public carrier lookup ready on port ${port}.`));
-for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => server.close(() => accountStore?.close()));
+for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => {
+  if (stopping) return;
+  stopping = true;
+  const deadline = setTimeout(() => server.closeAllConnections(), 15000);
+  deadline.unref();
+  server.close(() => { clearTimeout(deadline); accountStore?.close(); });
+});

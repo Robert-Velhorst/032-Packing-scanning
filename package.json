@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && tsc -p tsconfig.server.json && vite build",
-    "test": "vitest run",
+    "test": "vitest run --maxWorkers=2",
     "benchmark": "node scripts/physical-benchmark.ts",
     "benchmark:optimizer": "node scripts/optimizer-performance.mjs",
     "benchmark:optimizer:profile": "node scripts/optimizer-performance.mjs --profile=true",
@@ -37,6 +37,9 @@
     "react-dom": "^19.3.1",
     "three": "^0.186.1"
   },
+  "overrides": {
+    "uuid": "11.1.1"
+  },
   "devDependencies": {
     "@capacitor/cli": "8.5.3",
     "@types/node": "26.6.5",
@@ -49,8 +52,5 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vitest": "^5.0.5"
-  },
-  "overrides": {
-    "uuid": "11.1.1"
   }
 }
