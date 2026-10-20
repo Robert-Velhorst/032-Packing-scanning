@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        EA0321111111111111111111 /* PackingPendingItemPhotoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0322222222222222222222 /* PackingPendingItemPhotoStore.swift */; };
+        DF0321111111111111111111 /* PackingReferencePhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF0322222222222222222222 /* PackingReferencePhoto.swift */; };
         DE0321111111111111111111 /* PackingFilesPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE0322222222222222222222 /* PackingFilesPlugin.swift */; };
         DD0321111111111111111111 /* PackingBackupRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0322222222222222222222 /* PackingBackupRuntime.swift */; };
         DC0321111111111111111111 /* PackingBackupDocumentIO.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC0322222222222222222222 /* PackingBackupDocumentIO.swift */; };
@@ -39,6 +41,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        EA0322222222222222222222 /* PackingPendingItemPhotoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingPendingItemPhotoStore.swift; sourceTree = "<group>"; };
+        DF0322222222222222222222 /* PackingReferencePhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingReferencePhoto.swift; sourceTree = "<group>"; };
         DE0322222222222222222222 /* PackingFilesPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingFilesPlugin.swift; sourceTree = "<group>"; };
         DD0322222222222222222222 /* PackingBackupRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingBackupRuntime.swift; sourceTree = "<group>"; };
         DC0322222222222222222222 /* PackingBackupDocumentIO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingBackupDocumentIO.swift; sourceTree = "<group>"; };
@@ -117,6 +121,8 @@
                 FA0322222222222222222222 /* PackingDepthViewController.swift */,
                 DB0322222222222222222222 /* PrivacyInfo.xcprivacy */,
                 DA0322222222222222222222 /* PackingPendingBackupStore.swift */,
+                EA0322222222222222222222 /* PackingPendingItemPhotoStore.swift */,
+                DF0322222222222222222222 /* PackingReferencePhoto.swift */,
                 DE0322222222222222222222 /* PackingFilesPlugin.swift */,
                 DD0322222222222222222222 /* PackingBackupRuntime.swift */,
                 DC0322222222222222222222 /* PackingBackupDocumentIO.swift */,
@@ -230,6 +236,8 @@
                 EF0321111111111111111111 /* PackingDepthFlow.swift in Sources */,
                 FA0321111111111111111111 /* PackingDepthViewController.swift in Sources */,
                 DA0321111111111111111111 /* PackingPendingBackupStore.swift in Sources */,
+                EA0321111111111111111111 /* PackingPendingItemPhotoStore.swift in Sources */,
+                DF0321111111111111111111 /* PackingReferencePhoto.swift in Sources */,
                 DE0321111111111111111111 /* PackingFilesPlugin.swift in Sources */,
                 DD0321111111111111111111 /* PackingBackupRuntime.swift in Sources */,
                 DC0321111111111111111111 /* PackingBackupDocumentIO.swift in Sources */,
