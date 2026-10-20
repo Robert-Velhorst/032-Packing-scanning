@@ -1,7 +1,15 @@
 # iOS compilation and release boundary
 
 The app uses Capacitor 8.5.3. Capacitor 8 requires [Xcode 26 or later and an iOS
-15 deployment target](https://capacitorjs.com/docs/updating/8-0#ios).
+15 deployment target](https://capacitorjs.com/docs/updating/8-0#ios). This app
+requires **iOS/iPadOS 15.4 or later** because its real editing, backup and identity
+paths use `structuredClone`, `Object.hasOwn` and `Array.at`.
+[WebKit 15.4](https://webkit.org/blog/12445/new-webkit-features-in-safari-15-4/)
+introduced these APIs. The App/project deployment settings and explicit Safari/
+iOS Vite targets match 15.4; lowering the native minimum alone would allow
+installation with missing runtime APIs. Vite's syntax transformations do not
+polyfill these APIs. Successful current-SDK builds still do not prove behavior
+on the oldest supported OS; that runtime/device acceptance remains required.
 Guided capture additionally requires the supported hardware and iOS 18 APIs
 checked by `PackingScanPlugin`; the minimum app deployment version does not
 mean every device supports scanning.
@@ -39,6 +47,13 @@ key, password, session or other credential in native build variables.
 
 ## Evidence and remaining work
 
+Native foreground guards share an owning-window check. They use the window's
+active scene when available and the application's active state for a scene-less
+window. Missing/hidden windows and inactive/background states are refused; data
+protection and original lease checks remain separate. Native workspace-selection
+changes also cancel voice/print activity, independently of a delayed WebView
+callback. These lifecycle paths still need simulator/device acceptance.
+
 On 2026-10-20 the [native build run for source c208c03](https://github.com/Robert-Velhorst/032-Packing-scanning/actions/runs/39399554967)
 completed successfully with Xcode 26.3 and Node 26.12.0: Debug simulator and
 unsigned Release device builds both succeeded after bundling and synchronization.
@@ -52,15 +67,17 @@ runtime behavior, native feature parity, release signing or App Store acceptance
 
 Physical iPhone/iPad camera and reconstruction, permissions, file providers,
 Keychain persistence, offline behavior, lifecycle interruption and measured
-scan/packing trials remain required. iOS protected workspaces and the corresponding
-encrypted capture storage need
-their own implementation and acceptance before claiming parity with Android.
+scan/packing trials remain required. Protected-workspace authority, encrypted
+capture persistence, depth capture, reconstruction, retention and backup-provider
+implementations are described in their own source-specific documents. Native
+reference-photo handoff and device acceptance remain required before claiming
+feature parity with Android.
 The [native voice adapter](IOS-VOICE.md) implements local recognition and spoken
 steps; microphone, offline-provider and audio acceptance remain required.
 The [native printing bridge](IOS-PRINTING.md) is implemented separately; system
 dialog, pagination and printer/device acceptance remain required.
 The [capture-file boundary](IOS-CAPTURE-FILES.md) adds scoped deletion,
 backup/file-protection policy and interrupted-capture cleanup. It does not
-complete protected-workspace or occupied-shape extraction parity.
+establish full feature parity or physical occupied-shape accuracy.
 See the [full release checkpoint](RELEASE-READINESS-20261020.md) and the README's
 product acceptance criteria.

@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {parseScanResult} from '../src/scanning/contract.ts';
+import {parseSavedGeometry} from '../src/scanning/saved-geometry.ts';
+import {parseReconstructedSolid} from '../src/scanning/reconstructed-solid.ts';
+
+const fixture=JSON.parse(await readFile(process.argv[2],'utf8'));
+const scan=parseScanResult(fixture.scan,'item');
+const source=parseSavedGeometry(fixture.preview,scan.record);
+const {solid,surface}=parseReconstructedSolid(fixture.solid,source);
+assert.equal(scan.record.platform,'ios');
+assert.equal(scan.record.method,'arkit_scene_depth');
+assert.equal(source.sourceHash,solid.sourceHash);
+assert.ok(source.pointCount>8000 && source.samplePointCount<source.pointCount);
+assert.equal(solid.occupiedCells.length,38**3);
+assert.equal(surface.faceCount,6*38*38);
+assert.equal(surface.volumeMm3,38**3*10**3);
+assert.equal(surface.triangles.length,surface.faceCount*6);
+assert.ok(!JSON.stringify(fixture).includes('file://'));
+assert.throws(()=>parseReconstructedSolid({...fixture.solid,sourceHash:'0'.repeat(64)},source));
+assert.throws(()=>parseReconstructedSolid({...fixture.solid,sourcePointCount:source.pointCount-1},source));
+assert.throws(()=>parseReconstructedSolid({...fixture.solid,occupiedCells:fixture.solid.occupiedCells.slice(1)},source));
+console.log('Swift/TypeScript saved-source reconstruction passed with actual encrypted-source synthetic output.');

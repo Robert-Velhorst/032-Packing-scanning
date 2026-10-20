@@ -19,6 +19,8 @@ public class PackingPrintPlugin: CAPPlugin, CAPBridgedPlugin {
             name: UIApplication.didEnterBackgroundNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(interrupted),
             name: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(interrupted),
+            name: PackingCaptureBridgeValues.storageChanged, object: nil)
     }
 
     deinit { NotificationCenter.default.removeObserver(self) }
@@ -66,8 +68,8 @@ public class PackingPrintPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    private func isForeground(_ webView: WKWebView) -> Bool {
-        UIApplication.shared.isProtectedDataAvailable && webView.window?.windowScene?.activationState == .foregroundActive
+    @MainActor private func isForeground(_ webView: WKWebView) -> Bool {
+        UIApplication.shared.isProtectedDataAvailable && PackingForeground.isActive(webView.window)
     }
 
     private func finish(_ id: UUID, error: String?) {

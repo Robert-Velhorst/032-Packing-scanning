@@ -58,7 +58,7 @@ export interface ScanRecord {
   target: 'item' | 'container_interior';
   createdAt: string;
   platform: 'ios' | 'android';
-  method: 'guided_object_capture' | 'arcore_depth';
+  method: 'guided_object_capture' | 'arcore_depth' | 'arkit_scene_depth';
   completedPasses: number;
   modelStoredLocally: boolean;
   /** Confirmation of original-source removal, separate from saved planning derivatives. */
@@ -81,6 +81,9 @@ export interface ScanRecord {
     depthFrames: number;
     viewCount: number;
     confidenceThreshold: number;
+    /** ARKit keeps a category; its 1 eligibility flag is not a probability. */
+    confidenceKind?: 'arkit_high_category';
+    pointLimitReached?: boolean;
     voxelSizeMm: number;
     coverage?: ScanCoverage;
   };

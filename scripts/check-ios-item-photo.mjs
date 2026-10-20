@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {isItemEditorDraft} from '../src/item-photo-draft.ts';
+const result=JSON.parse(await readFile(process.argv[2],'utf8'));
+const draft=JSON.parse(result.draftJson);
+assert.ok(isItemEditorDraft(draft));
+assert.equal(draft.name,'');assert.equal(draft.width,'2.25');assert.equal(draft.removePhoto,true);
+assert.equal(draft.unit,'imperial');assert.equal(draft.scanDimensionsEdited,true);
+assert.match(result.dataUrl,/^data:image\/jpeg;base64,/);
+const jpeg=Buffer.from(result.dataUrl.slice('data:image/jpeg;base64,'.length),'base64');
+assert.deepEqual([...jpeg.subarray(0,3)],[255,216,255]);assert.ok(jpeg.length<=12*1024*1024);
+console.log('Actual Swift item-photo handoff preserves the shared incomplete editor draft and JPEG contract.');

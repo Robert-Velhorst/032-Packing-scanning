@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {parseScanResult} from '../src/scanning/contract.ts';
+import {parseSavedGeometry} from '../src/scanning/saved-geometry.ts';
+
+const fixture=JSON.parse(await readFile(process.argv[2],'utf8'));
+const target=fixture.scan?.record?.target;
+assert.ok(['item','container_interior'].includes(target));
+const scan=parseScanResult(fixture.scan,target);
+const preview=parseSavedGeometry(fixture.preview,scan.record);
+assert.equal(scan.record.platform,'ios');
+assert.equal(scan.record.method,'arkit_scene_depth');
+assert.equal(scan.record.quality.confidenceKind,'arkit_high_category');
+assert.equal(scan.record.quality.confidenceThreshold,1);
+assert.equal(preview.id,scan.record.id);
+assert.equal(preview.pointCount,scan.record.geometry.pointCount);
+assert.equal(preview.pointsMm.length,preview.samplePointCount*4);
+assert.ok(scan.warnings.some(warning=>warning.includes('not a calibrated probability')));
+assert.deepEqual(Object.keys(fixture.scan).sort(),['dimensionsMm','record','warnings']);
+assert.ok(!JSON.stringify(fixture).includes('file://'));
+console.log('Swift/TypeScript depth result and saved-preview contracts passed with actual native synthetic output.');

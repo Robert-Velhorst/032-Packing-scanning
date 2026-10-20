@@ -7,6 +7,27 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        85F92F94B94A5874CD42829A /* PackingForeground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E2D7929B8FF15DDDAB83C92 /* PackingForeground.swift */; };
+        DC0331111111111111111111 /* PackingPhotoPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC0332222222222222222222 /* PackingPhotoPlugin.swift */; };
+        2F553A7D710C7BD2B24FA266 /* PackingReferenceCamera.swift in Sources */ = {isa = PBXBuildFile; fileRef = F31D468F599ECA34A3D7D14B /* PackingReferenceCamera.swift */; };
+        EB0321111111111111111111 /* PackingItemPhotoRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB0322222222222222222222 /* PackingItemPhotoRuntime.swift */; };
+        EA0321111111111111111111 /* PackingPendingItemPhotoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA0322222222222222222222 /* PackingPendingItemPhotoStore.swift */; };
+        DF0321111111111111111111 /* PackingReferencePhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF0322222222222222222222 /* PackingReferencePhoto.swift */; };
+        DE0321111111111111111111 /* PackingFilesPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE0322222222222222222222 /* PackingFilesPlugin.swift */; };
+        DD0321111111111111111111 /* PackingBackupRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0322222222222222222222 /* PackingBackupRuntime.swift */; };
+        DC0321111111111111111111 /* PackingBackupDocumentIO.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC0322222222222222222222 /* PackingBackupDocumentIO.swift */; };
+        DB0321111111111111111111 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = DB0322222222222222222222 /* PrivacyInfo.xcprivacy */; };
+        DA0321111111111111111111 /* PackingPendingBackupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0322222222222222222222 /* PackingPendingBackupStore.swift */; };
+        FE0321111111111111111111 /* PackingVoxelCavity.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0322222222222222222222 /* PackingVoxelCavity.swift */; };
+        FD0321111111111111111111 /* PackingVoxelSolid.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD0322222222222222222222 /* PackingVoxelSolid.swift */; };
+        FC0321111111111111111111 /* PackingCaptureBridgeValues.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0322222222222222222222 /* PackingCaptureBridgeValues.swift */; };
+        FB0321111111111111111111 /* PackingScanEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0322222222222222222222 /* PackingScanEnvelope.swift */; };
+        EF0321111111111111111111 /* PackingDepthFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF0322222222222222222222 /* PackingDepthFlow.swift */; };
+        FA0321111111111111111111 /* PackingDepthViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA0322222222222222222222 /* PackingDepthViewController.swift */; };
+        EE0321111111111111111111 /* PackingDepthSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0322222222222222222222 /* PackingDepthSource.swift */; };
+        ED0321111111111111111111 /* PackingPointCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0322222222222222222222 /* PackingPointCapture.swift */; };
+        EC0321111111111111111111 /* PackingEncryptedCaptureStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0322222222222222222222 /* PackingEncryptedCaptureStore.swift */; };
+        AD0321111111111111111111 /* PackingCaptureAuthority.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD0322222222222222222222 /* PackingCaptureAuthority.swift */; };
         AF0321111111111111111111 /* PackingPrintPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0322222222222222222222 /* PackingPrintPlugin.swift */; };
         AB0323333333333333333333 /* PackingVoiceResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0324444444444444444444 /* PackingVoiceResult.swift */; };
         AB0321111111111111111111 /* PackingVoicePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0322222222222222222222 /* PackingVoicePlugin.swift */; };
@@ -21,9 +42,31 @@
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
+        A5688D57E8B6DB84506AC57F /* PackingPhotoUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3BB085A652C199F02D63663 /* PackingPhotoUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        5E2D7929B8FF15DDDAB83C92 /* PackingForeground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingForeground.swift; sourceTree = "<group>"; };
+        DC0332222222222222222222 /* PackingPhotoPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingPhotoPlugin.swift; sourceTree = "<group>"; };
+        F31D468F599ECA34A3D7D14B /* PackingReferenceCamera.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingReferenceCamera.swift; sourceTree = "<group>"; };
+        EB0322222222222222222222 /* PackingItemPhotoRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingItemPhotoRuntime.swift; sourceTree = "<group>"; };
+        EA0322222222222222222222 /* PackingPendingItemPhotoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingPendingItemPhotoStore.swift; sourceTree = "<group>"; };
+        DF0322222222222222222222 /* PackingReferencePhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingReferencePhoto.swift; sourceTree = "<group>"; };
+        DE0322222222222222222222 /* PackingFilesPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingFilesPlugin.swift; sourceTree = "<group>"; };
+        DD0322222222222222222222 /* PackingBackupRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingBackupRuntime.swift; sourceTree = "<group>"; };
+        DC0322222222222222222222 /* PackingBackupDocumentIO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingBackupDocumentIO.swift; sourceTree = "<group>"; };
+        DB0322222222222222222222 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+        DA0322222222222222222222 /* PackingPendingBackupStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingPendingBackupStore.swift; sourceTree = "<group>"; };
+        FE0322222222222222222222 /* PackingVoxelCavity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingVoxelCavity.swift; sourceTree = "<group>"; };
+        FD0322222222222222222222 /* PackingVoxelSolid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingVoxelSolid.swift; sourceTree = "<group>"; };
+        FC0322222222222222222222 /* PackingCaptureBridgeValues.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingCaptureBridgeValues.swift; sourceTree = "<group>"; };
+        FB0322222222222222222222 /* PackingScanEnvelope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingScanEnvelope.swift; sourceTree = "<group>"; };
+        EF0322222222222222222222 /* PackingDepthFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingDepthFlow.swift; sourceTree = "<group>"; };
+        FA0322222222222222222222 /* PackingDepthViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingDepthViewController.swift; sourceTree = "<group>"; };
+        EE0322222222222222222222 /* PackingDepthSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingDepthSource.swift; sourceTree = "<group>"; };
+        ED0322222222222222222222 /* PackingPointCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingPointCapture.swift; sourceTree = "<group>"; };
+        EC0322222222222222222222 /* PackingEncryptedCaptureStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingEncryptedCaptureStore.swift; sourceTree = "<group>"; };
+        AD0322222222222222222222 /* PackingCaptureAuthority.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingCaptureAuthority.swift; sourceTree = "<group>"; };
         AF0322222222222222222222 /* PackingPrintPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingPrintPlugin.swift; sourceTree = "<group>"; };
         AB0324444444444444444444 /* PackingVoiceResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingVoiceResult.swift; sourceTree = "<group>"; };
         AB0322222222222222222222 /* PackingVoicePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingVoicePlugin.swift; sourceTree = "<group>"; };
@@ -40,6 +83,8 @@
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
+        B3BB085A652C199F02D63663 /* PackingPhotoUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingPhotoUITests.swift; sourceTree = "<group>"; };
+        EA97BBCCC4CF410BB41B42D7 /* PackingPhotoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PackingPhotoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -51,6 +96,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+        C374802910F7BAAD03B8A2F5 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -59,6 +105,7 @@
 			children = (
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
+                85D592C1043259EFEC455212 /* AppUITests */,
 				504EC3051FED79650016851F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -67,6 +114,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+                EA97BBCCC4CF410BB41B42D7 /* PackingPhotoUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -79,6 +127,27 @@
                 AB0322222222222222222222 /* PackingVoicePlugin.swift */,
                 AB0324444444444444444444 /* PackingVoiceResult.swift */,
                 AE0322222222222222222222 /* PackingCaptureFiles.swift */,
+                AD0322222222222222222222 /* PackingCaptureAuthority.swift */,
+                EC0322222222222222222222 /* PackingEncryptedCaptureStore.swift */,
+                ED0322222222222222222222 /* PackingPointCapture.swift */,
+                EE0322222222222222222222 /* PackingDepthSource.swift */,
+                EF0322222222222222222222 /* PackingDepthFlow.swift */,
+                FA0322222222222222222222 /* PackingDepthViewController.swift */,
+                DB0322222222222222222222 /* PrivacyInfo.xcprivacy */,
+                DA0322222222222222222222 /* PackingPendingBackupStore.swift */,
+                5E2D7929B8FF15DDDAB83C92 /* PackingForeground.swift */,
+                DC0332222222222222222222 /* PackingPhotoPlugin.swift */,
+                F31D468F599ECA34A3D7D14B /* PackingReferenceCamera.swift */,
+                EB0322222222222222222222 /* PackingItemPhotoRuntime.swift */,
+                EA0322222222222222222222 /* PackingPendingItemPhotoStore.swift */,
+                DF0322222222222222222222 /* PackingReferencePhoto.swift */,
+                DE0322222222222222222222 /* PackingFilesPlugin.swift */,
+                DD0322222222222222222222 /* PackingBackupRuntime.swift */,
+                DC0322222222222222222222 /* PackingBackupDocumentIO.swift */,
+                FE0322222222222222222222 /* PackingVoxelCavity.swift */,
+                FD0322222222222222222222 /* PackingVoxelSolid.swift */,
+                FB0322222222222222222222 /* PackingScanEnvelope.swift */,
+                FC0322222222222222222222 /* PackingCaptureBridgeValues.swift */,
                 AC0322222222222222222222 /* PackingAccountPlugin.swift */,
                 AF0322222222222222222222 /* PackingPrintPlugin.swift */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
@@ -92,7 +161,16 @@
 			path = App;
 			sourceTree = "<group>";
 		};
+        85D592C1043259EFEC455212 /* AppUITests */ = {isa = PBXGroup; children = (B3BB085A652C199F02D63663 /* PackingPhotoUITests.swift */,); path = AppUITests; sourceTree = "<group>"; };
 /* End PBXGroup section */
+
+/* Begin PBXContainerItemProxy section */
+        2597206452E66874D53312D7 /* PBXContainerItemProxy */ = {isa = PBXContainerItemProxy; containerPortal = 504EC2FC1FED79650016851F /* Project object */; proxyType = 1; remoteGlobalIDString = 504EC3031FED79650016851F; remoteInfo = App; };
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+        E930022CDA76B3A7EDE6D56E /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = 504EC3031FED79650016851F /* App */; targetProxy = 2597206452E66874D53312D7 /* PBXContainerItemProxy */; };
+/* End PBXTargetDependency section */
 
 /* Begin PBXNativeTarget section */
 		504EC3031FED79650016851F /* App */ = {
@@ -115,6 +193,15 @@
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
 		};
+        C5A03B7F9867C2105B2A9726 /* PackingPhotoUITests */ = {
+            isa = PBXNativeTarget;
+            buildConfigurationList = 03A6307B2C307D8CA825BA7A /* Build configuration list for PackingPhotoUITests */;
+            buildPhases = (A89D78F9FC3CBFA91632F62E /* Sources */, C374802910F7BAAD03B8A2F5 /* Frameworks */, 443E1B40A20C4F29A5D59B10 /* Resources */,);
+            buildRules = (); dependencies = (E930022CDA76B3A7EDE6D56E /* PBXTargetDependency */,);
+            name = PackingPhotoUITests; productName = PackingPhotoUITests;
+            productReference = EA97BBCCC4CF410BB41B42D7 /* PackingPhotoUITests.xctest */;
+            productType = "com.apple.product-type.bundle.ui-testing";
+        };
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -124,6 +211,7 @@
 				LastSwiftUpdateCheck = 0920;
 				LastUpgradeCheck = 0920;
 				TargetAttributes = {
+                    C5A03B7F9867C2105B2A9726 = {CreatedOnToolsVersion = 26.3; TestTargetID = 504EC3031FED79650016851F; ProvisioningStyle = Automatic; };
 					504EC3031FED79650016851F = {
 						CreatedOnToolsVersion = 9.2;
 						LastSwiftMigration = 1100;
@@ -148,6 +236,7 @@
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+                C5A03B7F9867C2105B2A9726 /* PackingPhotoUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -157,6 +246,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DB0321111111111111111111 /* PrivacyInfo.xcprivacy in Resources */,
 				504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */,
 				50B271D11FEDC1A000F3C39B /* public in Resources */,
 				504EC30F1FED79650016851F /* Assets.xcassets in Resources */,
@@ -166,6 +256,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+        443E1B40A20C4F29A5D59B10 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -177,12 +268,33 @@
                 AB0321111111111111111111 /* PackingVoicePlugin.swift in Sources */,
                 AB0323333333333333333333 /* PackingVoiceResult.swift in Sources */,
                 AE0321111111111111111111 /* PackingCaptureFiles.swift in Sources */,
+                AD0321111111111111111111 /* PackingCaptureAuthority.swift in Sources */,
+                EC0321111111111111111111 /* PackingEncryptedCaptureStore.swift in Sources */,
+                ED0321111111111111111111 /* PackingPointCapture.swift in Sources */,
+                EE0321111111111111111111 /* PackingDepthSource.swift in Sources */,
+                EF0321111111111111111111 /* PackingDepthFlow.swift in Sources */,
+                FA0321111111111111111111 /* PackingDepthViewController.swift in Sources */,
+                DA0321111111111111111111 /* PackingPendingBackupStore.swift in Sources */,
+                85F92F94B94A5874CD42829A /* PackingForeground.swift in Sources */,
+                DC0331111111111111111111 /* PackingPhotoPlugin.swift in Sources */,
+                2F553A7D710C7BD2B24FA266 /* PackingReferenceCamera.swift in Sources */,
+                EB0321111111111111111111 /* PackingItemPhotoRuntime.swift in Sources */,
+                EA0321111111111111111111 /* PackingPendingItemPhotoStore.swift in Sources */,
+                DF0321111111111111111111 /* PackingReferencePhoto.swift in Sources */,
+                DE0321111111111111111111 /* PackingFilesPlugin.swift in Sources */,
+                DD0321111111111111111111 /* PackingBackupRuntime.swift in Sources */,
+                DC0321111111111111111111 /* PackingBackupDocumentIO.swift in Sources */,
+                FE0321111111111111111111 /* PackingVoxelCavity.swift in Sources */,
+                FD0321111111111111111111 /* PackingVoxelSolid.swift in Sources */,
+                FB0321111111111111111111 /* PackingScanEnvelope.swift in Sources */,
+                FC0321111111111111111111 /* PackingCaptureBridgeValues.swift in Sources */,
                 AC0321111111111111111111 /* PackingAccountPlugin.swift in Sources */,
                 AF0321111111111111111111 /* PackingPrintPlugin.swift in Sources */,
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+        A89D78F9FC3CBFA91632F62E /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A5688D57E8B6DB84506AC57F /* PackingPhotoUITests.swift in Sources */,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXVariantGroup section */
@@ -254,7 +366,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.4;
 				MTL_ENABLE_DEBUG_INFO = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
@@ -305,7 +417,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.4;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -322,7 +434,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.4;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -344,7 +456,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.4;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -358,6 +470,34 @@
 			};
 			name = Release;
 		};
+        BD5324CC9866F07271A2CF41 /* Debug */ = {
+            isa = XCBuildConfiguration;
+            buildSettings = {
+                CLANG_ENABLE_MODULES = YES; CODE_SIGN_STYLE = Automatic;
+                CURRENT_PROJECT_VERSION = 1; GENERATE_INFOPLIST_FILE = YES;
+                IPHONEOS_DEPLOYMENT_TARGET = 15.4;
+                LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks",);
+                MARKETING_VERSION = 1.0;
+                PRODUCT_BUNDLE_IDENTIFIER = com.packingscanning.app.PhotoUITests;
+                PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SKIP_INSTALL = YES;
+                SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = App;
+            };
+            name = Debug;
+        };
+        46F5D96044EFD8DB68D559CE /* Release */ = {
+            isa = XCBuildConfiguration;
+            buildSettings = {
+                CLANG_ENABLE_MODULES = YES; CODE_SIGN_STYLE = Automatic;
+                CURRENT_PROJECT_VERSION = 1; GENERATE_INFOPLIST_FILE = YES;
+                IPHONEOS_DEPLOYMENT_TARGET = 15.4;
+                LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks",);
+                MARKETING_VERSION = 1.0;
+                PRODUCT_BUNDLE_IDENTIFIER = com.packingscanning.app.PhotoUITests;
+                PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SKIP_INSTALL = YES;
+                SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = App;
+            };
+            name = Release;
+        };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -379,6 +519,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+        03A6307B2C307D8CA825BA7A /* Build configuration list for PackingPhotoUITests */ = {isa = XCConfigurationList; buildConfigurations = (BD5324CC9866F07271A2CF41 /* Debug */, 46F5D96044EFD8DB68D559CE /* Release */,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */

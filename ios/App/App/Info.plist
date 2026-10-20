@@ -27,7 +27,7 @@
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Recognize optional packing commands using supported on-device English speech recognition. The app refuses network recognition.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Use the camera to guide a 3D scan of an item or the inside of an empty bag. Scan images and models stay on this device.</string>
+	<string>Use the camera to take an item reference photo or guide a 3D scan of an item or empty bag. Captures stay on this device unless you explicitly export or share them.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
