@@ -7,7 +7,7 @@ The Android workflow provides an explicit current-source build check.
 
 The first current-source run found that Gradle 9.8.1 cannot apply AGP 8.13.0:
 the plugin uses an internal Problems API removed in Gradle 9.6. The wrapper is
-now pinned to checksum-verified Gradle 9.5.1, following [Gradle's documented
+now pinned to Gradle 9.5.1 with its [official distribution checksum](https://services.gradle.org/distributions/gradle-9.5.1-bin.zip.sha256), following [Gradle's documented
 compatibility boundary](https://docs.gradle.org/9.8.1/userguide/upgrading_version_9.html#agp_8x_incompatible).
 Dependabot retains wrapper patch updates; minor/major wrapper upgrades must be
 reviewed together with the Android plugin migration and passing native CI.
