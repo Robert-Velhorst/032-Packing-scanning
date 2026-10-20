@@ -22,6 +22,10 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Enable optional on-device English packing commands. The microphone stays off until you enable voice; the app does not save audio.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Recognize optional packing commands using supported on-device English speech recognition. The app refuses network recognition.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Use the camera to guide a 3D scan of an item or the inside of an empty bag. Scan images and models stay on this device.</string>
 	<key>LSRequiresIPhoneOS</key>

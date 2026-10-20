@@ -28,6 +28,10 @@ fi
 
 npm run build
 node node_modules/@capacitor/cli/bin/capacitor sync ios
+mkdir -p "$task_repo/ios/App/DerivedData"
+xcrun swiftc -parse-as-library ios/App/App/PackingVoiceResult.swift scripts/test-ios-voice.swift \
+  -o "$task_repo/ios/App/DerivedData/voice-result-checks"
+"$task_repo/ios/App/DerivedData/voice-result-checks"
 for task_sdk in iphonesimulator iphoneos; do
   if [[ "$task_sdk" == iphonesimulator ]]; then
     task_configuration=Debug
