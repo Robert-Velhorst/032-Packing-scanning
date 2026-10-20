@@ -126,8 +126,8 @@ final class PackingEncryptedCaptureStore: @unchecked Sendable {
     private func verifyKeyCheck() throws {
         try access.verifyStoreKeyCheck(readFile(root.appendingPathComponent(".keycheck"), maximum: 128))
     }
-    private func inode(_ url: URL) throws -> UInt64 {
-        try check(url, directory: true)
+    private func inode(_ url: URL, directory: Bool = true) throws -> UInt64 {
+        try check(url, directory: directory)
         guard let number = try manager.attributesOfItem(atPath: url.path)[.systemFileNumber] as? NSNumber else { throw PackingEncryptedStoreError.unsafePath }
         return number.uint64Value
     }
@@ -269,9 +269,9 @@ final class PackingEncryptedCaptureStore: @unchecked Sendable {
                         let (folder, hasPoints) = try authenticatedFiles(captureID: id, now: now)
                         if hasPoints {
                             let source = folder.appendingPathComponent("points.ply.sealed")
-                            let original = try inode(source)
+                            let original = try inode(source, directory: false)
                             try access.check(); try checkRoot(); try verifyKeyCheck(); try check(source, directory: false)
-                            guard try inode(source) == original else { throw PackingEncryptedStoreError.unsafePath }
+                            guard try inode(source, directory: false) == original else { throw PackingEncryptedStoreError.unsafePath }
                             guard Darwin.unlink(source.path) == 0 else { throw PackingEncryptedStoreError.io }
                             try syncDirectory(folder)
                             guard !manager.fileExists(atPath: source.path) else { throw PackingEncryptedStoreError.io }
