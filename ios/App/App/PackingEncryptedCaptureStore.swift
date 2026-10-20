@@ -10,14 +10,15 @@ final class PackingEncryptedCaptureStore {
     let root: URL
     private let base: URL
     private let beforePublish: () throws -> Void
+    private let clock: () -> Date
     private static let names: Set<String> = ["capture.json.sealed", "points.ply.sealed"]
 
-    init(directory: URL, access: PackingCaptureAuthority.Access, beforePublish: @escaping () throws -> Void = {}) throws {
+    init(directory: URL, access: PackingCaptureAuthority.Access, beforePublish: @escaping () throws -> Void = {}, clock: @escaping () -> Date = Date.init) throws {
         try access.check()
         guard directory.isFileURL, let account = access.accountID, let workspace = access.workspaceID else {
             throw PackingCaptureAuthorityError.guest
         }
-        self.access = access; self.beforePublish = beforePublish
+        self.access = access; self.beforePublish = beforePublish; self.clock = clock
         let privateBase = URL(fileURLWithPath: try Self.canonical(directory.path), isDirectory: true)
         base = privateBase
         let namespace = privateBase.appendingPathComponent("ProtectedScanCaptures-v1", isDirectory: true)
@@ -122,6 +123,22 @@ final class PackingEncryptedCaptureStore {
         } catch { /* A keyless encrypted orphan is safer than deleting uncertain files. */ }
     }
 
+    /** Native-owned identity/time; invalid geometry never reaches staging. */
+    func savePointCapture(target: PackingPointCapture.Target, points: Data) throws -> PackingPointCapture {
+        try access.checked {
+            let capture = try PackingPointCapture.complete(target: target, points: points, now: clock())
+            try write(captureID: capture.id, metadata: capture.metadata, points: capture.points)
+            return capture
+        }
+    }
+    func readPointCapture(captureID: String) throws -> PackingPointCapture {
+        try access.checked {
+            try PackingPointCapture.restore(captureID: captureID, metadata: readMetadata(captureID: captureID),
+                points: readPoints(captureID: captureID), now: clock())
+        }
+    }
+
+    // Opaque persistence primitive. Product point-cloud consumers must use the validated methods above.
     func write(captureID: String, metadata: Data, points: Data) throws {
         var allocated: URL?
         var allocationInode: UInt64?

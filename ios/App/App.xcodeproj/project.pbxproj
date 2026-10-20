@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        ED0321111111111111111111 /* PackingPointCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED0322222222222222222222 /* PackingPointCapture.swift */; };
         EC0321111111111111111111 /* PackingEncryptedCaptureStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0322222222222222222222 /* PackingEncryptedCaptureStore.swift */; };
         AD0321111111111111111111 /* PackingCaptureAuthority.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD0322222222222222222222 /* PackingCaptureAuthority.swift */; };
         AF0321111111111111111111 /* PackingPrintPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0322222222222222222222 /* PackingPrintPlugin.swift */; };
@@ -26,6 +27,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        ED0322222222222222222222 /* PackingPointCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingPointCapture.swift; sourceTree = "<group>"; };
         EC0322222222222222222222 /* PackingEncryptedCaptureStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingEncryptedCaptureStore.swift; sourceTree = "<group>"; };
         AD0322222222222222222222 /* PackingCaptureAuthority.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingCaptureAuthority.swift; sourceTree = "<group>"; };
         AF0322222222222222222222 /* PackingPrintPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingPrintPlugin.swift; sourceTree = "<group>"; };
@@ -85,6 +87,7 @@
                 AE0322222222222222222222 /* PackingCaptureFiles.swift */,
                 AD0322222222222222222222 /* PackingCaptureAuthority.swift */,
                 EC0322222222222222222222 /* PackingEncryptedCaptureStore.swift */,
+                ED0322222222222222222222 /* PackingPointCapture.swift */,
                 AC0322222222222222222222 /* PackingAccountPlugin.swift */,
                 AF0322222222222222222222 /* PackingPrintPlugin.swift */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
@@ -185,6 +188,7 @@
                 AE0321111111111111111111 /* PackingCaptureFiles.swift in Sources */,
                 AD0321111111111111111111 /* PackingCaptureAuthority.swift in Sources */,
                 EC0321111111111111111111 /* PackingEncryptedCaptureStore.swift in Sources */,
+                ED0321111111111111111111 /* PackingPointCapture.swift in Sources */,
                 AC0321111111111111111111 /* PackingAccountPlugin.swift in Sources */,
                 AF0321111111111111111111 /* PackingPrintPlugin.swift in Sources */,
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
