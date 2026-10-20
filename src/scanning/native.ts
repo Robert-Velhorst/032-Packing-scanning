@@ -72,7 +72,9 @@ export function canPreviewSavedGeometry(record: ScanRecord): boolean {
   return record.modelStoredLocally && record.platform === Capacitor.getPlatform() && isScannerAvailable()
     && (record.platform === 'android' || record.platform === 'ios' && record.method === 'arkit_scene_depth' && record.geometry?.format === 'ply_point_cloud');
 }
-export function canReconstructSavedGeometry(record:ScanRecord):boolean{return record.platform==='android'&&canPreviewSavedGeometry(record);}
+export function canReconstructSavedGeometry(record:ScanRecord):boolean{
+  return canPreviewSavedGeometry(record)&&(record.platform==='android'||record.platform==='ios'&&record.target==='item');
+}
 
 export async function readSavedGeometry(record: ScanRecord,lease?:string): Promise<SavedGeometryPreview> {
   if (!canPreviewSavedGeometry(record)) throw new Error('Review requires the original point-cloud scan on its supported device. JSON backups contain scan details, but do not contain the original point cloud.');
@@ -81,7 +83,7 @@ export async function readSavedGeometry(record: ScanRecord,lease?:string): Promi
 }
 
 export async function reconstructSavedCapture(record: ScanRecord, source: SavedGeometryPreview,lease?:string): Promise<ReconstructedGeometry> {
-  if (!canReconstructSavedGeometry(record) || record.target !== 'item' || source.id !== record.id || source.target !== record.target) throw new Error('Reconstruction requires the original individual-object scan on its Android device.');
+  if (!canReconstructSavedGeometry(record) || record.target !== 'item' || source.id !== record.id || source.target !== record.target) throw new Error('Reconstruction requires the original individual-object point-cloud scan on its supported device.');
   if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(record.id)) throw new Error('The saved scan identifier is invalid.');
   return parseReconstructedSolid(await PackingScan.reconstructCapture({id:record.id,...(lease?{lease}:{})}),source);
 }

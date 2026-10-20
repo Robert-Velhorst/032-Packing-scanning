@@ -11,13 +11,23 @@ describe('native workspace boundary',()=>{
     fixture.platform='ios';fixture.bridge.getStorageState.mockResolvedValue({version:1,revision:old,lease:old,protectedWorkspace:true});
     expect((await getCaptureStorageState())?.lease).toBe(old);
     const record:ScanRecord={id:next,target:'item',createdAt:'2026-10-20T12:00:00Z',platform:'ios',method:'arkit_scene_depth',completedPasses:3,modelStoredLocally:true,
-      geometry:{format:'ply_point_cloud',units:'metres',coordinateFrame:'capture_local_right_handed',pointCount:384}};
-    const preview={id:next,target:'item',format:'point_cloud_preview',units:'millimetres',sourceHash:'a'.repeat(64),pointCount:384,samplePointCount:1,pointsMm:[2.5,2.5,2.5,1],
-      envelope:{method:'oriented_surface_envelope_v1',basis:'capture_aligned',paddingMm:2.5,dimensionsMm:{length:405,width:205,height:105}}};
+      geometry:{format:'ply_point_cloud',units:'metres',coordinateFrame:'capture_local_right_handed',pointCount:386}};
+    const preview={id:next,target:'item',format:'point_cloud_preview',units:'millimetres',sourceHash:'a'.repeat(64),pointCount:386,samplePointCount:1,pointsMm:[2.5,2.5,2.5,1],
+      envelope:{method:'oriented_surface_envelope_v1',basis:'capture_aligned',paddingMm:2.5,dimensionsMm:{length:85,width:85,height:85}}};
     fixture.bridge.getCapturePreview.mockResolvedValue(preview);
-    const client=captureClient(old);expect(canPreviewSavedGeometry(record)).toBe(true);expect(canReconstructSavedGeometry(record)).toBe(false);
+    const client=captureClient(old);expect(canPreviewSavedGeometry(record)).toBe(true);expect(canReconstructSavedGeometry(record)).toBe(true);
     const loaded=await client.readSavedGeometry(record);expect(loaded).toEqual(preview);expect(fixture.bridge.getCapturePreview).toHaveBeenCalledWith({id:next,lease:old});
-    await expect(client.reconstructSavedCapture(record,loaded)).rejects.toThrow(/Android/);expect(fixture.bridge.reconstructCapture).not.toHaveBeenCalled();
+    const solid={id:next,target:'item',format:'voxel_solid_v1',units:'millimetres',sourceHash:preview.sourceHash,sourcePointCount:386,
+      method:'observed_voxel_shell_fill_v1',resolutionMm:10,grid:{x:9,y:9,z:9},occupiedCells:Array.from({length:729},(_,i)=>i),
+      observedCellCount:386,enclosedCellCount:343,surfaceFaceCount:486,dimensionsMm:{length:90,width:90,height:90},warnings:[]};
+    fixture.bridge.reconstructCapture.mockResolvedValue(solid);
+    expect((await client.reconstructSavedCapture(record,loaded)).solid).toEqual(solid);expect(fixture.bridge.reconstructCapture).toHaveBeenCalledWith({id:next,lease:old});
+    fixture.bridge.reconstructCapture.mockResolvedValue({...solid,sourceHash:'b'.repeat(64)});
+    await expect(client.reconstructSavedCapture(record,loaded)).rejects.toThrow(/incomplete or inconsistent/);
+    expect(canReconstructSavedGeometry({...record,target:'container_interior'})).toBe(false);
+    await expect(client.reconstructSavedInterior({...record,target:'container_interior'},{...loaded,target:'container_interior'},{openingAxis:2,openingSign:1,seedMm:{x:1,y:1,z:1}})).rejects.toThrow(/Android/);
+    let finishSolid!:(value:unknown)=>void;fixture.bridge.reconstructCapture.mockImplementationOnce(()=>new Promise(resolve=>{finishSolid=resolve;}));
+    const lateClient=captureClient(old),late=lateClient.reconstructSavedCapture(record,loaded);lateClient.revoke();finishSolid(solid);await expect(late).rejects.toThrow(/locked/);
     expect(canPreviewSavedGeometry({...record,method:'guided_object_capture'})).toBe(false);
     let finish!:(value:unknown)=>void;fixture.bridge.getCapturePreview.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
     const pending=client.readSavedGeometry(record);client.revoke();finish(preview);await expect(pending).rejects.toThrow(/locked/);
