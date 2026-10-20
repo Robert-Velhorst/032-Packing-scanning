@@ -79,7 +79,13 @@ private final class PhotoReplies: @unchecked Sendable {
         for invalid in [Data(), Data("<svg><script>no active image</script></svg>".utf8), Data(small.prefix(40)), Data(repeating: 1, count: PackingReferencePhoto.maximumBytes + 1)] {
             refuses { _ = try PackingReferencePhoto.prepare(invalid) }
         }
-        // A CRC-correct huge PNG header must be refused before decoding its inconsistent pixel stream.
+        // Exercise the exact input-pixel policy without allocating a 100-megapixel image.
+        try PackingReferencePhoto.validateDimensions(width: 10_000, height: 10_000)
+        for (width, height) in [(10_001.0, 10_000.0), (0.0, 10.0), (-1.0, 10.0), (0.5, 2.0), (Double.nan, 2.0), (2.0, Double.infinity)] {
+            refuses { try PackingReferencePhoto.validateDimensions(width: width, height: height) }
+        }
+        // A CRC-correct huge header has an inconsistent original PNG pixel stream.
+        // ImageIO may reject it before exposing dimensions; both early refusals are safe.
         var huge = small
         func put(_ value: UInt32, at offset: Int) { for i in 0..<4 { huge[offset + i] = UInt8((value >> (24 - i * 8)) & 255) } }
         put(100_001, at: 16); put(1000, at: 20)
@@ -88,7 +94,8 @@ private final class PhotoReplies: @unchecked Sendable {
         put(crc ^ 0xffff_ffff, at: 29)
         phase("CRC-correct oversized PNG header")
         do { _ = try PackingReferencePhoto.prepare(huge); fatalError("Oversized source accepted") }
-        catch PackingReferencePhotoError.oversized {} // The header gate, not a later decoder failure.
+        catch PackingReferencePhotoError.oversized {}
+        catch PackingReferencePhotoError.unsupported {}
 
         let clock = PhotoClock(), store = try PackingPendingItemPhotoStore(directory: fixture, clock: { clock.now })
         let authority = PackingCaptureAuthority(), workspace = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", account = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"

@@ -15,6 +15,11 @@ enum PackingReferencePhoto {
     static let maximumBytes = 12 * 1024 * 1024
     static let maximumPixels = 100_000_000.0
     static let maximumDimension = 2048
+    static func validateDimensions(width: Double, height: Double) throws {
+        guard width.isFinite, height.isFinite, width >= 1, height >= 1,
+              width.rounded(.towardZero) == width, height.rounded(.towardZero) == height,
+              width * height <= maximumPixels else { throw PackingReferencePhotoError.oversized }
+    }
     /** Read only while NSItemProvider's callback owns its temporary source URL. No retained path. */
     static func readProviderFile(_ url: URL) throws -> Data {
         guard url.isFileURL else { throw PackingReferencePhotoError.unsupported }
@@ -40,8 +45,7 @@ enum PackingReferencePhoto {
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
               let height = properties[kCGImagePropertyPixelHeight] as? NSNumber else { throw PackingReferencePhotoError.unsupported }
-        let w = width.doubleValue, h = height.doubleValue
-        guard w.isFinite, h.isFinite, w > 0, h > 0, w * h <= maximumPixels else { throw PackingReferencePhotoError.oversized }
+        try validateDimensions(width: width.doubleValue, height: height.doubleValue)
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
