@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && tsc -p tsconfig.server.json && vite build",
-    "test": "vitest run",
+    "test": "vitest run --maxWorkers=2",
     "benchmark": "node scripts/physical-benchmark.ts",
     "benchmark:optimizer": "node scripts/optimizer-performance.mjs",
     "benchmark:optimizer:profile": "node scripts/optimizer-performance.mjs --profile=true",

@@ -106,6 +106,43 @@ bytes). Restart only packing and check readiness. Establish a daily backup
 schedule and an agreed retention/deletion policy before accepting real data.
 No scheduler or off-host storage has been configured merely by adding this guide.
 
+An alternative to the maintenance archive is the included operator command:
+
+```sh
+node server/account-backup.ts /app/.account-data/accounts.sqlite /backups/NEW-SNAPSHOT.sqlite
+```
+
+It uses Node's [SQLite online backup API](https://nodejs.org/api/sqlite.html#sqlitebackupsource-db-path-options)
+to include committed WAL data while the app continues running. It checks the
+account schema, database integrity and foreign keys, writes privately in the
+destination directory, syncs the snapshot, and atomically publishes it without
+replacing an existing file or symlink. It reports page count and SHA-256 only;
+it never reads the account encryption key or prints account records. Missing
+sources, invalid databases, occupied destinations and copy failures exit nonzero.
+It is a database snapshot, not a full off-host recovery system or key backup.
+
+For the container, create a restricted operator backup directory owned by UID
+1000 outside the checkout, then run the tested release image with the account
+volume mounted read-only and that backup directory mounted at `/backups`:
+
+```sh
+docker run --rm --read-only --tmpfs /tmp --cap-drop ALL \
+  --security-opt no-new-privileges:true \
+  --mount type=volume,src=packing032_account-data,dst=/app/.account-data,readonly \
+  --mount type=bind,src=/var/backups/packing032,dst=/backups \
+  "$PACKING_IMAGE" node server/account-backup.ts \
+  /app/.account-data/accounts.sqlite /backups/NEW-SNAPSHOT.sqlite
+```
+
+Verify the actual account-volume name before running this command; never
+create an empty replacement volume by guessing. The destination must be on a
+filesystem supporting hard links, with a trusted operator-owned parent directory.
+Protect the entire snapshot as private account data, including its schema and
+credential hashes. Separately encrypt/transfer it off-host and monitor failures.
+Restore a copy, never the retained original backup or live database. This path
+is tested with synthetic WAL-backed accounts and an isolated restored store;
+real operator backup storage, scheduling and off-host recovery remain acceptance gates.
+
 Rehearse restore into a fresh, separate volume/container with no public route
 and the matching key. Verify SQLite integrity, readiness, synthetic account
 sign-in and saved-backup download, then compare the restored data with the

@@ -52,3 +52,48 @@ Release directory: `/opt/packing032/releases/7179938/`.
 
 Follow the [Hetzner deployment and recovery runbook](HETZNER-DEPLOYMENT.md)
 for the next steps. Preserve the shared services and all data volumes.
+
+## Backup tooling follow-up in PR #51
+
+The new `server/account-backup.ts` command creates a consistent SQLite online
+snapshot without reading the encryption key, checks integrity/schema/foreign
+keys, returns a SHA-256, and refuses overwrite. Publication uses a private
+temporary file and an atomic hard link. The backup is still private account
+data, and its matching key must be recovered separately.
+
+Verified after adding this tool:
+
+- Node 26.12.0 Linux image build: **567 tests in 67 files passed**, benchmark
+  tooling type check and production type checks/build passed. The test runner
+  now uses two workers to bound parallel CPU/memory use; assertions and the
+  pre-existing test time limits are unchanged. Earlier runs in the shared local
+  Docker environment hit time limits, including an existing account HTTP test.
+- All five operator snapshot tests also passed on Windows under a separately
+  downloaded official Node 26.12.0 runtime with verified archive SHA-256. Tests
+  cover committed WAL records, encrypted-vault recovery, wrong-key refusal,
+  snapshot immutability after source edits, actual CLI use, overwrite and
+  invalid-source refusal, competing backups and aborted-copy cleanup.
+- The new final-image smoke passed locally after a transient account-request
+  timeout in the shared Docker environment. It then passed on General-Server
+  with the app limited to **768 MB, 0.5 CPU and 128 processes**, using an isolated
+  synthetic account volume and loopback port. Both an in-container snapshot and
+  a separate helper container with the source volume mounted read-only passed.
+  Sign-in to a copy of the snapshot and account persistence after graceful
+  restart passed. The synthetic containers/volumes were removed afterward.
+- Hetzner's system Node 18 was unsuitable for this driver and exited during
+  startup; those two synthetic fixtures were explicitly removed after checking
+  their test-volume ownership labels. The successful run used an isolated copy
+  of the image's verified Node 26 binary, without replacing the system runtime.
+- Node 26 xcode parsing/UUID/serialization checks and npm audit passed, with
+  zero advisories. Public DNS/TLS, off-host backup storage and scheduling,
+  operator recovery rehearsal, alerts and mobile/physical acceptance remain
+  outstanding. No real account records or encryption key were backed up.
+
+The tested image is `packing-scanning:backup-readiness-20261020`; its identity
+on the Hetzner Docker engine is
+`sha256:ef97d2ead78d2eb21607d35aa02313f851656f9f7cb44478b95e09f918ebb2dc`.
+The transferred QA archive SHA-256 is
+`0b64bbf521987fbc380977e809694540d6a6aa86e5e56836c882aa51f651d34a`.
+QA logs/archive/runtime are in `/opt/packing032/qa/backup-20261020/`.
+The private long-running staging service still uses release `7179938`;
+loading and testing the new image did not upgrade it or expose it publicly.
