@@ -61,7 +61,7 @@ final class PackingEncryptedCaptureStore {
         try checkRoot()
         return root.appendingPathComponent(id, isDirectory: true)
     }
-    private func writeExclusive(_ data: Data, to url: URL) throws {
+    @discardableResult private func writeExclusive(_ data: Data, to url: URL) throws -> UInt64 {
         let descriptor = Darwin.open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, mode_t(0o600))
         guard descriptor >= 0 else { throw PackingEncryptedStoreError.io }
         let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
@@ -69,7 +69,11 @@ final class PackingEncryptedCaptureStore {
         try protect(url)
         try handle.write(contentsOf: data)
         try handle.synchronize()
+        var info = stat()
+        guard fstat(descriptor, &info) == 0, info.st_nlink == 1,
+              (info.st_mode & mode_t(S_IFMT)) == mode_t(S_IFREG) else { throw PackingEncryptedStoreError.unsafePath }
         try handle.close()
+        return UInt64(info.st_ino)
     }
     private func syncDirectory(_ url: URL) throws {
         let descriptor = Darwin.open(url.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
@@ -84,11 +88,15 @@ final class PackingEncryptedCaptureStore {
         if manager.fileExists(atPath: marker.path) { try verifyKeyCheck(); return }
         guard try manager.contentsOfDirectory(atPath: root.path).isEmpty else { throw PackingEncryptedStoreError.unsafePath }
         let temporary = root.appendingPathComponent(".keycheck.pending-" + UUID().uuidString.lowercased())
-        try writeExclusive(access.sealStoreKeyCheck(), to: temporary)
+        let writtenInode = try writeExclusive(access.sealStoreKeyCheck(), to: temporary)
         if renamex_np(temporary.path, marker.path, UInt32(RENAME_EXCL)) != 0 {
             let failure = errno
             // Only this newly written regular file is eligible for cleanup.
-            do { try check(temporary, directory: false); try manager.removeItem(at: temporary) } catch {}
+            do {
+                try check(temporary, directory: false)
+                guard (try manager.attributesOfItem(atPath: temporary.path)[.systemFileNumber] as? NSNumber)?.uint64Value == writtenInode else { throw PackingEncryptedStoreError.unsafePath }
+                try manager.removeItem(at: temporary)
+            } catch {}
             guard failure == EEXIST else { throw PackingEncryptedStoreError.io }
         }
         try syncDirectory(root)
