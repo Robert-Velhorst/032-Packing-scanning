@@ -27,6 +27,27 @@ private enum InjectedStoreFailure: Error { case stop }
         let guest = try authority.selectGuest(expectedRevision: authority.state().revision)
         refuses("Guest must not open protected storage") { _ = try PackingEncryptedCaptureStore(directory: fixture, access: guest) }
         let access = try open(), store = try PackingEncryptedCaptureStore(directory: fixture, access: access)
+        stage("validated point capture publication and authenticated provenance")
+        let capturedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let typedStore = try PackingEncryptedCaptureStore(directory: fixture, access: access, clock: { capturedAt })
+        var validPoints = Data("ply\nformat binary_little_endian 1.0\nelement vertex 4\nproperty float x\nproperty float y\nproperty float z\nproperty float confidence\nend_header\n".utf8)
+        for _ in 0..<4 { for value in [Float(0.1), -0.2, 0.3, 0.9] {
+            var bits = value.bitPattern.littleEndian
+            withUnsafeBytes(of: &bits) { validPoints.append(contentsOf: $0) }
+        } }
+        let saved = try typedStore.savePointCapture(target: .item, points: validPoints)
+        try check(typedStore.readPointCapture(captureID: saved.id).sourceSHA256 == saved.sourceSHA256)
+        check(saved.completedAt == capturedAt && saved.pointCount == 4)
+        let contentsBeforeInvalid = try fm.contentsOfDirectory(atPath: store.root.path).sorted()
+        refuses("Invalid PLY must never stage") { _ = try typedStore.savePointCapture(target: .item, points: Data("invalid".utf8)) }
+        try check(fm.contentsOfDirectory(atPath: store.root.path).sorted() == contentsBeforeInvalid)
+        let changedID = id()
+        try typedStore.write(captureID: changedID, metadata: saved.metadata, points: validPoints)
+        refuses("Authenticated metadata from a different capture") { _ = try typedStore.readPointCapture(captureID: changedID) }
+        let earlyStore = try PackingEncryptedCaptureStore(directory: fixture, access: access, clock: { capturedAt.addingTimeInterval(-1) })
+        refuses("Clock rollback must not accept future provenance") { _ = try earlyStore.readPointCapture(captureID: saved.id) }
+        try check(typedStore.delete(captureID: saved.id))
+        try check(typedStore.delete(captureID: changedID))
         let first = id()
         stage("publish and authenticate encrypted files")
         try store.write(captureID: first, metadata: metadata, points: points)

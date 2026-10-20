@@ -13,6 +13,7 @@ on:
       - 'scripts/test-ios-capture-files.swift'
       - 'scripts/test-ios-capture-authority.swift'
       - 'scripts/test-ios-encrypted-store.swift'
+      - 'scripts/test-ios-point-capture.swift'
       - 'scripts/check-ios-capture-provider.mjs'
       - '.github/workflows/ios.yml'
   push:
@@ -28,6 +29,7 @@ on:
       - 'scripts/test-ios-capture-files.swift'
       - 'scripts/test-ios-capture-authority.swift'
       - 'scripts/test-ios-encrypted-store.swift'
+      - 'scripts/test-ios-point-capture.swift'
       - 'scripts/check-ios-capture-provider.mjs'
       - '.github/workflows/ios.yml'
   workflow_dispatch:
@@ -63,8 +65,13 @@ jobs:
       - name: Check protected capture persistence
         shell: bash
         run: |
-          xcrun swiftc -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingEncryptedCaptureStore.swift scripts/test-ios-encrypted-store.swift -o "$RUNNER_TEMP/encrypted-store-checks"
+          xcrun swiftc -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingPointCapture.swift ios/App/App/PackingEncryptedCaptureStore.swift scripts/test-ios-encrypted-store.swift -o "$RUNNER_TEMP/encrypted-store-checks"
           "$RUNNER_TEMP/encrypted-store-checks"
+      - name: Check point capture provenance
+        shell: bash
+        run: |
+          xcrun swiftc -parse-as-library ios/App/App/PackingPointCapture.swift scripts/test-ios-point-capture.swift -o "$RUNNER_TEMP/point-capture-checks"
+          "$RUNNER_TEMP/point-capture-checks"
       - name: Check guest capture file boundaries
         shell: bash
         run: |

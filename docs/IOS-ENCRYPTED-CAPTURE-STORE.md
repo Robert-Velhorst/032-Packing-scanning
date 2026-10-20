@@ -8,9 +8,11 @@ Guest authority is refused. Account/workspace UUIDs select separate directories
 under `ProtectedScanCaptures-v1`; no key is persisted.
 
 This module is compiled and tested directly. It is not yet exposed through the
-iOS bridge, native scanning, workspace UI or retention. It stores bounded opaque
-metadata and point bytes, not validated geometry. The caller still needs the
-native provenance/PLY validation and a complete capture workflow. Object Capture
+iOS bridge, native scanning, workspace UI or retention. Its low-level write/read
+methods still support bounded opaque bytes. `savePointCapture` and
+`readPointCapture` now require validated binary point data and matching internal
+provenance; product point-cloud consumers must use that path. The complete capture
+workflow is still required. Object Capture
 images, checkpoints and USDZ files are not encrypted by this module.
 
 ## Publication and reads
@@ -69,3 +71,22 @@ The real iOS targets must compile for simulator Debug and unsigned device Releas
 Physical iOS filesystems, lock/process interruption, low-memory/low-storage behavior
 and full bridge/camera/retention acceptance remain required. Native CI and opaque
 storage tests do not establish those user workflows or full product readiness.
+
+## Validated point sources
+
+`PackingPointCapture` accepts only binary little-endian PLY with exactly float
+x/y/z/confidence properties, 4–60,000 points, finite coordinates within ±1.5 m,
+and confidence from 0.8 through 1. Its bounded header, declared point count and
+payload length must agree. These limits match Android's depth writer; ASCII,
+meshes and additional properties are unsupported. This checks representation and
+bounds, not sensor accuracy, coverage, occupied volume or usable cavity geometry.
+
+The validated store save path generates a fresh capture UUID and completion time
+from its native clock after validating the points. Versioned internal metadata
+records the target, count, metres/capture-local frame and SHA-256 of the complete
+PLY bytes. Reads require authenticated files, matching identity/count/hash and a
+non-future completion time. This internal metadata is not the shared web
+`ScanResult` schema and makes no claim that an iOS depth producer exists yet.
+The native caller must invoke save only after its real capture has completed.
+No age-based deletion, raw-source pruning, bridge capability or public endpoint
+is enabled by this change.
