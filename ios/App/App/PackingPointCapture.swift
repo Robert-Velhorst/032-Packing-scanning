@@ -74,8 +74,11 @@ struct PackingPointCapture {
     /** Bounded binary PLY dialect shared with Android's native depth writer. */
     private static func validatePoints(_ data: Data) throws -> Int {
         guard data.count <= 8_000_000,
-              let range = data.prefix(4096).range(of: Data("end_header\n".utf8)),
-              let header = String(data: data.prefix(range.upperBound), encoding: .ascii) else {
+              let range = data.prefix(4096).range(of: Data("end_header\n".utf8)) else {
+            throw PackingPointCaptureError.invalidPoints
+        }
+        let headerLength = data.distance(from: data.startIndex, to: range.upperBound)
+        guard let header = String(data: data.prefix(headerLength), encoding: .ascii) else {
             throw PackingPointCaptureError.invalidPoints
         }
         let lines = header.split(separator: "\n", omittingEmptySubsequences: false)
@@ -99,9 +102,9 @@ struct PackingPointCapture {
             else { throw PackingPointCaptureError.invalidPoints }
         }
         guard let count, properties == ["property float x", "property float y", "property float z", "property float confidence"],
-              data.count == range.upperBound + count * 16 else { throw PackingPointCaptureError.invalidPoints }
+              data.count == headerLength + count * 16 else { throw PackingPointCaptureError.invalidPoints }
         // Decode bytes explicitly: Data storage has no Float/UInt32 alignment guarantee.
-        let body = data.dropFirst(range.upperBound)
+        let body = data.dropFirst(headerLength)
         for index in 0..<(count * 4) {
             let start = body.startIndex + index * 4
             let bits = UInt32(body[start]) | UInt32(body[start + 1]) << 8

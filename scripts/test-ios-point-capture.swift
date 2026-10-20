@@ -25,6 +25,9 @@ import Foundation
         precondition(restored.sourceSHA256 == capture.sourceSHA256)
         let other = try PackingPointCapture.complete(target: .item, points: points, now: now)
         precondition(capture.id != other.id)
+        let sliced = (Data([0, 0, 0]) + points).dropFirst(3)
+        let slicedCapture = try PackingPointCapture.complete(target: .item, points: sliced, now: now)
+        precondition(slicedCapture.sourceSHA256 == capture.sourceSHA256)
         let full = try PackingPointCapture.complete(target: .item, points: cloud(count: 60_000), now: now)
         precondition(full.pointCount == 60_000)
         for bad in [cloud(count: 3), cloud(count: 60_001), cloud(coordinate: .nan), cloud(coordinate: .infinity),
