@@ -14,6 +14,19 @@ PAGE = 16384
 MACHINES = {"arm64-v8a": 183, "x86_64": 62}
 
 
+def covered(start, end, ranges):
+    cursor = start
+    for left, right in sorted(ranges):
+        if right <= cursor:
+            continue
+        if left > cursor:
+            return False
+        cursor = max(cursor, right)
+        if cursor >= end:
+            return True
+    return cursor >= end
+
+
 def inspect_elf(data, abi):
     if len(data) < 64 or data[:7] != b"\x7fELF\x02\x01\x01":
         raise ValueError("Expected a complete little-endian ELF64 header")
@@ -25,7 +38,7 @@ def inspect_elf(data, abi):
         raise ValueError("Invalid ELF program-header bounds")
     loads, relros = [], []
     for index in range(count):
-        kind, _, file_offset, address, _, file_size, memory_size, alignment = struct.unpack_from(
+        kind, flags, file_offset, address, _, file_size, memory_size, alignment = struct.unpack_from(
             "<IIQQQQQQ", data, offset + index * stride)
         if kind == 1:  # PT_LOAD
             if (memory_size < file_size or file_offset + file_size > len(data)
@@ -33,14 +46,33 @@ def inspect_elf(data, abi):
                 raise ValueError("Invalid load-segment bounds")
             if alignment < PAGE or alignment & (alignment - 1) or (address - file_offset) % PAGE:
                 raise ValueError("A load segment is not 16 KB aligned")
-            loads.append(alignment)
+            loads.append((address, address + memory_size, flags, alignment))
         elif kind == 0x6474E552:  # PT_GNU_RELRO
-            if address + memory_size >= 2**64 or (address + memory_size) % PAGE:
-                raise ValueError("A RELRO protection range does not end on a 16 KB boundary")
-            relros.append(address + memory_size)
+            if address + memory_size >= 2**64:
+                raise ValueError("Invalid RELRO bounds")
+            relros.append((address, address + memory_size))
     if not loads:
         raise ValueError("Shared library has no load segments")
-    return {"loadAlignments": loads, "relroEnds": relros}
+    # Bionic rounds mprotect to pages. A raw unaligned RELRO end can be safe
+    # when the writable segment ends there and padding separates the next one.
+    # Reject actual permission conflicts, rather than rejecting safe padding.
+    mapped_loads = [(start // PAGE * PAGE, (end + PAGE - 1) // PAGE * PAGE)
+                    for start, end, _, _ in loads]
+    protected_ranges = []
+    for start, end in relros:
+        protected_start, protected_end = start // PAGE * PAGE, (end + PAGE - 1) // PAGE * PAGE
+        if not covered(protected_start, protected_end, mapped_loads):
+            raise ValueError("RELRO protection extends outside mapped load pages")
+        for load_start, load_end, flags, _ in loads:
+            left, right = max(load_start, protected_start), min(load_end, protected_end)
+            if left < right:
+                if flags & 1:
+                    raise ValueError("RELRO page protection overlaps executable bytes")
+                if flags & 2 and not covered(left, right, relros):
+                    raise ValueError("RELRO page protection covers writable data outside RELRO")
+        protected_ranges.append([protected_start, protected_end])
+    return {"loadAlignments": [load[3] for load in loads], "relroEnds": [end for _, end in relros],
+            "relroPageRanges": protected_ranges}
 
 
 def digest(stream):
@@ -157,7 +189,7 @@ def verify(args):
                "limits": "Static packaging checks only; no device, 16 KB runtime, production signing or store acceptance."}
     with args.output.open("x", encoding="utf-8") as output:
         output.write(json.dumps(receipt, indent=2) + "\n")
-    print("Verified guest APK signatures, matching test signer, web assets, ZIP alignment and 64-bit ELF LOAD/RELRO alignment.")
+    print("Verified guest APK signatures, matching test signer, web assets, ZIP/ELF alignment and RELRO page safety.")
 
 
 def main():
