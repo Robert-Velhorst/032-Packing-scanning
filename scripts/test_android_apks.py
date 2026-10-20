@@ -56,19 +56,19 @@ def dedicated_relro(next_address=0x8000, relro_size=0x980, preceding_write=False
 class ElfAlignmentTests(unittest.TestCase):
     def test_accepts_documented_relro_in_its_own_load_on_a_separate_page(self):
         result = inspect_elf(dedicated_relro(), "arm64-v8a")
-        self.assertEqual(result["dedicatedRelroEnds"], [0x5000])
+        self.assertEqual(result["relroPageRanges"], [[0x4000, 0x8000]])
 
     def test_rejects_relro_rounding_into_another_writable_load(self):
         for address in [0x5000, 0x6000, 0x7FFF]:
-            with self.subTest(address=address), self.assertRaisesRegex(ValueError, "RELRO.*overlaps"):
+            with self.subTest(address=address), self.assertRaisesRegex(ValueError, "RELRO.*writable data"):
                 inspect_elf(dedicated_relro(next_address=address), "arm64-v8a")
 
     def test_rejects_writable_data_before_relro_on_the_same_rounded_page(self):
-        with self.assertRaisesRegex(ValueError, "RELRO.*overlaps"):
+        with self.assertRaisesRegex(ValueError, "RELRO.*writable data"):
             inspect_elf(dedicated_relro(preceding_write=True), "arm64-v8a")
 
     def test_rejects_a_partial_relro_segment_even_when_next_load_is_separate(self):
-        with self.assertRaisesRegex(ValueError, "RELRO.*entire LOAD"):
+        with self.assertRaisesRegex(ValueError, "RELRO.*writable data"):
             inspect_elf(dedicated_relro(relro_size=0x500), "arm64-v8a")
 
     def test_checks_both_supported_64_bit_architectures(self):
@@ -86,6 +86,38 @@ class ElfAlignmentTests(unittest.TestCase):
     def test_rejects_relro_end_that_can_make_16k_loading_fail(self):
         with self.assertRaisesRegex(ValueError, "RELRO"):
             inspect_elf(elf(relro_end=20480), "arm64-v8a")
+
+    def test_accepts_unaligned_relro_end_with_padding_before_next_writable_segment(self):
+        data = elf(relro_end=20480)
+        struct.pack_into("<Q", data, 120 + 40, 4096)  # writable LOAD ends at RELRO end
+        result = inspect_elf(data, "arm64-v8a")
+        self.assertEqual(result["relroEnds"], [20480])
+        self.assertEqual(result["relroPageRanges"], [[16384, 32768]])
+
+    def test_refuses_rounding_that_covers_writable_data_before_relro(self):
+        data = elf()
+        struct.pack_into("<Q", data, 176 + 16, 20480)
+        struct.pack_into("<Q", data, 176 + 40, 12288)
+        with self.assertRaisesRegex(ValueError, "writable data"):
+            inspect_elf(data, "arm64-v8a")
+
+    def test_refuses_protection_that_would_remove_execute_permission(self):
+        data = elf()
+        struct.pack_into("<I", data, 120 + 4, 5)
+        with self.assertRaisesRegex(ValueError, "executable"):
+            inspect_elf(data, "arm64-v8a")
+
+    def test_refuses_relro_pages_outside_the_load_mapping(self):
+        data = elf()
+        struct.pack_into("<Q", data, 176 + 40, 49152)
+        with self.assertRaisesRegex(ValueError, "outside mapped"):
+            inspect_elf(data, "arm64-v8a")
+
+    def test_combines_declared_relro_ranges_when_they_share_a_page(self):
+        data = elf(relro_end=24576)
+        struct.pack_into("<H", data, 56, 4)  # four program headers
+        struct.pack_into("<IIQQQQQQ", data, 232, 0x6474E552, 4, 16384, 24576, 0, 0, 8192, 1)
+        self.assertEqual(inspect_elf(data, "arm64-v8a")["relroEnds"], [24576, 32768])
 
     def test_rejects_wrong_architecture_and_truncated_headers(self):
         for data in [elf(62), elf()[:63], elf()[:200], bytes(256)]:
