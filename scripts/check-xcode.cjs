@@ -15,6 +15,10 @@ assert.ok(project.getFirstTarget().uuid);
 const objects = project.hash.project.objects;
 assert.equal(Object.values(objects).flatMap(section => Object.values(section)).filter(value => value?.isa).length, declarations.length, 'Object declaration inventory is incomplete');
 const target = objects.PBXNativeTarget[project.getFirstTarget().uuid];
+const schemes = path.join(__dirname, '../ios/App/App.xcodeproj/xcshareddata/xcschemes');
+if (fs.existsSync(path.join(schemes, 'PackingPhotoQA.xcscheme'))) {
+  assert.ok(fs.existsSync(path.join(schemes, 'App.xcscheme')), 'A shared QA scheme suppresses the implicit App scheme; preserve an explicit App scheme');
+}
 const sources = target.buildPhases.map(phase => objects.PBXSourcesBuildPhase[phase.value]).filter(Boolean);
 assert.equal(sources.length, 1, 'Expected one App Sources phase');
 const sourceNames = sources[0].files.map(entry => {

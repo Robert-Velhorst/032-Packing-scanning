@@ -94,6 +94,8 @@ private final class PackingReferenceCameraEngine: NSObject, AVCapturePhotoCaptur
         let label = UILabel(); label.text = "Take a reference photo"; label.textColor = .white; label.font = .preferredFont(forTextStyle: .headline)
         label.textAlignment = .center; label.numberOfLines = 0; label.adjustsFontForContentSizeCategory = true
         let cancel = UIButton(type: .system); cancel.setTitle("Cancel", for: .normal); cancel.addTarget(self, action: #selector(cancelled), for: .touchUpInside)
+        cancel.accessibilityIdentifier = "packing.camera.cancel"
+        shutter.accessibilityIdentifier = "packing.camera.shutter"
         shutter.setTitle("Take photo", for: .normal); shutter.addTarget(self, action: #selector(capture), for: .touchUpInside)
         for button in [cancel, shutter] { button.titleLabel?.font = .preferredFont(forTextStyle: .title3); button.tintColor = .white; button.heightAnchor.constraint(greaterThanOrEqualToConstant: 48).isActive = true }
         let buttons = UIStackView(arrangedSubviews: [cancel, shutter]); buttons.axis = .horizontal; buttons.distribution = .fillEqually

@@ -276,3 +276,10 @@
 .packing-item{content-visibility:auto;contain-intrinsic-size:auto 260px}
 @media print{.packing-item{content-visibility:visible;contain-intrinsic-size:none}}
 .library-load-more{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:16px 4px;border-bottom:1px solid var(--line);color:var(--muted);font-size:12px}
+
+/* Keep focused mobile fields readable without WebKit's small-text focus zoom,
+   which can push the dialog header and photo controls outside the screen. */
+@media (max-width: 620px) {
+  .capture-modal .field input, .capture-modal .field select,
+  .capture-modal textarea { font-size: 16px; }
+}
