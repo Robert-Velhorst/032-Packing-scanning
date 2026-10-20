@@ -125,15 +125,19 @@ private enum InjectedStoreFailure: Error { case stop }
         try fm.removeItem(at: unknown)
         let outside = fixture.appendingPathComponent("outside.txt")
         try Data("outside sentinel".utf8).write(to: outside)
+        let outsideCiphertext = fixture.appendingPathComponent("outside.sealed")
+        try original.write(to: outsideCiphertext)
         try fm.removeItem(at: sealedPoints)
-        try fm.createSymbolicLink(at: sealedPoints, withDestinationURL: outside)
+        try fm.createSymbolicLink(at: sealedPoints, withDestinationURL: outsideCiphertext)
         refuses("Read must not follow symbolic links") { _ = try reopened.readPoints(captureID: first) }
         refuses("Delete must not follow symbolic links") { _ = try reopened.delete(captureID: first) }
         try fm.removeItem(at: sealedPoints)
-        try fm.linkItem(at: outside, to: sealedPoints)
+        try fm.linkItem(at: outsideCiphertext, to: sealedPoints)
         refuses("Read must not accept hard-linked files") { _ = try reopened.readPoints(captureID: first) }
+        refuses("Delete must not accept hard-linked files") { _ = try reopened.delete(captureID: first) }
         try fm.removeItem(at: sealedPoints); try original.write(to: sealedPoints)
         try check(Data(contentsOf: outside) == Data("outside sentinel".utf8))
+        try check(Data(contentsOf: outsideCiphertext) == original)
         stage("large bounded round trip and authenticated deletion")
         let largeID = id(), large = Data(repeating: 42, count: 8_000_000)
         try reopened.write(captureID: largeID, metadata: metadata, points: large)
