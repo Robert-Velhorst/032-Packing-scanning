@@ -395,6 +395,7 @@ private struct NativeScanFlow: View {
 class ScanBridgeViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(PackingScanPlugin())
+        bridge?.registerPluginInstance(PackingVoicePlugin())
         bridge?.registerPluginInstance(PackingAccountPlugin())
         bridge?.registerPluginInstance(PackingPrintPlugin())
     }
