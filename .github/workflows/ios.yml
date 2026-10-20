@@ -1,0 +1,57 @@
+name: iOS build
+
+on:
+  pull_request:
+    paths:
+      - 'ios/**'
+      - 'src/**'
+      - 'package*.json'
+      - 'capacitor.config.ts'
+      - 'vite.config.ts'
+      - 'scripts/build-ios.sh'
+      - '.github/workflows/ios.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - 'src/**'
+      - 'package*.json'
+      - 'capacitor.config.ts'
+      - 'vite.config.ts'
+      - 'scripts/build-ios.sh'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  simulator:
+    name: Unsigned iOS simulator build
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+      PACKING_ACCOUNT_ORIGIN: ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.12.0
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Build bundled web assets and native iOS app
+        shell: bash
+        run: bash scripts/build-ios.sh 2>&1 | tee "$RUNNER_TEMP/packing-ios-build.log"
+      - name: Preserve native build diagnostics
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ios-build-log
+          path: ${{ runner.temp }}/packing-ios-build.log
+          retention-days: 7
+          if-no-files-found: ignore
