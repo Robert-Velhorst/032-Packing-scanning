@@ -40,6 +40,7 @@ public class PackingVoicePlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSynthesize
     private var watchdog: DispatchWorkItem?
     private var audioActive = false
     private var reading: CAPPluginCall?
+    private var readingID: UUID?
     private var synthesizer: AVSpeechSynthesizer?
     private var utterance: AVSpeechUtterance?
     private var readingTimeout: DispatchWorkItem?
@@ -59,7 +60,10 @@ public class PackingVoicePlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSynthesize
         }
         NotificationCenter.default.addObserver(self, selector: #selector(audioInterrupted(_:)), name: AVAudioSession.interruptionNotification, object: nil)
     }
-    deinit { NotificationCenter.default.removeObserver(self) }
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+        closeVoice(); closeReader()
+    }
 
     @objc func getAvailability(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
@@ -217,8 +221,12 @@ public class PackingVoicePlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSynthesize
                 synthesizer.delegate = self
                 let utterance = AVSpeechUtterance(string: text)
                 utterance.voice = voice
-                self.reading = call; self.synthesizer = synthesizer; self.utterance = utterance
-                let timeout = DispatchWorkItem { [weak self] in self?.closeReader() }
+                let readingID = UUID()
+                self.reading = call; self.readingID = readingID; self.synthesizer = synthesizer; self.utterance = utterance
+                let timeout = DispatchWorkItem { [weak self] in
+                    guard let self, self.readingID == readingID else { return }
+                    self.closeReader()
+                }
                 self.readingTimeout = timeout
                 DispatchQueue.main.asyncAfter(deadline: .now() + 180, execute: timeout)
                 synthesizer.speak(utterance)
@@ -239,7 +247,7 @@ public class PackingVoicePlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSynthesize
         DispatchQueue.main.async { if self.utterance === utterance { self.closeReader() } }
     }
     private func closeReader() {
-        let call = reading; reading = nil; utterance = nil
+        let call = reading; reading = nil; readingID = nil; utterance = nil
         readingTimeout?.cancel(); readingTimeout = nil
         synthesizer?.delegate = nil
         synthesizer?.stopSpeaking(at: .immediate); synthesizer = nil
