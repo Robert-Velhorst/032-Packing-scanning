@@ -24,3 +24,8 @@ updates:
   directory: /ios/App/CapApp-SPM
   schedule:
     interval: weekly
+- package-ecosystem: github-actions
+  directory: /
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
