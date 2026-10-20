@@ -226,13 +226,14 @@ final class PackingARDepthReceiver: NSObject, ARSessionDelegate {
             intrinsics: frame.camera.intrinsics,
             imageSize: SIMD2(Int(frame.camera.imageResolution.width), Int(frame.camera.imageResolution.height)),
             cameraToWorld: frame.camera.transform, timestamp: frame.timestamp, trackingNormal: normal) }
-        catch { session.pause(); source.cancel() }
+        catch { source.cancel() }
     }
-    func sessionWasInterrupted(_ session: ARSession) { session.pause(); source.cancel() }
+    // Only the controller owns session start/stop. An old queued callback must never pause a restarted session.
+    func sessionWasInterrupted(_ session: ARSession) { source.cancel() }
     func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
         if case .normal = camera.trackingState { return }
         source.trackingUnavailable()
     }
-    func session(_ session: ARSession, didFailWithError error: Error) { session.pause(); source.cancel() }
+    func session(_ session: ARSession, didFailWithError error: Error) { source.cancel() }
 }
 #endif

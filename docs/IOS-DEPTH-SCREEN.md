@@ -34,6 +34,8 @@ Backgrounding, protected-data loss, foreground loss during capture/review/save,
 dismissal, source failure or expiry stop collection, hide camera/review and return
 failure. The permission dialog's temporary inactive state does not itself cancel
 the pending request; real backgrounding and data loss do.
+Only the controller starts/stops the AR session. A queued callback from a retired
+receiver can cancel only its own old source, and cannot pause a restarted camera.
 
 Mac CI exercises the production flow-token policy and real CoreVideo source
 freezing/preview/publication cases. Xcode compiles the actual UIKit/RealityKit

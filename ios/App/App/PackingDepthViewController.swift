@@ -307,10 +307,10 @@ final class PackingDepthViewController: UIViewController {
         if flow.phase == .capturing || flow.phase == .reviewing || flow.phase == .saving { interrupted() }
     }
     private func stopCamera() {
+        review.isHidden = true; camera.isHidden = true
         camera.session.pause(); camera.session.delegate = nil; receiver = nil
         source?.cancel(); source = nil; startedAt = nil
         overlay.children.removeAll(); reviewContent.children.removeAll(); review.scene.anchors.removeAll()
-        review.isHidden = true; camera.isHidden = true
     }
     private func finish(_ result: Result<PackingPointCapture, Error>) {
         guard flow.end() else { return }
