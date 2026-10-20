@@ -25,7 +25,7 @@ def inspect_elf(data, abi):
         raise ValueError("Invalid ELF program-header bounds")
     loads, relros = [], []
     for index in range(count):
-        kind, _, file_offset, address, _, file_size, memory_size, alignment = struct.unpack_from(
+        kind, flags, file_offset, address, _, file_size, memory_size, alignment = struct.unpack_from(
             "<IIQQQQQQ", data, offset + index * stride)
         if kind == 1:  # PT_LOAD
             if (memory_size < file_size or file_offset + file_size > len(data)
@@ -33,14 +33,35 @@ def inspect_elf(data, abi):
                 raise ValueError("Invalid load-segment bounds")
             if alignment < PAGE or alignment & (alignment - 1) or (address - file_offset) % PAGE:
                 raise ValueError("A load segment is not 16 KB aligned")
-            loads.append(alignment)
+            loads.append((address, memory_size, flags, alignment))
         elif kind == 0x6474E552:  # PT_GNU_RELRO
-            if address + memory_size >= 2**64 or (address + memory_size) % PAGE:
-                raise ValueError("A RELRO protection range does not end on a 16 KB boundary")
-            relros.append(address + memory_size)
+            if memory_size == 0 or address + memory_size >= 2**64:
+                raise ValueError("Invalid RELRO protection range")
+            relros.append((address, memory_size))
     if not loads:
         raise ValueError("Shared library has no load segments")
-    return {"loadAlignments": loads, "relroEnds": relros}
+    dedicated = []
+    for address, memory_size in relros:
+        end = address + memory_size
+        if end % PAGE == 0:
+            continue
+        # Android explicitly permits an unaligned RELRO end when it occupies
+        # an entire LOAD and page rounding cannot cover other writable data.
+        # https://developer.android.com/guide/practices/page-sizes#check_the_relro_security_flag
+        owners = [index for index, load in enumerate(loads)
+                  if load[0] == address and load[1] == memory_size]
+        if len(owners) != 1:
+            raise ValueError("An unaligned RELRO range is not its entire LOAD segment")
+        protected_start = address // PAGE * PAGE
+        protected_end = (end + PAGE - 1) // PAGE * PAGE
+        if any(index != owners[0] and flags & 2 and size > 0
+               and start < protected_end and start + size > protected_start
+               for index, (start, size, flags, _) in enumerate(loads)):
+            raise ValueError("Rounded RELRO protection overlaps another writable LOAD segment")
+        dedicated.append(end)
+    return {"loadAlignments": [load[3] for load in loads],
+            "relroEnds": [address + size for address, size in relros],
+            "dedicatedRelroEnds": dedicated}
 
 
 def digest(stream):
@@ -157,7 +178,7 @@ def verify(args):
                "limits": "Static packaging checks only; no device, 16 KB runtime, production signing or store acceptance."}
     with args.output.open("x", encoding="utf-8") as output:
         output.write(json.dumps(receipt, indent=2) + "\n")
-    print("Verified guest APK signatures, matching test signer, web assets, ZIP alignment and 64-bit ELF LOAD/RELRO alignment.")
+    print("Verified guest APK signatures, matching test signer, web assets, ZIP/ELF LOAD alignment and RELRO protection compatibility.")
 
 
 def main():
