@@ -52,15 +52,17 @@ runtime behavior, native feature parity, release signing or App Store acceptance
 
 Physical iPhone/iPad camera and reconstruction, permissions, file providers,
 Keychain persistence, offline behavior, lifecycle interruption and measured
-scan/packing trials remain required. iOS protected workspaces and the corresponding
-encrypted capture storage need
-their own implementation and acceptance before claiming parity with Android.
+scan/packing trials remain required. Protected-workspace authority, encrypted
+capture persistence, depth capture, reconstruction, retention and backup-provider
+implementations are described in their own source-specific documents. Native
+reference-photo handoff and device acceptance remain required before claiming
+feature parity with Android.
 The [native voice adapter](IOS-VOICE.md) implements local recognition and spoken
 steps; microphone, offline-provider and audio acceptance remain required.
 The [native printing bridge](IOS-PRINTING.md) is implemented separately; system
 dialog, pagination and printer/device acceptance remain required.
 The [capture-file boundary](IOS-CAPTURE-FILES.md) adds scoped deletion,
 backup/file-protection policy and interrupted-capture cleanup. It does not
-complete protected-workspace or occupied-shape extraction parity.
+establish full feature parity or physical occupied-shape accuracy.
 See the [full release checkpoint](RELEASE-READINESS-20261020.md) and the README's
 product acceptance criteria.

@@ -1,13 +1,17 @@
 # Combined release and acceptance gates
 
-The `codex/release-integration-20261020` branch combines the Android package
+The earlier `codex/release-integration-20261020` branch combined the Android package
 handoff, iOS printing, iOS voice and iOS capture-file changes from PRs
 [#55](https://github.com/Robert-Velhorst/032-Packing-scanning/pull/55),
 [#56](https://github.com/Robert-Velhorst/032-Packing-scanning/pull/56),
 [#57](https://github.com/Robert-Velhorst/032-Packing-scanning/pull/57) and
 [#58](https://github.com/Robert-Velhorst/032-Packing-scanning/pull/58).
-Their separate results do not prove the combined source builds. Inspect the
-matching integration PR's source-bound CI results and retained diagnostics.
+The current iOS integration is [PR #66](https://github.com/Robert-Velhorst/032-Packing-scanning/pull/66),
+which adds protected authority/storage, native depth capture, full-source item and
+seeded-container reconstruction, retention and encrypted temporary handoff.
+[PR #72](https://github.com/Robert-Velhorst/032-Packing-scanning/pull/72) adds
+native backup document pickers and coordinated provider IO. Inspect each exact
+head's CI results; a component result does not prove a later combined source.
 
 ## Combined-source requirements
 
@@ -15,8 +19,8 @@ matching integration PR's source-bound CI results and retained diagnostics.
 | --- | --- |
 | Web/server | Full suite on both supported CI Node versions, production type checks/build, benchmark tooling check and final-image runtime checks |
 | Android | Native unit tests, debug/test/release assemblies, lint, APK verifier tests and verified exact-file QA artifact with matching source receipt |
-| iOS project | Account, scan, print and voice bridge registration; one Sources entry for every Swift file, with no merge markers or lost declarations |
-| iOS native | Production capture-filesystem checks, 11 Swift voice-result policy cases, simulator Debug and unsigned device Release builds |
+| iOS project | Account, scan, print, voice and backup-files bridge registration; one Sources entry for every Swift file, with no merge markers or lost declarations |
+| iOS native | Authority/encryption/source/geometry/retention/pending/provider checks, capture filesystem and voice policy checks, simulator Debug and unsigned device Release builds |
 | Static analysis | All configured CodeQL languages at the integration head; a skipped aggregate or earlier source is not a pass |
 
 The merge keeps both native test paths: capture-filesystem checks in the workflow
@@ -34,11 +38,12 @@ builds; they are not signed production releases.
 - Keep accounts disabled until operator-selected off-host backups, scheduling,
   recovery rehearsal, independent monitoring and alerts are established. The
   tested synthetic snapshot/restore path does not prove those operations.
-- Complete iOS account-bound encrypted device workspaces and capture storage,
-  native backup/import files, reference-photo workflows and occupied USDZ shape
-  extraction. The guest capture's OS file protection does not satisfy those
-  missing implementations. Other native guidance/retention gaps remain subject
-  to their source-specific acceptance documents.
+- Complete iOS reference-photo/draft workflows. Validate the implemented protected
+  workspace, depth source, item/cavity reconstruction, retention and backup-provider
+  paths on actual hardware/providers. The guest USDZ path has no occupied-shape
+  extraction; protected reconstruction uses observed depth points with conservative
+  refusal gates. Geometry fixtures do not establish physical accuracy. Keep each
+  implementation's remaining gates in its source-specific acceptance document.
 - Exercise supported Android and iPhone/iPad hardware: permissions, camera/depth,
   file providers, voice/audio, printing, lifecycle interruptions, storage limits,
   offline use and 16 KB Android runtime behavior. CI compilation and policy tests

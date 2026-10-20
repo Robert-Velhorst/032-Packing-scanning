@@ -1,10 +1,10 @@
 # iOS encrypted pending-file core
 
 `PackingPendingBackupStore` provides bounded encrypted handoff storage. It is
-compiled into the iOS target but has no document/photo plugin or web capability
-enabled yet. System picker coordination, export destination handling, runtime
-authority sharing, startup orphan handling and photo/draft orchestration remain
-required before enabling iOS file/photo controls.
+compiled into the iOS target and used by `PackingFilesPlugin` for backup
+import/export. Its system picker, provider IO, shared capture authority and owned
+startup cleanup are implemented. Photo/draft orchestration remains separately
+gated and requires its own native implementation.
 
 Only native-created ticket files are addressed. The caller supplies an app-private
 directory. The store checks canonical paths, its original root inode, exact file
