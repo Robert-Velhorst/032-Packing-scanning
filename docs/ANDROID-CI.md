@@ -5,6 +5,14 @@ describe their recorded source/dependency versions. They do not establish that
 the current Gradle, ARCore, LiteRT and Capacitor dependencies compile or pass.
 The Android workflow provides an explicit current-source build check.
 
+The first current-source run found that Gradle 9.8.1 cannot apply AGP 8.13.0:
+the plugin uses an internal Problems API removed in Gradle 9.6. The wrapper is
+now pinned to checksum-verified Gradle 9.5.1, following [Gradle's documented
+compatibility boundary](https://docs.gradle.org/9.8.1/userguide/upgrading_version_9.html#agp_8x_incompatible).
+Dependabot retains wrapper patch updates; minor/major wrapper upgrades must be
+reviewed together with the Android plugin migration and passing native CI.
+The initial failure is [recorded in Actions](https://github.com/Robert-Velhorst/032-Packing-scanning/actions/runs/39399555082).
+
 ## Build command
 
 On Linux/macOS with Node 24.22+ or 26+, Java 21 and Android SDK platform 36:

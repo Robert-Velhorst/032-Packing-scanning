@@ -15,6 +15,13 @@ updates:
   schedule:
     interval: weekly
   open-pull-requests-limit: 5
+  # Gradle 9.6+ removes APIs still used by AGP 8.x. Patch updates on the
+  # compatible 9.5 line stay enabled; review the plugin/wrapper migration together.
+  ignore:
+  - dependency-name: gradle-wrapper
+    update-types:
+    - version-update:semver-minor
+    - version-update:semver-major
 - package-ecosystem: npm
   directory: /
   schedule:

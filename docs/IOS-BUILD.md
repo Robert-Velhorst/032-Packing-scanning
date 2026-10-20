@@ -39,9 +39,15 @@ key, password, session or other credential in native build variables.
 
 ## Evidence and remaining work
 
-This workflow is being introduced to obtain actual compilation evidence; adding
-it does not itself prove that iOS builds. Inspect the exact-head Actions run and
-its build log. Successful unsigned simulator/device builds still do not establish
+On 2026-10-20 the [native build run for source c208c03](https://github.com/Robert-Velhorst/032-Packing-scanning/actions/runs/39399554967)
+completed successfully with Xcode 26.3 and Node 26.12.0: Debug simulator and
+unsigned Release device builds both succeeded after bundling and synchronization.
+The earlier run for 4bf7974 also completed both native build steps, but its job
+was canceled during post-build cleanup when a newer push superseded it; that
+earlier job is not recorded as a green workflow.
+
+For later source changes, inspect the matching Actions run and its build log.
+Successful unsigned simulator/device builds still do not establish
 runtime behavior, native feature parity, release signing or App Store acceptance.
 
 Physical iPhone/iPad camera and reconstruction, permissions, file providers,
