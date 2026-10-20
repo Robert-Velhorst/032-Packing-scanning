@@ -96,6 +96,12 @@ jobs:
           node-version: 26.12.0
           cache: npm
       - run: npm ci --ignore-scripts
+      - name: Check ImageIO reference photos and encrypted editor handoff
+        shell: bash
+        run: |
+          xcrun swiftc -sanitize=thread -g -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingPendingBackupStore.swift ios/App/App/PackingReferencePhoto.swift ios/App/App/PackingPendingItemPhotoStore.swift scripts/test-ios-item-photos.swift -o "$RUNNER_TEMP/item-photo-checks"
+          TSAN_OPTIONS=halt_on_error=1:exitcode=66 "$RUNNER_TEMP/item-photo-checks" "$RUNNER_TEMP/item-photo-result.json"
+          node scripts/check-ios-item-photo.mjs "$RUNNER_TEMP/item-photo-result.json"
       - name: Check native capture authority and provider compatibility
         shell: bash
         run: |
@@ -168,12 +174,6 @@ jobs:
         run: |
           xcrun swiftc -sanitize=thread -g -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingCaptureBridgeValues.swift ios/App/App/PackingPendingBackupStore.swift ios/App/App/PackingBackupRuntime.swift ios/App/App/PackingBackupDocumentIO.swift scripts/test-ios-backup-documents.swift -o "$RUNNER_TEMP/backup-document-checks"
           TSAN_OPTIONS=halt_on_error=1:exitcode=66 "$RUNNER_TEMP/backup-document-checks"
-      - name: Check ImageIO reference photos and encrypted editor handoff
-        shell: bash
-        run: |
-          xcrun swiftc -sanitize=thread -g -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingPendingBackupStore.swift ios/App/App/PackingReferencePhoto.swift ios/App/App/PackingPendingItemPhotoStore.swift scripts/test-ios-item-photos.swift -o "$RUNNER_TEMP/item-photo-checks"
-          TSAN_OPTIONS=halt_on_error=1:exitcode=66 "$RUNNER_TEMP/item-photo-checks" "$RUNNER_TEMP/item-photo-result.json"
-          node scripts/check-ios-item-photo.mjs "$RUNNER_TEMP/item-photo-result.json"
       - name: Check depth capture flow and stale callbacks
         shell: bash
         run: |
