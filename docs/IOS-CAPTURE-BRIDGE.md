@@ -54,9 +54,11 @@ This is not workspace erasure, orphan recovery or age-based retention.
 
 The web bridge accepts iOS state replies and preserves real failures; only a
 legacy UNIMPLEMENTED handshake falls back to guest-only behavior. Saved ARKit
-point review is available through the original iOS source. Reconstruction controls
-and calls remain gated to the implemented Android path; iOS occupied shape/cavity
-reconstruction is still required. iOS backup/file/photo and retention parity also
+point review and item-shape reconstruction are available through the original iOS
+source. Reconstruction checks every saved point and the shared web parser binds
+the result to the reviewed source before explicit adoption. See
+[iOS reconstruction](IOS-VOXEL-RECONSTRUCTION.md). Interior/cavity reconstruction
+controls remain Android-only. iOS backup/file/photo and retention parity also
 remain unfinished. Accounts/service deployment settings are unchanged.
 
 Mac checks execute production key/state encoding, revision/key authority, pending

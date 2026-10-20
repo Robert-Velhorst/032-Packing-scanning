@@ -78,6 +78,26 @@ struct PackingPointCapture: Sendable {
             "sourceHash": sourceSHA256, "pointCount": pointCount, "samplePointCount": projected.count / 4, "pointsMm": projected,
             "envelope": ["method": PackingScanEnvelope.method, "basis": envelope.basis, "paddingMm": envelope.paddingMm, "dimensionsMm": dimensions(envelope)]]
     }
+    /** Uses every authenticated source point, never the sampled bridge preview. No source is rewritten. */
+    func reconstructedResult() throws -> [String: Any] {
+        guard target == .item, let envelope, let quality = depthQuality,
+              quality.valid(pointCount: pointCount), !quality.capped, pointCount < 60_000 else {
+            throw PackingVoxelSolidError.ineligibleCapture
+        }
+        let decoded = try Self.decodePoints(points, highCategoryOnly: true)
+        let solid = try PackingVoxelSolid.reconstruct(points: decoded.map { envelope.projectMm($0) }, boundsMm: envelope.dimensionsMm)
+        return ["id": id, "target": "item", "format": "voxel_solid_v1", "units": "millimetres",
+            "sourceHash": sourceSHA256, "sourcePointCount": pointCount, "method": PackingVoxelSolid.method,
+            "resolutionMm": solid.resolutionMm, "grid": ["x": solid.grid.x, "y": solid.grid.y, "z": solid.grid.z],
+            "occupiedCells": solid.occupiedCells, "observedCellCount": solid.observedCellCount,
+            "enclosedCellCount": solid.enclosedCellCount, "surfaceFaceCount": solid.faceCount,
+            "dimensionsMm": ["length": Double(solid.grid.x) * solid.resolutionMm,
+                             "width": Double(solid.grid.y) * solid.resolutionMm, "height": Double(solid.grid.z) * solid.resolutionMm],
+            "warnings": [
+                "This is a block surface reconstructed from observed cells and enclosed regions, not proof of complete physical geometry.",
+                "Exterior-connected concavities stay open. Hidden cavities are filled; narrow openings can disappear at this resolution. No holes were deliberately patched.",
+                "Cell rounding is a sampling allowance, not a sensor-error bound. Only an explicitly adopted, uniformly scaled shape is used for occupied-cell packing; physical fit remains unverified."]]
+    }
     private func dimensions(_ envelope: PackingScanEnvelope) -> [String: Double] {
         ["length": envelope.dimensionsMm.x, "width": envelope.dimensionsMm.y, "height": envelope.dimensionsMm.z]
     }

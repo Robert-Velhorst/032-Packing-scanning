@@ -1,7 +1,17 @@
 import Foundation
 
-enum PackingVoxelSolidError: Error, Equatable {
-    case invalidSource, openShell, disconnected, tooComplex, ambiguousEdge, ambiguousVertex
+enum PackingVoxelSolidError: Error, Equatable, LocalizedError {
+    case invalidSource, ineligibleCapture, openShell, disconnected, tooComplex, ambiguousEdge, ambiguousVertex
+    var errorDescription: String? {
+        switch self {
+        case .invalidSource: return "The saved points or their envelope are invalid. Recorded dimensions are unchanged."
+        case .ineligibleCapture: return "Reconstruction needs an individual-object depth capture with enough observations and below the point limit. Bag walls and guest models cannot become occupied item shapes."
+        case .openShell: return "The observed shell does not enclose enough interior cells. Capture missing sides or keep the rectangular estimate; no gaps were automatically closed."
+        case .disconnected: return "Several disconnected shapes were observed. Isolate one object and capture it again; no source components were discarded."
+        case .tooComplex: return "The reconstructed surface is too complex for this preview. Capture a simpler isolated object or use its envelope."
+        case .ambiguousEdge, .ambiguousVertex: return "The surface has ambiguous edge or vertex contacts. Its watertight topology could not be established; keep the envelope estimate."
+        }
+    }
 }
 
 /** Observed shells only: no dilation, gap repair, component removal, or invented closure. */

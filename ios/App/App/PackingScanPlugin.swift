@@ -4,7 +4,7 @@ import RealityKit
 import SwiftUI
 import UIKit
 
-private enum PackingCaptureIOFailure: Error, Sendable { case unconfirmed }
+private enum PackingCaptureIOFailure: Error, Sendable { case unconfirmed, reconstructionUnavailable(String) }
 
 /** The SDK call remains on the main actor; workers transfer only Sendable JSON bytes. */
 @MainActor private final class PackingCaptureReply {
@@ -19,6 +19,10 @@ private enum PackingCaptureIOFailure: Error, Sendable { case unconfirmed }
         guard !completed else { return }; completed = true
         defer { budget.release() }
         do {
+            try access.check()
+            if case .failure(.reconstructionUnavailable(let message)) = result {
+                call.reject("Reconstruction unavailable. " + message, "RECONSTRUCTION_UNAVAILABLE"); return
+            }
             let data = try result.get()
             let reply = try access.checked {
                 guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw PackingCaptureIOFailure.unconfirmed }
@@ -53,6 +57,7 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "lockStorage", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "touchStorage", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getCapturePreview", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "reconstructCapture", returnType: CAPPluginReturnPromise),
     ]
 
     public override func load() {
@@ -148,6 +153,7 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
         storageWorker.async {
             let result: Result<Data, PackingCaptureIOFailure>
             do { result = .success(try access.checked { try JSONSerialization.data(withJSONObject: action(store)) }) }
+            catch let error as PackingVoxelSolidError { result = .failure(.reconstructionUnavailable(error.localizedDescription)) }
             catch { result = .failure(.unconfirmed) }
             Task { @MainActor in channel.finish(result) }
         }
@@ -158,6 +164,15 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
             do {
                 let access = try self.bound(call)
                 self.runProtected(call, access: access) { try $0.readPointCapture(captureID: id).previewResult() }
+            } catch { call.reject("The capture workspace is locked.", "STORAGE_CHANGED") }
+        }
+    }
+    @objc func reconstructCapture(_ call: CAPPluginCall) {
+        Task { @MainActor in
+            guard !self.captureBusy, let id = call.getString("id") else { call.reject("Finish the active scan before reconstructing saved geometry.", "CAPTURE_BUSY"); return }
+            do {
+                let access = try self.bound(call)
+                self.runProtected(call, access: access) { try $0.readPointCapture(captureID: id).reconstructedResult() }
             } catch { call.reject("The capture workspace is locked.", "STORAGE_CHANGED") }
         }
     }
