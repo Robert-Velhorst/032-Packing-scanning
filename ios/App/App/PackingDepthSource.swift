@@ -190,7 +190,7 @@ final class PackingDepthSource {
     }
 }
 
-#if canImport(ARKit)
+#if os(iOS)
 import ARKit
 
 /** Assign to an ARSession running .sceneDepth. Session ownership/permission/UI remain with its controller. */
