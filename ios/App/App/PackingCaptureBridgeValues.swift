@@ -2,6 +2,7 @@ import CoreFoundation
 import Foundation
 
 enum PackingCaptureBridgeValues {
+    static let storageChanged = Notification.Name("com.packingscanning.capture-storage-changed")
     static func key(_ raw: Any?) throws -> Data {
         guard let values = raw as? [Any], values.count == 32 else { throw PackingCaptureAuthorityError.invalidKey }
         var bytes = Data(repeating: 0, count: 32)

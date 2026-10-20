@@ -39,6 +39,13 @@ key, password, session or other credential in native build variables.
 
 ## Evidence and remaining work
 
+Native foreground guards share an owning-window check. They use the window's
+active scene when available and the application's active state for a scene-less
+window. Missing/hidden windows and inactive/background states are refused; data
+protection and original lease checks remain separate. Native workspace-selection
+changes also cancel voice/print activity, independently of a delayed WebView
+callback. These lifecycle paths still need simulator/device acceptance.
+
 On 2026-10-20 the [native build run for source c208c03](https://github.com/Robert-Velhorst/032-Packing-scanning/actions/runs/39399554967)
 completed successfully with Xcode 26.3 and Node 26.12.0: Debug simulator and
 unsigned Release device builds both succeeded after bundling and synchronization.

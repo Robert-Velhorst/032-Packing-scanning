@@ -82,6 +82,7 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
         if let previous = selectedLease, previous != state.lease {
             selectedLease = nil; protectedStore = nil
             let cancel = cancelScan; cancelScan = nil; cancel?()
+            NotificationCenter.default.post(name: PackingCaptureBridgeValues.storageChanged, object: nil)
             notifyListeners("captureWorkspaceLocked", data: ["lease": previous])
         }
         return PackingCaptureBridgeValues.state(state)
@@ -108,7 +109,10 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
     @MainActor private func didSelect(_ access: PackingCaptureAuthority.Access, store: PackingEncryptedCaptureStore?) {
         let previous = selectedLease
         selectedLease = access.lease; protectedStore = store
-        if let previous, previous != access.lease { notifyListeners("captureWorkspaceLocked", data: ["lease": previous]) }
+        if let previous, previous != access.lease {
+            NotificationCenter.default.post(name: PackingCaptureBridgeValues.storageChanged, object: nil)
+            notifyListeners("captureWorkspaceLocked", data: ["lease": previous])
+        }
     }
     @MainActor private func prepareStore(_ access: PackingCaptureAuthority.Access) throws -> PackingEncryptedCaptureStore {
         let directory = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
@@ -133,7 +137,7 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
                 var key = try PackingCaptureBridgeValues.key(raw)
                 defer { key.resetBytes(in: 0..<key.count) }
                 guard !self.captureBusy, UIApplication.shared.isProtectedDataAvailable,
-                      self.bridge?.viewController?.view.window?.windowScene?.activationState == .foregroundActive,
+                      PackingForeground.isActive(self.bridge?.viewController?.viewIfLoaded?.window),
                       let revision = call.getString("revision"), let workspace = call.getString("workspaceId"), let account = call.getString("accountId") else {
                     throw PackingCaptureAuthorityError.changed
                 }
@@ -157,7 +161,7 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
         Task { @MainActor in
             do {
                 guard UIApplication.shared.isProtectedDataAvailable,
-                      self.bridge?.viewController?.view.window?.windowScene?.activationState == .foregroundActive else { throw PackingCaptureAuthorityError.changed }
+                      PackingForeground.isActive(self.bridge?.viewController?.viewIfLoaded?.window) else { throw PackingCaptureAuthorityError.changed }
                 try self.bound(call).touch(); call.resolve()
             }
             catch { _ = self.storageState(); call.reject("The capture workspace is locked.", "STORAGE_CHANGED") }
@@ -273,7 +277,7 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             guard !self.captureBusy, let presenter = self.bridge?.viewController,
                   presenter.presentedViewController == nil,
-                  presenter.view.window?.windowScene?.activationState == .foregroundActive,
+                  PackingForeground.isActive(presenter.viewIfLoaded?.window),
                   UIApplication.shared.isProtectedDataAvailable else {
                 call.reject("The camera screen could not be opened.", "PRESENTATION_FAILED")
                 return
@@ -315,7 +319,7 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @MainActor private func scanDepth(_ call: CAPPluginCall, access: PackingCaptureAuthority.Access, target: String) {
         guard !captureBusy, let presenter = bridge?.viewController, presenter.presentedViewController == nil,
-              presenter.view.window?.windowScene?.activationState == .foregroundActive, UIApplication.shared.isProtectedDataAvailable,
+              PackingForeground.isActive(presenter.viewIfLoaded?.window), UIApplication.shared.isProtectedDataAvailable,
               let store = protectedStore, store.boundLease == access.lease,
               ARWorldTrackingConfiguration.isSupported, ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth),
               let target = PackingPointCapture.Target(rawValue: target) else {
