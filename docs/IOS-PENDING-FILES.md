@@ -3,8 +3,8 @@
 `PackingPendingBackupStore` provides bounded encrypted handoff storage. It is
 compiled into the iOS target and used by `PackingFilesPlugin` for backup
 import/export. Its system picker, provider IO, shared capture authority and owned
-startup cleanup are implemented. Photo/draft orchestration remains separately
-gated and requires its own native implementation.
+startup cleanup are implemented. Photo/draft orchestration is implemented separately; see
+[iOS item photos](IOS-ITEM-PHOTOS.md) for its validation and remaining gates.
 
 Only native-created ticket files are addressed. The caller supplies an app-private
 directory. The store checks canonical paths, its original root inode, exact file
@@ -67,8 +67,8 @@ picker for export, coordinates provider access, releases security scope, and
 separates cancellation from success. Export filenames are native-generated UUIDs
 and never overwrite an existing backup. A saved reply confirms local provider IO,
 not remote cloud synchronization. No URL, bookmark, key or filesystem path is
-returned to JavaScript. Photo selection remains separately gated until its own
-native implementation exists. The native lifetime clock uses
+returned to JavaScript. Reference photos use a separate
+[native photo path](IOS-ITEM-PHOTOS.md) with its own acceptance gates. The native lifetime clock uses
 [mach_continuous_time](https://developer.apple.com/documentation/kernel/1646199-mach_continuous_time),
 which continues during sleep.
 

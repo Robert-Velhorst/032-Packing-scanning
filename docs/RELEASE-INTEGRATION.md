@@ -38,7 +38,7 @@ builds; they are not signed production releases.
 - Keep accounts disabled until operator-selected off-host backups, scheduling,
   recovery rehearsal, independent monitoring and alerts are established. The
   tested synthetic snapshot/restore path does not prove those operations.
-- Complete iOS reference-photo/draft workflows. Validate the implemented protected
+- Validate the implemented iOS reference-photo/draft workflows and protected
   workspace, depth source, item/cavity reconstruction, retention and backup-provider
   paths on actual hardware/providers. The guest USDZ path has no occupied-shape
   extraction; protected reconstruction uses observed depth points with conservative

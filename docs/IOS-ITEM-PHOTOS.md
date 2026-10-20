@@ -2,9 +2,10 @@
 
 `PackingReferencePhoto` and `PackingPendingItemPhotoStore` implement the native
 processing and storage path. `PackingPhotoPlugin` connects them to library and
-camera UI and the existing native workspace authority. The plugin is registered,
-but the shared iOS capability gate stays disabled until the new native tests and
-UIKit builds pass. Physical-device/provider acceptance remains a release gate.
+camera UI and the existing native workspace authority. The plugin is registered
+and the shared iOS capability is enabled after the native core checks and both
+unsigned UIKit SDK builds passed. Simulator UI and physical-device/provider
+acceptance remain separate release gates.
 
 The normalizer accepts an ImageIO image source of at most 12 MiB and 100 million
 pixels. It decodes only the first frame into an orientation-correct thumbnail of
