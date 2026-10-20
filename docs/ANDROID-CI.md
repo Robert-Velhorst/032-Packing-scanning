@@ -48,3 +48,9 @@ Device acceptance, release signing and the outstanding product requirements
 remain separate gates. See [iOS compilation](IOS-BUILD.md) for the other native
 platform and [release readiness](RELEASE-READINESS-20261020.md) for verified
 hosting and backup evidence.
+
+## Gradle compatibility
+
+The wrapper uses Gradle 9.5.0 with the official distribution checksum. Android Gradle Plugin 8.13.0 references a Problems API removed in Gradle 9.6, so Gradle 9.8.1 fails before native tasks start. Keep the 9.5 compatibility line until the Capacitor/AGP toolchain is upgraded together and native CI passes.
+
+Source: [Gradle upgrade guide](https://docs.gradle.org/9.8.1/userguide/upgrading_version_9.html#agp_8x_incompatible); [distribution checksum](https://services.gradle.org/distributions/gradle-9.5.0-bin.zip.sha256).
