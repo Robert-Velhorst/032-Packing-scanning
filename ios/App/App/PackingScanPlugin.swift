@@ -90,6 +90,15 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let lease = call.getString("lease") else { throw PackingCaptureAuthorityError.changed }
         return try authority.access(lease: lease)
     }
+    /** Internal file bridge uses this same authority and validated protected namespace. */
+    @MainActor func documentAccess(lease: String) throws -> PackingCaptureAuthority.Access {
+        do {
+            let access = try authority.access(lease: lease)
+            guard selectedLease == access.lease,
+                  access.workspaceID == nil || protectedStore?.boundLease == access.lease else { throw PackingCaptureAuthorityError.changed }
+            return access
+        } catch { _ = storageState(); throw error }
+    }
     @MainActor private func didSelect(_ access: PackingCaptureAuthority.Access, store: PackingEncryptedCaptureStore?) {
         let previous = selectedLease
         selectedLease = access.lease; protectedStore = store
@@ -661,5 +670,6 @@ class ScanBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(PackingVoicePlugin())
         bridge?.registerPluginInstance(PackingAccountPlugin())
         bridge?.registerPluginInstance(PackingPrintPlugin())
+        bridge?.registerPluginInstance(PackingFilesPlugin())
     }
 }

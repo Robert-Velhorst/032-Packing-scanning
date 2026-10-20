@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        DE0321111111111111111111 /* PackingFilesPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE0322222222222222222222 /* PackingFilesPlugin.swift */; };
+        DD0321111111111111111111 /* PackingBackupRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0322222222222222222222 /* PackingBackupRuntime.swift */; };
+        DC0321111111111111111111 /* PackingBackupDocumentIO.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC0322222222222222222222 /* PackingBackupDocumentIO.swift */; };
         DB0321111111111111111111 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = DB0322222222222222222222 /* PrivacyInfo.xcprivacy */; };
         DA0321111111111111111111 /* PackingPendingBackupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0322222222222222222222 /* PackingPendingBackupStore.swift */; };
         FE0321111111111111111111 /* PackingVoxelCavity.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0322222222222222222222 /* PackingVoxelCavity.swift */; };
@@ -36,6 +39,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        DE0322222222222222222222 /* PackingFilesPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingFilesPlugin.swift; sourceTree = "<group>"; };
+        DD0322222222222222222222 /* PackingBackupRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingBackupRuntime.swift; sourceTree = "<group>"; };
+        DC0322222222222222222222 /* PackingBackupDocumentIO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingBackupDocumentIO.swift; sourceTree = "<group>"; };
         DB0322222222222222222222 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
         DA0322222222222222222222 /* PackingPendingBackupStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingPendingBackupStore.swift; sourceTree = "<group>"; };
         FE0322222222222222222222 /* PackingVoxelCavity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingVoxelCavity.swift; sourceTree = "<group>"; };
@@ -111,6 +117,9 @@
                 FA0322222222222222222222 /* PackingDepthViewController.swift */,
                 DB0322222222222222222222 /* PrivacyInfo.xcprivacy */,
                 DA0322222222222222222222 /* PackingPendingBackupStore.swift */,
+                DE0322222222222222222222 /* PackingFilesPlugin.swift */,
+                DD0322222222222222222222 /* PackingBackupRuntime.swift */,
+                DC0322222222222222222222 /* PackingBackupDocumentIO.swift */,
                 FE0322222222222222222222 /* PackingVoxelCavity.swift */,
                 FD0322222222222222222222 /* PackingVoxelSolid.swift */,
                 FB0322222222222222222222 /* PackingScanEnvelope.swift */,
@@ -221,6 +230,9 @@
                 EF0321111111111111111111 /* PackingDepthFlow.swift in Sources */,
                 FA0321111111111111111111 /* PackingDepthViewController.swift in Sources */,
                 DA0321111111111111111111 /* PackingPendingBackupStore.swift in Sources */,
+                DE0321111111111111111111 /* PackingFilesPlugin.swift in Sources */,
+                DD0321111111111111111111 /* PackingBackupRuntime.swift in Sources */,
+                DC0321111111111111111111 /* PackingBackupDocumentIO.swift in Sources */,
                 FE0321111111111111111111 /* PackingVoxelCavity.swift in Sources */,
                 FD0321111111111111111111 /* PackingVoxelSolid.swift in Sources */,
                 FB0321111111111111111111 /* PackingScanEnvelope.swift in Sources */,

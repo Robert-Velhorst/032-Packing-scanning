@@ -5,10 +5,11 @@ import {nativeBackupFilesAvailable,pickNativeBackup,saveNativeBackup,readNativeB
 const lease='11111111-1111-4111-8111-111111111111',ticket='22222222-2222-4222-8222-222222222222',target='33333333-3333-4333-8333-333333333333';
 beforeEach(()=>{vi.resetAllMocks();fixture.native=true;fixture.platform='android';fixture.available=true;});
 describe('native backup boundary',()=>{
-  it('requires Android native files and a current lease without browser fallback',async()=>{
-    for(const configure of [()=>{fixture.native=false;},()=>{fixture.platform='ios';},()=>{fixture.available=false;}]){configure();expect(nativeBackupFilesAvailable()).toBe(false);await expect(pickNativeBackup(lease)).rejects.toThrow(/Unlock/);fixture.native=true;fixture.platform='android';fixture.available=true;}
+  it('requires a supported native files plugin and a current lease without browser fallback',async()=>{
+    for(const configure of [()=>{fixture.native=false;},()=>{fixture.platform='web';},()=>{fixture.available=false;}]){configure();expect(nativeBackupFilesAvailable()).toBe(false);await expect(pickNativeBackup(lease)).rejects.toThrow(/Unlock/);fixture.native=true;fixture.platform='android';fixture.available=true;}
     await expect(pickNativeBackup()).rejects.toThrow(/Unlock/);expect(fixture.bridge.pickBackup).not.toHaveBeenCalled();
   });
+  it.each(['android','ios'])('uses the installed %s plugin for backup selection',async(platform)=>{fixture.platform=platform;expect(nativeBackupFilesAvailable()).toBe(true);fixture.bridge.pickBackup.mockResolvedValue({selected:true,ticket,target});expect(await pickNativeBackup(lease)).toEqual({ticket,target});});
   it('keeps cancellation separate from confirmed selections and refuses malformed replies',async()=>{
     fixture.bridge.pickBackup.mockResolvedValueOnce({selected:false});expect(await pickNativeBackup(lease)).toBeUndefined();
     fixture.bridge.pickBackup.mockResolvedValueOnce({selected:true,ticket,target});expect(await pickNativeBackup(lease)).toEqual({ticket,target});
