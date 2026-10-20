@@ -10,6 +10,8 @@ import Foundation
         defer { try? manager.removeItem(at: fixture) }
         let documents = fixture.appendingPathComponent("Documents", isDirectory: true)
         try manager.createDirectory(at: documents, withIntermediateDirectories: false)
+        func stage(_ value: String) { FileHandle.standardError.write(Data(("Capture check: " + value + "\n").utf8)) }
+        stage("initialize canonical root")
         let files = try PackingCaptureFiles(documents: documents)
         func id() -> String { UUID().uuidString.lowercased() }
         func exists(_ url: URL) -> Bool { manager.fileExists(atPath: url.path) }
@@ -18,9 +20,12 @@ import Foundation
             do { try action(); preconditionFailure(message) } catch {}
         }
 
+        stage("create new owned capture")
         let firstID = id(), first = try files.create(firstID)
         let model = first.appendingPathComponent("Model.usdz")
         try Data("synthetic model".utf8).write(to: model)
+        stage("finalize framework model output")
+        FileHandle.standardError.write(Data(("Model attributes: " + String(describing: try manager.attributesOfItem(atPath: model.path)) + "\n").utf8))
         try files.finalize(firstID)
         try check(model.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
         refuses("Reusing a capture must not overwrite it") { _ = try files.create(firstID) }
@@ -39,6 +44,7 @@ import Foundation
         let legacyID = id(), legacy = files.root.appendingPathComponent(legacyID, isDirectory: true)
         try manager.createDirectory(at: legacy.appendingPathComponent("Images"), withIntermediateDirectories: true)
         try manager.createDirectory(at: legacy.appendingPathComponent("Checkpoints"), withIntermediateDirectories: false)
+        stage("create and corrupt owned marker")
         let corruptID = id(), corrupt = try files.create(corruptID)
         try Data("wrong marker".utf8).write(to: corrupt.appendingPathComponent(".packing-capture-v1"))
         refuses("Invalid ownership must be preserved") { try files.finalize(corruptID) }
@@ -50,19 +56,23 @@ import Foundation
         let linkedID = id(), linked = files.root.appendingPathComponent(linkedID)
         try manager.createSymbolicLink(at: linked, withDestinationURL: outside)
         refuses("Capture symlinks must not be followed") { _ = try files.delete(linkedID) }
+        stage("create nested link fixture")
         let nestedID = id(), nested = try files.create(nestedID)
         try manager.createSymbolicLink(at: nested.appendingPathComponent("Images/outside"), withDestinationURL: outside)
         refuses("Nested symlinks must prevent deletion") { _ = try files.delete(nestedID) }
         refuses("Nested symlinks must prevent policy mutation") { try files.finalize(nestedID) }
+        stage("create hard link fixture")
         let hardID = id(), hard = try files.create(hardID)
         try manager.linkItem(at: sentinel, to: hard.appendingPathComponent("Model.usdz"))
         refuses("Hard-linked files must not change outside policy") { try files.finalize(hardID) }
 
+        stage("clear while preserving unknown and linked fixtures")
         let deleted = try files.clear()
         precondition(deleted == 2 && !exists(first) && !exists(legacy))
         precondition(exists(unknown) && exists(unknownFolder) && exists(corrupt) && exists(nested) && exists(hard))
         try check(Data(contentsOf: sentinel) == Data("must survive".utf8))
 
+        stage("replace root and refuse all subsequent operations")
         let oldRoot = files.root.appendingPathExtension("saved")
         try manager.moveItem(at: files.root, to: oldRoot)
         try manager.createSymbolicLink(at: files.root, withDestinationURL: outside)
