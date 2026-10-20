@@ -24,6 +24,12 @@ import Foundation
         stage("create new owned capture")
         let firstID = id(), first = try files.create(firstID)
         let model = first.appendingPathComponent("Model.usdz")
+        refuses("A missing model must not publish success") { try files.finalize(firstID) }
+        try manager.createDirectory(at: model, withIntermediateDirectories: false)
+        refuses("A directory must not count as a completed model") { try files.finalize(firstID) }
+        try manager.removeItem(at: model)
+        try Data().write(to: model)
+        refuses("An empty model must not publish success") { try files.finalize(firstID) }
         try Data("synthetic model".utf8).write(to: model)
         stage("finalize framework model output")
         try files.finalize(firstID)

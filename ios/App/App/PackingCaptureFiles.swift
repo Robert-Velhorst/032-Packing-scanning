@@ -1,7 +1,7 @@
 import Foundation
 import Darwin
 
-enum PackingCaptureFileError: Error { case unsafePath, invalidID, unknownCapture, limit }
+enum PackingCaptureFileError: Error { case unsafePath, invalidID, unknownCapture, invalidModel, limit }
 
 /** App-owned scan originals only. Does not follow links or clear unknown documents. */
 struct PackingCaptureFiles {
@@ -129,7 +129,14 @@ struct PackingCaptureFiles {
     /** Reapply policy to framework-created outputs before publishing a successful capture. */
     func finalize(_ id: String) throws {
         let url = try folder(id)
-        for child in try owned(url) { try protect(child) }
+        let children = try owned(url)
+        let model = url.appendingPathComponent("Model.usdz")
+        try check(model, directory: false)
+        let size = (try manager.attributesOfItem(atPath: model.path)[.size] as? NSNumber)?.int64Value ?? 0
+        guard size > 0 else {
+            throw PackingCaptureFileError.invalidModel
+        }
+        for child in children { try protect(child) }
         try protect(url)
     }
 

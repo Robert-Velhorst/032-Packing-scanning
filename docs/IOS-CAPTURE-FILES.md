@@ -10,7 +10,8 @@ The internal root and new capture directories are explicitly excluded from
 backup using Apple's
 [`isExcludedFromBackup`](https://developer.apple.com/documentation/foundation/urlresourcevalues/isexcludedfrombackup).
 The flag is also applied to framework-created files before returning a successful
-capture. These internal originals are not exported user documents; ordinary
+capture. Success also requires a nonempty regular model file. These internal
+originals are not exported user documents; ordinary
 document operations can reset this flag, so it is reapplied at completion.
 This change does not remove a historical backup or prove real iCloud/device
 transfer behavior.
