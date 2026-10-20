@@ -62,6 +62,13 @@ import simd
         }
         let status = try capture.status()
         precondition(status.acceptedFrames == 6 && status.viewCount >= 3 && status.readinessIssue == nil)
+        refuses("Unreviewed capture must not publish") { _ = try capture.finish(target: .item, store: store) }
+        let preview = try capture.preview()
+        precondition(!preview.points.isEmpty && preview.points.count <= 2000 && preview.captureToWorld != nil)
+        try capture.freezeForReview()
+        try check(!ingest(capture, timestamp: 7, degrees: 110))
+        capture.trackingUnavailable() // Pausing the camera must not mutate a frozen review.
+        try check(capture.status().pointCount == status.pointCount && capture.status().acceptedFrames == 6)
         // Another live authority with identical account/workspace/key is still a different selection.
         let other = PackingCaptureAuthority()
         defer { withExtendedLifetime(other) {} }
@@ -85,6 +92,7 @@ import simd
             _ = try scaled.ingest(depth: depth, confidence: confidence, intrinsics: doubled, imageSize: SIMD2(384, 288),
                 cameraToWorld: pose(angle), timestamp: Double(offset + 1), trackingNormal: true)
         }
+        try scaled.freezeForReview()
         let scaledSave = try scaled.finish(target: .item, store: store)
         precondition(scaledSave.sourceSHA256 == saved.sourceSHA256)
         refuses("Published capture cannot continue collecting") { _ = try ingest(capture, timestamp: 8) }

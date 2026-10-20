@@ -15,6 +15,7 @@ on:
       - 'scripts/test-ios-encrypted-store.swift'
       - 'scripts/test-ios-point-capture.swift'
       - 'scripts/test-ios-depth-source.swift'
+      - 'scripts/test-ios-depth-flow.swift'
       - 'scripts/check-ios-capture-provider.mjs'
       - '.github/workflows/ios.yml'
   push:
@@ -32,6 +33,7 @@ on:
       - 'scripts/test-ios-encrypted-store.swift'
       - 'scripts/test-ios-point-capture.swift'
       - 'scripts/test-ios-depth-source.swift'
+      - 'scripts/test-ios-depth-flow.swift'
       - 'scripts/check-ios-capture-provider.mjs'
       - '.github/workflows/ios.yml'
   workflow_dispatch:
@@ -79,6 +81,11 @@ jobs:
         run: |
           xcrun swiftc -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingPointCapture.swift ios/App/App/PackingEncryptedCaptureStore.swift ios/App/App/PackingDepthSource.swift scripts/test-ios-depth-source.swift -o "$RUNNER_TEMP/depth-source-checks"
           "$RUNNER_TEMP/depth-source-checks"
+      - name: Check depth capture flow and stale callbacks
+        shell: bash
+        run: |
+          xcrun swiftc -parse-as-library ios/App/App/PackingDepthFlow.swift scripts/test-ios-depth-flow.swift -o "$RUNNER_TEMP/depth-flow-checks"
+          "$RUNNER_TEMP/depth-flow-checks"
       - name: Check guest capture file boundaries
         shell: bash
         run: |
