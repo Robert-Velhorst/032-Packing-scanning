@@ -14,6 +14,7 @@ on:
       - 'scripts/test-ios-capture-authority.swift'
       - 'scripts/test-ios-encrypted-store.swift'
       - 'scripts/test-ios-point-capture.swift'
+      - 'scripts/test-ios-depth-source.swift'
       - 'scripts/check-ios-capture-provider.mjs'
       - '.github/workflows/ios.yml'
   push:
@@ -30,6 +31,7 @@ on:
       - 'scripts/test-ios-capture-authority.swift'
       - 'scripts/test-ios-encrypted-store.swift'
       - 'scripts/test-ios-point-capture.swift'
+      - 'scripts/test-ios-depth-source.swift'
       - 'scripts/check-ios-capture-provider.mjs'
       - '.github/workflows/ios.yml'
   workflow_dispatch:
@@ -72,6 +74,11 @@ jobs:
         run: |
           xcrun swiftc -parse-as-library ios/App/App/PackingPointCapture.swift scripts/test-ios-point-capture.swift -o "$RUNNER_TEMP/point-capture-checks"
           "$RUNNER_TEMP/point-capture-checks"
+      - name: Check in-memory depth source and encrypted handoff
+        shell: bash
+        run: |
+          xcrun swiftc -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingPointCapture.swift ios/App/App/PackingEncryptedCaptureStore.swift ios/App/App/PackingDepthSource.swift scripts/test-ios-depth-source.swift -o "$RUNNER_TEMP/depth-source-checks"
+          "$RUNNER_TEMP/depth-source-checks"
       - name: Check guest capture file boundaries
         shell: bash
         run: |
