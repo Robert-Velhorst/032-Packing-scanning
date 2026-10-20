@@ -31,6 +31,7 @@ private final class PhotoReplies: @unchecked Sendable {
         return CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as! [CFString: Any]
     }
     static func main() throws {
+        func phase(_ name: String) { FileHandle.standardOutput.write(Data(("Reference photo fixture: " + name + "\n").utf8)) }
         let fm = FileManager.default, parent = fm.temporaryDirectory.resolvingSymlinksInPath()
         let fixture = parent.appendingPathComponent("packing-ios-item-photos-" + UUID().uuidString, isDirectory: true)
         check(fixture.deletingLastPathComponent().path == parent.path)
@@ -44,16 +45,19 @@ private final class PhotoReplies: @unchecked Sendable {
             kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFSoftware: comment],
         ])
         check(properties(input)[kCGImagePropertyGPSDictionary] != nil)
+        phase("oriented JPEG with GPS/EXIF")
         let photo = try PackingReferencePhoto.prepare(input), output = properties(photo.bytes)
         check(output[kCGImagePropertyPixelWidth] as? Int == 512 && output[kCGImagePropertyPixelHeight] as? Int == 2048)
         check((output[kCGImagePropertyOrientation] as? Int ?? 1) == 1 && output[kCGImagePropertyGPSDictionary] == nil)
         check(photo.bytes.prefix(3) == Data([0xff, 0xd8, 0xff]) && photo.bytes.range(of: Data(comment.utf8)) == nil)
         if let exif = output[kCGImagePropertyExifDictionary] as? [CFString: Any] { check(exif[kCGImagePropertyExifUserComment] == nil) }
+        phase("small PNG")
         let small = encode(image(width: 32, height: 16)), smallPhoto = try PackingReferencePhoto.prepare(small)
         check(properties(smallPhoto.bytes)[kCGImagePropertyPixelWidth] as? Int == 32)
         let animated = NSMutableData(), gif = CGImageDestinationCreateWithData(animated, UTType.gif.identifier as CFString, 2, nil)!
         CGImageDestinationAddImage(gif, image(width: 32, height: 16), nil)
         CGImageDestinationAddImage(gif, image(width: 32, height: 16, red: 0), nil); check(CGImageDestinationFinalize(gif))
+        phase("animated GIF")
         let still = try PackingReferencePhoto.prepare(animated as Data)
         check(CGImageSourceGetCount(CGImageSourceCreateWithData(still.bytes as CFData, nil)!) == 1)
         for invalid in [Data(), Data("<svg><script>no active image</script></svg>".utf8), Data(small.prefix(40)), Data(repeating: 1, count: PackingReferencePhoto.maximumBytes + 1)] {
@@ -66,6 +70,7 @@ private final class PhotoReplies: @unchecked Sendable {
         var crc: UInt32 = 0xffff_ffff
         for byte in huge[12..<29] { crc ^= UInt32(byte); for _ in 0..<8 { crc = (crc >> 1) ^ (crc & 1 == 1 ? 0xedb8_8320 : 0) } }
         put(crc ^ 0xffff_ffff, at: 29)
+        phase("CRC-correct oversized PNG header")
         do { _ = try PackingReferencePhoto.prepare(huge); fatalError("Oversized source accepted") }
         catch PackingReferencePhotoError.oversized {} // The header gate, not a later decoder failure.
 
