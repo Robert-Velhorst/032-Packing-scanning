@@ -70,6 +70,23 @@ import simd
         refuses("Never redirect to another selection") { _ = try capture.finish(target: .item, store: otherStore) }
         let saved = try capture.finish(target: .item, store: store)
         try check(store.readPointCapture(captureID: saved.id).pointCount == status.pointCount)
+        let headerEnd = saved.points.range(of: Data("end_header\n".utf8))!.upperBound
+        func first(_ axis: Int) -> Float {
+            saved.points.withUnsafeBytes { bytes in
+                Float(bitPattern: UInt32(littleEndian: bytes.loadUnaligned(fromByteOffset: headerEnd + axis * 4, as: UInt32.self)))
+            }
+        }
+        // Independently calculated pixel (38,28), 0.5 m depth, fx/fy 250, center (96,72).
+        precondition(abs(first(0) + 0.116) < 0.00001 && abs(first(1) - 0.088) < 0.00001)
+        precondition(abs(first(2)) < 0.00001 && first(3) == 1)
+        let scaled = try source()
+        var doubled = intrinsics; doubled[0].x *= 2; doubled[1].y *= 2; doubled[2].x *= 2; doubled[2].y *= 2
+        for (offset, angle) in [Float(0), 0, 35, 35, 70, 70].enumerated() {
+            _ = try scaled.ingest(depth: depth, confidence: confidence, intrinsics: doubled, imageSize: SIMD2(384, 288),
+                cameraToWorld: pose(angle), timestamp: Double(offset + 1), trackingNormal: true)
+        }
+        let scaledSave = try scaled.finish(target: .item, store: store)
+        precondition(scaledSave.sourceSHA256 == saved.sourceSHA256)
         refuses("Published capture cannot continue collecting") { _ = try ingest(capture, timestamp: 8) }
         let folder = store.root.appendingPathComponent(saved.id)
         for child in try manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) {
