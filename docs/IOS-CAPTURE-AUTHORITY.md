@@ -53,6 +53,9 @@ This primitive does not yet encrypt Object Capture images, checkpoints or USDZ
 models, provide atomic file publication or manage scratch files. Those files
 must not be described as protected workspace captures merely because this core
 exists. Existing [guest capture file policy](IOS-CAPTURE-FILES.md) is separate.
+The [protected point/metadata store](IOS-ENCRYPTED-CAPTURE-STORE.md) adds scoped
+authenticated persistence and publication separately; its bridge and capture
+workflow are still unfinished.
 
 ## Verification boundary
 
