@@ -1,0 +1,258 @@
+import CryptoKit
+import Foundation
+
+enum PackingPointCaptureError: Error { case invalidMetadata, invalidPoints }
+
+/** Validated internal source; depth records additionally retain source-derived envelope estimates. */
+struct PackingPointCapture: Sendable {
+    enum Target: String, Codable, Sendable { case item, containerInterior = "container_interior" }
+    struct DepthQuality: Codable, Sendable, Equatable {
+        let depthFrames: Int
+        let viewCount: Int
+        let capped: Bool
+        func valid(pointCount: Int) -> Bool {
+            pointCount >= 300 && (6...12000).contains(depthFrames) && viewCount >= 3 && viewCount <= min(depthFrames, 1000)
+                && (!capped || pointCount == 60_000)
+        }
+    }
+    private struct DepthMetadata: Codable {
+        let sensor: String
+        let quality: DepthQuality
+        let method: String
+        let basis: String
+        let paddingMm: Double
+        let dimensionsMm: [Double]
+    }
+    private struct Provenance: Codable {
+        let version: Int
+        let id: String
+        let target: Target
+        let completedAtMilliseconds: Int64
+        let format: String
+        let units: String
+        let coordinateFrame: String
+        let pointCount: Int
+        let sourceSHA256: String
+        let depth: DepthMetadata?
+    }
+    let id: String
+    let target: Target
+    let completedAt: Date
+    let pointCount: Int
+    let sourceSHA256: String
+    let metadata: Data
+    let points: Data
+    let depthQuality: DepthQuality?
+    let envelope: PackingScanEnvelope?
+
+    /** Shared bridge payload. Generic point records cannot acquire invented depth provenance. */
+    func scanResult() throws -> [String: Any] {
+        guard let envelope, let quality = depthQuality else { throw PackingPointCaptureError.invalidMetadata }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var warnings = [
+            "Depth geometry is an estimate. Check all dimensions physically; this is not a watertight mesh or a closure guarantee.",
+            "Neighbouring objects may enter the capture, and hidden surfaces may be missing. Restart if the preview includes background geometry.",
+            "The oriented envelope includes a 2.5 mm sampling margin on every face. This does not bound sensor error or hidden surfaces, and its sorted sides do not establish which side must remain upright.",
+            "Only ARKit's high confidence category was retained. Its numeric eligibility flag is not a calibrated probability or measurement-accuracy guarantee."]
+        if target == .containerInterior { warnings.append("Visible interior surfaces do not establish the usable cavity or narrowest opening. Measure and confirm these manually.") }
+        if quality.capped { warnings.append("The capture reached its point limit; additional detail was omitted.") }
+        let geometry: [String: Any] = ["format": "ply_point_cloud", "units": "metres", "coordinateFrame": "capture_local_right_handed", "pointCount": pointCount,
+            "envelope": ["method": PackingScanEnvelope.method, "basis": envelope.basis, "paddingMm": envelope.paddingMm]]
+        let qualityRecord: [String: Any] = ["depthFrames": quality.depthFrames, "viewCount": quality.viewCount, "confidenceThreshold": 1,
+            "confidenceKind": "arkit_high_category", "pointLimitReached": quality.capped, "voxelSizeMm": 5]
+        let record: [String: Any] = ["id": id, "target": target.rawValue, "createdAt": formatter.string(from: completedAt),
+            "platform": "ios", "method": "arkit_scene_depth", "completedPasses": quality.viewCount, "modelStoredLocally": true,
+            "geometry": geometry, "quality": qualityRecord]
+        return ["record": record, "dimensionsMm": dimensions(envelope), "warnings": warnings]
+    }
+    func previewResult() throws -> [String: Any] {
+        guard let envelope, depthQuality != nil else { throw PackingPointCaptureError.invalidMetadata }
+        let decoded = try Self.decodePoints(points, highCategoryOnly: true)
+        let step = max(1, Int(ceil(Double(decoded.count) / 8000)))
+        var projected: [Double] = []; projected.reserveCapacity(min(8000, decoded.count) * 4)
+        for index in stride(from: 0, to: decoded.count, by: step) {
+            let p = envelope.projectMm(decoded[index]); projected.append(contentsOf: [p.x, p.y, p.z, 1])
+        }
+        return ["id": id, "target": target.rawValue, "format": "point_cloud_preview", "units": "millimetres",
+            "sourceHash": sourceSHA256, "pointCount": pointCount, "samplePointCount": projected.count / 4, "pointsMm": projected,
+            "envelope": ["method": PackingScanEnvelope.method, "basis": envelope.basis, "paddingMm": envelope.paddingMm, "dimensionsMm": dimensions(envelope)]]
+    }
+    /** Uses every authenticated source point, never the sampled bridge preview. No source is rewritten. */
+    func reconstructedResult() throws -> [String: Any] {
+        guard target == .item, let envelope, let quality = depthQuality,
+              quality.valid(pointCount: pointCount), !quality.capped, pointCount < 60_000 else {
+            throw PackingVoxelSolidError.ineligibleCapture
+        }
+        let decoded = try Self.decodePoints(points, highCategoryOnly: true)
+        let solid = try PackingVoxelSolid.reconstruct(points: decoded.map { envelope.projectMm($0) }, boundsMm: envelope.dimensionsMm)
+        return ["id": id, "target": "item", "format": "voxel_solid_v1", "units": "millimetres",
+            "sourceHash": sourceSHA256, "sourcePointCount": pointCount, "method": PackingVoxelSolid.method,
+            "resolutionMm": solid.resolutionMm, "grid": ["x": solid.grid.x, "y": solid.grid.y, "z": solid.grid.z],
+            "occupiedCells": solid.occupiedCells, "observedCellCount": solid.observedCellCount,
+            "enclosedCellCount": solid.enclosedCellCount, "surfaceFaceCount": solid.faceCount,
+            "dimensionsMm": ["length": Double(solid.grid.x) * solid.resolutionMm,
+                             "width": Double(solid.grid.y) * solid.resolutionMm, "height": Double(solid.grid.z) * solid.resolutionMm],
+            "warnings": [
+                "This is a block surface reconstructed from observed cells and enclosed regions, not proof of complete physical geometry.",
+                "Exterior-connected concavities stay open. Hidden cavities are filled; narrow openings can disappear at this resolution. No holes were deliberately patched.",
+                "Cell rounding is a sampling allowance, not a sensor-error bound. Only an explicitly adopted, uniformly scaled shape is used for occupied-cell packing; physical fit remains unverified."]]
+    }
+    func interiorResult(review: PackingInteriorReview) throws -> [String: Any] {
+        guard target == .containerInterior, let envelope, let quality = depthQuality,
+              quality.valid(pointCount: pointCount), !quality.capped, pointCount < 60_000 else {
+            throw PackingVoxelCavityError.ineligibleCapture
+        }
+        let decoded = try Self.decodePoints(points, highCategoryOnly: true)
+        let cavity = try PackingVoxelCavity.reconstruct(points: decoded.map { envelope.projectMm($0) }, boundsMm: envelope.dimensionsMm, review: review)
+        func dimensions(_ p: SIMD3<Double>) -> [String: Double] { ["length": p.x,"width": p.y,"height": p.z] }
+        return ["id": id, "target": "container_interior", "format": "voxel_cavity_v1", "units": "millimetres",
+            "sourceHash": sourceSHA256, "sourcePointCount": pointCount, "method": PackingVoxelCavity.method,
+            "grid": ["x": cavity.grid.x,"y": cavity.grid.y,"z": cavity.grid.z],
+            "boundsMm": dimensions(cavity.boundsMm), "cellSizeMm": dimensions(cavity.cellSizeMm),
+            "seedMm": ["x": review.seedMm.x,"y": review.seedMm.y,"z": review.seedMm.z],
+            "opening": ["axis": review.axis,"sign": review.sign,"planeMm": review.sign == 1 ? cavity.boundsMm[review.axis] : 0,"cells": cavity.openingCells],
+            "freeCells": cavity.freeCells,"observedCells": cavity.observedCells,"wallCellCount": cavity.observedCells.count,
+            "surfaceFaceCount": cavity.surfaceFaceCount,"estimatedVolumeMm3": cavity.estimatedVolumeMm3,
+            "warnings": [
+                "This is one estimated empty component selected by an interior seed. Other compartments and hidden cavities are not included.",
+                "The selected opening plane is a reviewed assumption, not an observed wall or a measured narrowest entry. Source axes do not infer travel orientation.",
+                "Observed cells stay unavailable. Only the selected opening is capped for boundary checking; missing walls or floor reaching other envelope faces are rejected.",
+                "Finite cells can hide narrow gaps, thicken walls or miss unobserved intrusions. Sampling spacing does not bound physical error, usable capacity or closure. Nothing was adopted into the packing plan."]]
+    }
+    private func dimensions(_ envelope: PackingScanEnvelope) -> [String: Double] {
+        ["length": envelope.dimensionsMm.x, "width": envelope.dimensionsMm.y, "height": envelope.dimensionsMm.z]
+    }
+
+    private init(provenance: Provenance, metadata: Data, points: Data, envelope: PackingScanEnvelope?) {
+        id = provenance.id; target = provenance.target
+        completedAt = Date(timeIntervalSince1970: Double(provenance.completedAtMilliseconds) / 1000)
+        pointCount = provenance.pointCount; sourceSHA256 = provenance.sourceSHA256
+        self.metadata = metadata; self.points = points
+        depthQuality = provenance.depth?.quality; self.envelope = envelope
+    }
+
+    static func complete(target: Target, points: Data, now: Date, depthQuality: DepthQuality? = nil) throws -> PackingPointCapture {
+        let decoded = try decodePoints(points, highCategoryOnly: depthQuality != nil), count = decoded.count
+        if let depthQuality, !depthQuality.valid(pointCount: count) { throw PackingPointCaptureError.invalidMetadata }
+        let envelope = try depthQuality.map { _ in try PackingScanEnvelope.fit(decoded) }
+        let depth = envelope.map { DepthMetadata(sensor: "arkit_scene_depth", quality: depthQuality!, method: PackingScanEnvelope.method,
+            basis: $0.basis, paddingMm: $0.paddingMm, dimensionsMm: [$0.dimensionsMm.x, $0.dimensionsMm.y, $0.dimensionsMm.z]) }
+        let time = try milliseconds(now)
+        let provenance = Provenance(version: depth == nil ? 1 : 2, id: UUID().uuidString.lowercased(), target: target,
+            completedAtMilliseconds: time, format: "ply_point_cloud", units: "metres",
+            coordinateFrame: "capture_local_right_handed", pointCount: count, sourceSHA256: digest(points), depth: depth)
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        return PackingPointCapture(provenance: provenance, metadata: try encoder.encode(provenance), points: points, envelope: envelope)
+    }
+
+    static func restore(captureID: String, metadata: Data, points: Data, now: Date) throws -> PackingPointCapture {
+        guard !metadata.isEmpty, metadata.count <= 20_000, points.count <= 8_000_000,
+              UUID(uuidString: captureID)?.uuidString.lowercased() == captureID else {
+            throw PackingPointCaptureError.invalidMetadata
+        }
+        let provenance = try JSONDecoder().decode(Provenance.self, from: metadata)
+        let decoded = try decodePoints(points, highCategoryOnly: provenance.depth != nil)
+        guard (provenance.version == 1 && provenance.depth == nil || provenance.version == 2 && provenance.depth != nil), provenance.id == captureID,
+              provenance.format == "ply_point_cloud", provenance.units == "metres",
+              provenance.coordinateFrame == "capture_local_right_handed",
+              provenance.completedAtMilliseconds >= 0,
+              provenance.completedAtMilliseconds <= (try milliseconds(now)),
+              provenance.sourceSHA256 == digest(points),
+              provenance.pointCount == decoded.count else {
+            throw PackingPointCaptureError.invalidMetadata
+        }
+        var envelope: PackingScanEnvelope?
+        if let depth = provenance.depth {
+            guard depth.sensor == "arkit_scene_depth", depth.quality.valid(pointCount: decoded.count),
+                  depth.method == PackingScanEnvelope.method, depth.paddingMm == 2.5, depth.dimensionsMm.count == 3 else {
+                throw PackingPointCaptureError.invalidMetadata
+            }
+            let fitted = try PackingScanEnvelope.fit(decoded)
+            guard depth.basis == fitted.basis, (0..<3).allSatisfy({
+                depth.dimensionsMm[$0].isFinite && abs(depth.dimensionsMm[$0] - fitted.dimensionsMm[$0]) <= 0.001
+            }) else { throw PackingPointCaptureError.invalidMetadata }
+            envelope = fitted
+        }
+        return PackingPointCapture(provenance: provenance, metadata: metadata, points: points, envelope: envelope)
+    }
+
+    /** Authenticated native depth provenance remains available after raw points are removed. */
+    static func validatedDepthCompletionDate(captureID: String, metadata: Data, now: Date) throws -> Date {
+        guard !metadata.isEmpty, metadata.count <= 20_000,
+              UUID(uuidString: captureID)?.uuidString.lowercased() == captureID else { throw PackingPointCaptureError.invalidMetadata }
+        let p = try JSONDecoder().decode(Provenance.self, from: metadata)
+        guard p.version == 2, p.id == captureID, p.format == "ply_point_cloud", p.units == "metres",
+              p.coordinateFrame == "capture_local_right_handed", p.completedAtMilliseconds >= 0,
+              p.completedAtMilliseconds <= (try milliseconds(now)),
+              p.sourceSHA256.count == 64, p.sourceSHA256.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 || $0 >= 97 && $0 <= 102 }),
+              let depth = p.depth, depth.sensor == "arkit_scene_depth", depth.quality.valid(pointCount: p.pointCount), p.pointCount <= 60_000,
+              depth.method == PackingScanEnvelope.method, ["capture_aligned","principal_components","orientation_search"].contains(depth.basis),
+              depth.paddingMm == 2.5, depth.dimensionsMm.count == 3,
+              depth.dimensionsMm.allSatisfy({ $0.isFinite && $0 > 0 && $0 <= 10_000 }) else { throw PackingPointCaptureError.invalidMetadata }
+        return Date(timeIntervalSince1970: Double(p.completedAtMilliseconds) / 1000)
+    }
+
+    private static func milliseconds(_ date: Date) throws -> Int64 {
+        let value = date.timeIntervalSince1970 * 1000
+        guard value.isFinite, value >= 0, value <= 253_402_300_799_999 else {
+            throw PackingPointCaptureError.invalidMetadata
+        }
+        return Int64(value.rounded(.down))
+    }
+    private static func digest(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /** Bounded binary PLY dialect shared with Android's native depth writer. */
+    private static func decodePoints(_ data: Data, highCategoryOnly: Bool = false) throws -> [SIMD3<Double>] {
+        guard data.count <= 8_000_000,
+              let range = data.prefix(4096).range(of: Data("end_header\n".utf8)) else {
+            throw PackingPointCaptureError.invalidPoints
+        }
+        let headerLength = data.distance(from: data.startIndex, to: range.upperBound)
+        guard let header = String(data: data.prefix(headerLength), encoding: .ascii) else {
+            throw PackingPointCaptureError.invalidPoints
+        }
+        let lines = header.split(separator: "\n", omittingEmptySubsequences: false)
+        guard lines.count >= 9, lines.count <= 21, lines[0] == "ply",
+              lines[1] == "format binary_little_endian 1.0",
+              lines[lines.count - 2] == "end_header", lines.last == "" else {
+            throw PackingPointCaptureError.invalidPoints
+        }
+        var count: Int?
+        var properties: [String] = []
+        for line in lines.dropFirst(2).dropLast(2) {
+            if line.hasPrefix("comment ") { continue }
+            if line.hasPrefix("element vertex "), count == nil, properties.isEmpty {
+                let digits = line.dropFirst(15)
+                guard !digits.isEmpty, digits.allSatisfy({ $0 >= "0" && $0 <= "9" }),
+                      let parsed = Int(digits), (4...60_000).contains(parsed) else {
+                    throw PackingPointCaptureError.invalidPoints
+                }
+                count = parsed
+            } else if line.hasPrefix("property "), count != nil { properties.append(String(line)) }
+            else { throw PackingPointCaptureError.invalidPoints }
+        }
+        guard let count, properties == ["property float x", "property float y", "property float z", "property float confidence"],
+              data.count == headerLength + count * 16 else { throw PackingPointCaptureError.invalidPoints }
+        // Decode bytes explicitly: Data storage has no Float/UInt32 alignment guarantee.
+        let body = data.dropFirst(headerLength)
+        var decoded: [SIMD3<Double>] = []; decoded.reserveCapacity(count)
+        var position = SIMD3<Double>.zero
+        for index in 0..<(count * 4) {
+            let start = body.startIndex + index * 4
+            let bits = UInt32(body[start]) | UInt32(body[start + 1]) << 8
+                | UInt32(body[start + 2]) << 16 | UInt32(body[start + 3]) << 24
+            let value = Float(bitPattern: bits)
+            guard value.isFinite,
+                  index % 4 == 3 ? (value >= 0.8 && value <= 1) : abs(value) <= 1.5 else {
+                throw PackingPointCaptureError.invalidPoints
+            }
+            if index % 4 == 3 && highCategoryOnly && value != 1 { throw PackingPointCaptureError.invalidPoints }
+            if index % 4 < 3 { position[index % 4] = Double(value) }
+            else { decoded.append(position) }
+        }
+        return decoded
+    }
+}

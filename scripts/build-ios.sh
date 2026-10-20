@@ -50,4 +50,5 @@ for task_sdk in iphonesimulator iphoneos; do
     -derivedDataPath "$task_repo/ios/App/DerivedData" \
     CODE_SIGNING_ALLOWED=NO \
     build
+  node scripts/check-ios-privacy.mjs "$task_repo/ios/App/DerivedData/Build/Products/$task_configuration-$task_sdk/App.app/PrivacyInfo.xcprivacy"
 done

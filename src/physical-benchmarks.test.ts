@@ -9,6 +9,11 @@ import { createTestTempDirectory } from './test-temp.ts';
 import { createInitialData } from './seed';
 const at = (seconds = 0) => new Date(Date.UTC(2026, 9, 1, 0, 0, seconds)).toISOString(), hash = 'a'.repeat(64);
 function source(): BenchmarkSource { return parseBenchmarkSource({ format: 'packing-scanning-benchmark-source', version: 1, backupSha256: hash, exportedAt: at(), packId: 'pack', sample: false, mode: 'balanced', references: [{ id: 'item:box', label: 'Rigid box', target: 'item', currentDimensionsMm: { length: 100, width: 80, height: 40 }, currentOpeningMm: null, upperMassGrams: 20, massSource: 'estimated' }, { id: 'bag:case', label: 'Hard case', target: 'container_interior', currentDimensionsMm: { length: 500, width: 300, height: 200 }, currentOpeningMm: { length: 300, width: 200 }, upperMassGrams: 1000, massSource: 'measured' }], captures: [{ id: 'capture-box', referenceId: 'item:box', platform: 'android', method: 'arcore_depth', createdAt: at(5), rawDimensionsMm: { length: 110, width: 42, height: 80 } }, { id: 'capture-case', referenceId: 'bag:case', platform: 'android', method: 'arcore_depth', createdAt: at(25), rawDimensionsMm: { length: 540, width: 320, height: 210 } }], instances: [{ id: 'entry#1', referenceId: 'item:box', required: true, unavailable: false, packingFormId: null }], containerIds: ['bag:case'] }); }
+it('retains the iOS depth path in benchmark provenance and rejects an Android relabel',()=>{
+    const value=source();value.captures[0]={...value.captures[0],platform:'ios',method:'arkit_scene_depth'};
+    expect(parseBenchmarkSource(value).captures[0].method).toBe('arkit_scene_depth');
+    value.captures[0].platform='android';expect(()=>parseBenchmarkSource(value)).toThrow(/platform\/method/);
+});
 function fixture() {
     const s = source(), d = newBenchmarkDataset(s, 'Synthetic arithmetic verification', hash);
     d.evidenceClass = 'synthetic';

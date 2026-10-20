@@ -44,8 +44,8 @@ public class PackingVoicePlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSynthesize
     private var synthesizer: AVSpeechSynthesizer?
     private var utterance: AVSpeechUtterance?
     private var readingTimeout: DispatchWorkItem?
-    private var foreground: Bool {
-        UIApplication.shared.isProtectedDataAvailable && bridge?.webView?.window?.windowScene?.activationState == .foregroundActive
+    @MainActor private var foreground: Bool {
+        UIApplication.shared.isProtectedDataAvailable && PackingForeground.isActive(bridge?.webView?.window)
     }
     private func localRecognizer() -> SFSpeechRecognizer? {
         guard let candidate = SFSpeechRecognizer(locale: Locale(identifier: "en-US")),
@@ -55,7 +55,7 @@ public class PackingVoicePlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSynthesize
 
     public override func load() {
         for name in [UIApplication.didEnterBackgroundNotification, UIApplication.protectedDataWillBecomeUnavailableNotification,
-                     AVAudioSession.mediaServicesWereLostNotification] {
+                     AVAudioSession.mediaServicesWereLostNotification, PackingCaptureBridgeValues.storageChanged] {
             NotificationCenter.default.addObserver(self, selector: #selector(interrupted), name: name, object: nil)
         }
         NotificationCenter.default.addObserver(self, selector: #selector(audioInterrupted(_:)), name: AVAudioSession.interruptionNotification, object: nil)
@@ -115,7 +115,7 @@ public class PackingVoicePlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSynthesize
         }
     }
 
-    private func startVoice(_ id: String) {
+    @MainActor private func startVoice(_ id: String) {
         guard activeID == id, foreground, let recognizer = localRecognizer() else {
             failVoice(id, "The local English recognizer is unavailable. Use touch controls."); return
         }

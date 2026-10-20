@@ -1,7 +1,10 @@
 # Release readiness checkpoint — 2026-10-20
 
-This records verified preparation, not full production or physical-device
-acceptance. Source/runtime release: `7179938`. Intended public origin:
+This records the dated private-server checkpoint and its follow-up, not full
+production or physical-device acceptance. It is not a live host inspection.
+For current mobile implementation and exact-head CI requirements, see
+[release integration](RELEASE-INTEGRATION.md). Source/runtime release at this
+checkpoint: `7179938`. Intended public origin:
 `https://032-packing-scanner.noodzakelijkonline.de`.
 
 ## Verified
@@ -45,8 +48,8 @@ Release directory: `/opt/packing032/releases/7179938/`.
 - Off-host account backup storage/scheduling, a real restore rehearsal,
   independent monitoring and operator alerts must be established before real
   accounts are accepted. Accounts/registration remain disabled on staging.
-- Android physical-device acceptance and release signing, iOS compilation and
-  remaining native feature parity, and physical scan/fit/closure/replanning
+- Android physical-device acceptance and release signing, remaining iOS native
+  feature parity and device acceptance, and physical scan/fit/closure/replanning
   trials remain required. No mobile or physical acceptance is inferred from
   the web/server tests.
 

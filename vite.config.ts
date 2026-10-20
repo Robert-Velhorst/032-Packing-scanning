@@ -14,7 +14,8 @@ export default defineConfig({
   server: { proxy: { '/api/': 'http://127.0.0.1:3001' } },
   preview: { proxy: { '/api/': 'http://127.0.0.1:3001' } },
   build: {
-    target: 'es2022',
+    // Match the native WebKit minimum; ES year targets alone do not pin Safari.
+    target: ['chrome111', 'edge111', 'firefox114', 'safari15.4', 'ios15.4'],
     sourcemap: false,
     rollupOptions: {
       input: {

@@ -10,7 +10,7 @@ interface FilesPlugin {
 }
 const Files=registerPlugin<FilesPlugin>('PackingFiles');
 const uuid=/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
-export function nativeBackupFilesAvailable(){return Capacitor.isNativePlatform()&&Capacitor.getPlatform()==='android'&&Capacitor.isPluginAvailable('PackingFiles');}
+export function nativeBackupFilesAvailable(){return Capacitor.isNativePlatform()&&['android','ios'].includes(Capacitor.getPlatform())&&Capacitor.isPluginAvailable('PackingFiles');}
 function requireLease(lease?:string):asserts lease is string {if(!nativeBackupFilesAvailable()||!lease||!uuid.test(lease))throw new Error('Unlock native backup storage before continuing.');}
 export async function pickNativeBackup(lease?:string):Promise<BackupSelection|undefined>{
   requireLease(lease);const result=await Files.pickBackup({lease});

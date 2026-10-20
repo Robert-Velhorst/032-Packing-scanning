@@ -21,7 +21,7 @@ export function captureClient(lease?:string){
     scanObject:async(target:ScanTarget,recognize=false)=>{live();const capabilities=await getScanCapabilities();live();if(!capabilities.supported)throw new Error(capabilities.reason??'Guided capture is unavailable.');capturing=true;try{return await run(()=>scanObject(target,lease,true,recognize&&target==='item'&&capabilities.recognitionSupported===true));}finally{capturing=false;}},
     deleteScanCapture:(id?:string)=>run(()=>deleteScanCapture(id,lease)),clearScanCaptures:()=>run(()=>clearScanCaptures(lease)),
     pruneExpiredScanSources:(days:ScanRetentionDays,afterId?:string):Promise<ScanRetentionReply>=>run(async()=>{
-      if(!Capacitor.isNativePlatform()||Capacitor.getPlatform()!=='android'||!lease||!uuid.test(lease)||days==null||!validScanRetentionDays(days)||afterId!==undefined&&!uuid.test(afterId))throw Error('Raw scan cleanup requires a supported period and the original unlocked Android workspace.');
+      if(!Capacitor.isNativePlatform()||!['android','ios'].includes(Capacitor.getPlatform())||!lease||!uuid.test(lease)||days==null||!validScanRetentionDays(days)||afterId!==undefined&&!uuid.test(afterId))throw Error('Raw scan cleanup requires a supported period and the original unlocked device workspace.');
       if(capturing)throw Error('Finish the current scan before raw source cleanup.');
       return parseScanRetentionReply(await PackingScan.pruneExpiredSources({lease,days,...(afterId?{afterId}:{})}));
     }),
@@ -33,7 +33,7 @@ export function captureClient(lease?:string){
 export type CaptureClient=ReturnType<typeof captureClient>;
 
 export async function getScanRetentionCapabilities():Promise<boolean>{
-  if(!Capacitor.isNativePlatform()||Capacitor.getPlatform()!=='android'||!isScannerAvailable())return false;
+  if(!Capacitor.isNativePlatform()||!['android','ios'].includes(Capacitor.getPlatform())||!isScannerAvailable())return false;
   try{const value=await PackingScan.getRetentionCapabilities();if(value?.version!==1||typeof value.supported!=='boolean')throw Error('Invalid cleanup capability reply.');return value.supported;}
   catch(error){if((error as {code?:string})?.code==='UNIMPLEMENTED')return false;throw error;}
 }
@@ -69,24 +69,28 @@ export async function clearScanCaptures(lease?:string): Promise<void> {
 }
 
 export function canPreviewSavedGeometry(record: ScanRecord): boolean {
-  return record.platform === 'android' && record.modelStoredLocally && Capacitor.getPlatform() === 'android' && isScannerAvailable();
+  return record.modelStoredLocally && record.platform === Capacitor.getPlatform() && isScannerAvailable()
+    && (record.platform === 'android' || record.platform === 'ios' && record.method === 'arkit_scene_depth' && record.geometry?.format === 'ply_point_cloud');
+}
+export function canReconstructSavedGeometry(record:ScanRecord):boolean{
+  return canPreviewSavedGeometry(record);
 }
 
 export async function readSavedGeometry(record: ScanRecord,lease?:string): Promise<SavedGeometryPreview> {
-  if (!canPreviewSavedGeometry(record)) throw new Error('The original saved geometry can be reviewed on its Android device. JSON backups contain scan details, but do not contain the original point cloud.');
+  if (!canPreviewSavedGeometry(record)) throw new Error('Review requires the original point-cloud scan on its supported device. JSON backups contain scan details, but do not contain the original point cloud.');
   if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(record.id)) throw new Error('The saved scan identifier is invalid.');
   return parseSavedGeometry(await PackingScan.getCapturePreview({id:record.id,...(lease?{lease}:{})}),record);
 }
 
 export async function reconstructSavedCapture(record: ScanRecord, source: SavedGeometryPreview,lease?:string): Promise<ReconstructedGeometry> {
-  if (!canPreviewSavedGeometry(record) || record.target !== 'item' || source.id !== record.id || source.target !== record.target) throw new Error('Reconstruction requires the original individual-object scan on its Android device.');
+  if (!canReconstructSavedGeometry(record) || record.target !== 'item' || source.id !== record.id || source.target !== record.target) throw new Error('Reconstruction requires the original individual-object point-cloud scan on its supported device.');
   if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(record.id)) throw new Error('The saved scan identifier is invalid.');
   return parseReconstructedSolid(await PackingScan.reconstructCapture({id:record.id,...(lease?{lease}:{})}),source);
 }
 
 export async function reconstructSavedInterior(record:ScanRecord,source:SavedGeometryPreview,review:InteriorReview,lease?:string):Promise<ReconstructedInterior> {
-  if(!canPreviewSavedGeometry(record)||record.target!=='container_interior'||source.id!==record.id||source.target!==record.target)
-    throw new Error('Interior reconstruction requires the original empty bag scan on its Android device.');
+  if(!canReconstructSavedGeometry(record)||record.target!=='container_interior'||source.id!==record.id||source.target!==record.target)
+    throw new Error('Interior reconstruction requires the original empty bag point-cloud scan on its supported device.');
   if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(record.id))throw new Error('The saved scan identifier is invalid.');
   return parseInteriorCavity(await PackingScan.reconstructInterior({id:record.id,openingAxis:review.openingAxis,openingSign:review.openingSign,seedMm:review.seedMm,...(lease?{lease}:{})}),source,review);
 }

@@ -1,6 +1,6 @@
 import type {DimensionsMm,EvidenceSource,Flexibility,ItemCategory,LibraryItem,PackingForm,PackingShape,ScaleCalibration,ScanRecord,UnitSystem} from './types';
 import type { Evidence } from './types';
-import { handlingEvidenceError } from './property-evidence';
+import { handlingEvidenceError } from './property-evidence.ts';
 import type {TripSuggestion} from './trip-assistant';
 export interface ItemEditorDraft {
   version:1;initial?:LibraryItem;suggestion?:TripSuggestion;sourceTripId?:string;unit:UnitSystem;

@@ -2,7 +2,7 @@ import './SavedScanPreview.css';
 import './ScanCloudControls.css';
 import type { ReconstructedGeometry } from '../scanning/reconstructed-solid';
 import { lazy, memo, Suspense, useEffect, useRef, useState } from 'react';
-import { canPreviewSavedGeometry } from '../scanning/native';
+import { canPreviewSavedGeometry, canReconstructSavedGeometry } from '../scanning/native';
 import { useDeviceWorkspace } from './DeviceWorkspace';
 import type { SavedGeometryPreview } from '../scanning/saved-geometry';
 import type { ScanRecord } from '../types';
@@ -16,6 +16,7 @@ const ScanCloudCanvas=lazy(()=>import('./ScanCloudCanvas').then(module=>({defaul
 
 export function SavedScanPreview({ record,onAdopt,onAdoptInterior }: { record: ScanRecord;onAdopt?:(geometry:ReconstructedGeometry,source:SavedGeometryPreview)=>void;onAdoptInterior?:(geometry:ReconstructedInterior,travelUp:PackingInterior['travelUp'])=>void }) {
   const {readSavedGeometry,reconstructSavedCapture}=useDeviceWorkspace().capture;
+  const reconstructSupported=canReconstructSavedGeometry(record);
   const [reconstruction,setReconstruction]=useState<ReconstructedGeometry>();
   const [surfaceMode,setSurfaceMode]=useState(false);
   const [sourceTopViewOpened,setSourceTopViewOpened]=useState(false);
@@ -50,14 +51,14 @@ export function SavedScanPreview({ record,onAdopt,onAdoptInterior }: { record: S
     finally{if(active.current&&token===request.current)setBusy(false);}
   };
   return <section className="saved-scan-preview" aria-label="Saved scan review">
-    {record.quality?.coverage&&<details className="scan-geometry-caution"><summary>Capture directions and depth diagnostics</summary>{captureGuidanceNotes(record).map(note=><p key={note}>{note}</p>)}</details>}
+    {(record.quality?.coverage||record.quality?.confidenceKind)&&<details className="scan-geometry-caution"><summary>Capture directions and depth diagnostics</summary>{captureGuidanceNotes(record).map(note=><p key={note}>{note}</p>)}</details>}
     {record.sourceRetention?.reason==='raw_scan_retention'&&<p className="scan-geometry-caution">Original source removed by raw scan retention. Saved measurements and explicitly adopted item shapes or bag cavities remain available; a new scan is needed for source review or reconstruction. Removal confirmed {new Date(record.sourceRetention.confirmedAt).toLocaleString()}.</p>}
     {record.sourceRetention?.reason!=='raw_scan_retention'&&<p>Review the original captured surface before relying on its size. Missing surfaces, reflections and surrounding objects can affect the estimate.</p>}
-    {canPreviewSavedGeometry(record)?<button className="button button-secondary" type="button" disabled={busy} onClick={()=>void load()}>{busy?'Opening saved geometry…':preview?'Reload saved geometry':'Review saved scan'}</button>:record.sourceRetention?.reason==='raw_scan_retention'?null:<small>Original surface review requires its saved point cloud on a supported Android installation. Backups retain scan details and dimensions but exclude the original points.</small>}
+    {canPreviewSavedGeometry(record)?<button className="button button-secondary" type="button" disabled={busy} onClick={()=>void load()}>{busy?'Opening saved geometry…':preview?'Reload saved geometry':'Review saved scan'}</button>:record.sourceRetention?.reason==='raw_scan_retention'?null:<small>Original surface review requires its saved point-cloud scan on the original supported device. Backups retain scan details and dimensions but exclude the original points.</small>}
     {error&&<p className="form-error" role="alert">{error}</p>}
     {preview&&<>
-      <p className="source-envelope-size"><strong>Original source envelope:</strong> {[preview.envelope.dimensionsMm.length,preview.envelope.dimensionsMm.width,preview.envelope.dimensionsMm.height].map((side)=>Number((side/10).toFixed(2))).join(' × ')} cm. This view precedes your scale calibration or dimension edits. Review alone leaves size fields unchanged. {record.target==='item'?'An explicitly adopted shape uses a uniformly scaled, rounded cell envelope.':'Explicitly adopting a reviewed cavity uses its opening-up inside frame and changes the draft inside dimensions.'}</p>
-      {record.target==='item'&&<div className="surface-reconstruction">
+      <p className="source-envelope-size"><strong>Original source envelope:</strong> {[preview.envelope.dimensionsMm.length,preview.envelope.dimensionsMm.width,preview.envelope.dimensionsMm.height].map((side)=>Number((side/10).toFixed(2))).join(' × ')} cm. This view precedes your scale calibration or dimension edits. Review alone leaves size fields unchanged. {reconstructSupported&&(record.target==='item'?'An explicitly adopted shape uses a uniformly scaled, rounded cell envelope.':'Explicitly adopting a reviewed cavity uses its opening-up inside frame and changes the draft inside dimensions.')}</p>
+      {reconstructSupported&&record.target==='item'&&<div className="surface-reconstruction">
         <h3>Reconstruct an estimated surface</h3><p>This reads the full saved source, not the displayed sample. Open voxel shells and disconnected shapes are rejected. A mathematically closed surface does not prove the object was completely scanned. Use it in the plan only after reviewing the source and its scale.</p>
         <button className="button button-secondary" type="button" disabled={busy} onClick={()=>void reconstruct()}>{busy?'Reading source…':reconstruction?'Rebuild estimated surface':'Reconstruct saved surface'}</button>
         {reconstruction&&onAdopt&&<button className="button button-secondary" type="button" disabled={busy} onClick={()=>{try{onAdopt(reconstruction,preview);setError('');}catch(reason){setError(reason instanceof Error?reason.message:'The shape could not be adopted.');}}}>Use estimated shape in plan</button>}
@@ -69,7 +70,7 @@ export function SavedScanPreview({ record,onAdopt,onAdoptInterior }: { record: S
           ? <Suspense fallback={<p role="status">Opening 3D scan view…</p>}><ScanCloudCanvas preview={preview} reconstruction={surfaceMode?reconstruction:undefined}/></Suspense>
           : <p className="saved-scan-viewer-placeholder" role="status">3D scan view will open as you reach it.</p>}
       </div></> : <button className="button button-secondary" type="button" onClick={()=>setShow3d(true)}>Open interactive 3D view</button>}
-      {record.target==='container_interior'&&onAdoptInterior&&<InteriorScanReview key={preview.sourceHash} record={record} source={preview} onAdopt={onAdoptInterior}/>}
+      {reconstructSupported&&record.target==='container_interior'&&onAdoptInterior&&<InteriorScanReview key={preview.sourceHash} record={record} source={preview} onAdopt={onAdoptInterior}/>}
       <details onToggle={event=>{if(event.currentTarget.open)setSourceTopViewOpened(true);}}><summary>Top view and source details</summary>{sourceTopViewOpened&&<ScanCloudTopView preview={preview}/>}<p>{preview.samplePointCount.toLocaleString()} displayed points from {preview.pointCount.toLocaleString()} saved points. Green points are observed surfaces; the outline is their rectangular envelope.</p><p>{preview.envelope.paddingMm?`${preview.envelope.paddingMm} mm sampling margin on each face; this does not bound sensor error or unseen surfaces.`:'This older capture uses its original camera-aligned envelope, with no added sampling margin.'} Sorted envelope sides do not establish which side must remain upright.</p></details>
       {record.target==='container_interior'&&<p className="scan-geometry-caution">Scanned walls do not establish free usable space. Check wheel/handle intrusions, corners, the floor and the opening with physical measurements.</p>}
       <button className="text-button" type="button" onClick={()=>{request.current++;setPreview(undefined);setShow3d(false);setViewerNearViewport(false);setReconstruction(undefined);setSurfaceMode(false);setError('');setBusy(false);}}>Close geometry review</button>
