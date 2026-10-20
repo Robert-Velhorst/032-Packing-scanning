@@ -25,13 +25,6 @@ import Foundation
         let model = first.appendingPathComponent("Model.usdz")
         try Data("synthetic model".utf8).write(to: model)
         stage("finalize framework model output")
-        for candidate in try manager.contentsOfDirectory(at: first, includingPropertiesForKeys: nil) {
-            let attributes = try manager.attributesOfItem(atPath: candidate.path)
-            let diagnostic = "Fixture path=" + candidate.path + " standard=" + candidate.standardizedFileURL.path
-                + " resolved=" + candidate.resolvingSymlinksInPath().path + " type=" + String(describing: attributes[.type])
-                + " links=" + String(describing: attributes[.referenceCount]) + "\n"
-            FileHandle.standardError.write(Data(diagnostic.utf8))
-        }
         try files.finalize(firstID)
         try check(model.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
         refuses("Reusing a capture must not overwrite it") { _ = try files.create(firstID) }

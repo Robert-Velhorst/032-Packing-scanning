@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 enum PackingCaptureFileError: Error { case unsafePath, invalidID, unknownCapture, limit }
 
@@ -9,7 +10,7 @@ struct PackingCaptureFiles {
     private let marker = ".packing-capture-v1"
 
     init(documents: URL) throws {
-        let base = documents.standardizedFileURL.resolvingSymlinksInPath()
+        let base = URL(fileURLWithPath: try Self.canonicalPath(documents.path), isDirectory: true)
         guard base.isFileURL, try FileManager.default.attributesOfItem(atPath: base.path)[.type] as? FileAttributeType == .typeDirectory else {
             throw PackingCaptureFileError.unsafePath
         }
@@ -24,6 +25,12 @@ struct PackingCaptureFiles {
     static func appStore() throws -> PackingCaptureFiles {
         let documents = try FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         return try PackingCaptureFiles(documents: documents)
+    }
+
+    private static func canonicalPath(_ path: String) throws -> String {
+        guard let resolved = realpath(path, nil) else { throw PackingCaptureFileError.unsafePath }
+        defer { free(resolved) }
+        return String(cString: resolved)
     }
 
     private func folder(_ id: String) throws -> URL {
@@ -56,7 +63,7 @@ struct PackingCaptureFiles {
     }
 
     private func check(_ url: URL, directory: Bool? = nil) throws {
-        guard url.isFileURL, url.standardizedFileURL.path == url.resolvingSymlinksInPath().path,
+        guard url.isFileURL, try Self.canonicalPath(url.path) == url.path,
               url.path == root.path || url.path.hasPrefix(root.path + "/") else { throw PackingCaptureFileError.unsafePath }
         let attributes = try manager.attributesOfItem(atPath: url.path)
         let kind = attributes[.type] as? FileAttributeType
