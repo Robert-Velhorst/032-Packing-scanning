@@ -53,7 +53,7 @@ export function DeviceWorkspace({children}:{children:ReactNode}){
   const native=Capacitor.isNativePlatform();
   const [pendingBackup,setPendingBackup]=useState<BackupSelection>(),[fileBusy,setFileBusy]=useState(false),[fileNotice,setFileNotice]=useState('');
   const pendingRef=useRef<BackupSelection|undefined>(undefined),fileOperation=useRef(false);
-  const filesSupported=native&&nativeProtection&&Capacitor.getPlatform()==='android'&&Capacitor.isPluginAvailable('PackingFiles');
+  const filesSupported=native&&nativeProtection&&['android','ios'].includes(Capacitor.getPlatform())&&Capacitor.isPluginAvailable('PackingFiles');
   const [pendingPhoto,setPendingPhoto]=useState<ItemPhotoSelection>(),[photoNotice,setPhotoNotice]=useState('');
   const photoRef=useRef<ItemPhotoSelection|undefined>(undefined);
   const photosSupported=native&&nativeProtection&&Capacitor.getPlatform()==='android'&&Capacitor.isPluginAvailable('PackingPhoto');
