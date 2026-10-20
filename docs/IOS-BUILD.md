@@ -1,7 +1,15 @@
 # iOS compilation and release boundary
 
 The app uses Capacitor 8.5.3. Capacitor 8 requires [Xcode 26 or later and an iOS
-15 deployment target](https://capacitorjs.com/docs/updating/8-0#ios).
+15 deployment target](https://capacitorjs.com/docs/updating/8-0#ios). This app
+requires **iOS/iPadOS 15.4 or later** because its real editing, backup and identity
+paths use `structuredClone`, `Object.hasOwn` and `Array.at`.
+[WebKit 15.4](https://webkit.org/blog/12445/new-webkit-features-in-safari-15-4/)
+introduced these APIs. The App/project deployment settings and explicit Safari/
+iOS Vite targets match 15.4; lowering the native minimum alone would allow
+installation with missing runtime APIs. Vite's syntax transformations do not
+polyfill these APIs. Successful current-SDK builds still do not prove behavior
+on the oldest supported OS; that runtime/device acceptance remains required.
 Guided capture additionally requires the supported hardware and iOS 18 APIs
 checked by `PackingScanPlugin`; the minimum app deployment version does not
 mean every device supports scanning.
