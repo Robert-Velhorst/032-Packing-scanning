@@ -86,7 +86,7 @@ jobs:
         run: |
           xcrun swiftc -parse-as-library ios/App/App/PackingDepthFlow.swift scripts/test-ios-depth-flow.swift -o "$RUNNER_TEMP/depth-flow-checks"
           "$RUNNER_TEMP/depth-flow-checks"
-      - name: Check guest capture file boundaries
+      - name: Check native capture file boundaries
         shell: bash
         run: |
           xcrun swiftc -parse-as-library ios/App/App/PackingCaptureFiles.swift scripts/test-ios-capture-files.swift -o "$RUNNER_TEMP/capture-file-checks"
