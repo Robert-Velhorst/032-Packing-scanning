@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import ImageIO
 import UniformTypeIdentifiers
 
@@ -14,6 +15,22 @@ enum PackingReferencePhoto {
     static let maximumBytes = 12 * 1024 * 1024
     static let maximumPixels = 100_000_000.0
     static let maximumDimension = 2048
+    /** Read only while NSItemProvider's callback owns its temporary source URL. No retained path. */
+    static func readProviderFile(_ url: URL) throws -> Data {
+        guard url.isFileURL else { throw PackingReferencePhotoError.unsupported }
+        let descriptor = Darwin.open(url.path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
+        guard descriptor >= 0 else { throw PackingReferencePhotoError.unsupported }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true); defer { try? handle.close() }
+        var info = stat()
+        guard fstat(descriptor, &info) == 0, info.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG), info.st_nlink == 1,
+              info.st_size > 0, info.st_size <= maximumBytes else { throw PackingReferencePhotoError.oversized }
+        var data = Data()
+        while let chunk = try handle.read(upToCount: 64 * 1024), !chunk.isEmpty {
+            guard chunk.count <= maximumBytes - data.count else { throw PackingReferencePhotoError.oversized }
+            data.append(chunk)
+        }
+        guard !data.isEmpty else { throw PackingReferencePhotoError.unsupported }; return data
+    }
     /** First frame only. Decode a transformed thumbnail before allocating a full-resolution image. */
     static func prepare(_ input: Data) throws -> PackingPreparedReferencePhoto {
         guard !input.isEmpty, input.count <= maximumBytes else { throw PackingReferencePhotoError.oversized }

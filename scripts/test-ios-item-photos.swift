@@ -1,4 +1,5 @@
 import CoreGraphics
+import Darwin
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -54,6 +55,21 @@ private final class PhotoReplies: @unchecked Sendable {
         phase("small PNG")
         let small = encode(image(width: 32, height: 16)), smallPhoto = try PackingReferencePhoto.prepare(small)
         check(properties(smallPhoto.bytes)[kCGImagePropertyPixelWidth] as? Int == 32)
+        let provider = fixture.appendingPathComponent("provider", isDirectory: true)
+        try fm.createDirectory(at: provider, withIntermediateDirectories: false)
+        let sourceFile = provider.appendingPathComponent("selected.png"); try small.write(to: sourceFile)
+        try check(PackingReferencePhoto.readProviderFile(sourceFile) == small)
+        let longSource = provider.appendingPathComponent("multiple-chunks"), sourceBytes = Data(repeating: 7, count: 3 * 64 * 1024 + 1)
+        try sourceBytes.write(to: longSource); try check(PackingReferencePhoto.readProviderFile(longSource) == sourceBytes)
+        let link = provider.appendingPathComponent("link"); try fm.createSymbolicLink(at: link, withDestinationURL: sourceFile)
+        refuses { _ = try PackingReferencePhoto.readProviderFile(link) }
+        let hardlink = provider.appendingPathComponent("hardlink"); try fm.linkItem(at: sourceFile, to: hardlink)
+        refuses { _ = try PackingReferencePhoto.readProviderFile(hardlink) }; try fm.removeItem(at: hardlink)
+        let sparse = provider.appendingPathComponent("over-limit"); try Data([1]).write(to: sparse)
+        let sparseHandle = try FileHandle(forWritingTo: sparse)
+        try sparseHandle.truncate(atOffset: UInt64(PackingReferencePhoto.maximumBytes + 1)); try sparseHandle.close()
+        refuses { _ = try PackingReferencePhoto.readProviderFile(sparse) }
+        refuses { _ = try PackingReferencePhoto.readProviderFile(provider) }
         let animated = NSMutableData(), gif = CGImageDestinationCreateWithData(animated, UTType.gif.identifier as CFString, 2, nil)!
         CGImageDestinationAddImage(gif, image(width: 32, height: 16), nil)
         CGImageDestinationAddImage(gif, image(width: 32, height: 16, red: 0), nil); check(CGImageDestinationFinalize(gif))
@@ -107,7 +123,7 @@ private final class PhotoReplies: @unchecked Sendable {
             let result: [String: Any] = ["draftJson": selected.draftJSON, "dataUrl": "data:image/jpeg;base64," + selected.jpeg!.base64EncodedString()]
             try JSONSerialization.data(withJSONObject: result).write(to: URL(fileURLWithPath: CommandLine.arguments[1]), options: .withoutOverwriting)
         }
-        for url in try fm.contentsOfDirectory(at: fixture, includingPropertiesForKeys: nil) {
+        for url in try fm.contentsOfDirectory(at: fixture, includingPropertiesForKeys: nil) where url.pathExtension == "sealed" {
             let data = try Data(contentsOf: url); check(data.range(of: Data("medicine".utf8)) == nil && data.range(of: photo.bytes) == nil)
         }
         // Even knowing its path cannot reinterpret a photo bundle with the backup-purpose AAD.
@@ -150,6 +166,21 @@ private final class PhotoReplies: @unchecked Sendable {
         let raceContent = try raceStore.read(ticket: winner.ticket, access: raceAccess)
         check(raceContent.draftJSON == draft && (raceContent.jpeg != nil) == winner.selected)
         try raceStore.close()
+        let cache = fixture.appendingPathComponent("cache", isDirectory: true)
+        try fm.createDirectory(at: cache, withIntermediateDirectories: false)
+        let photoRoot = try PackingBackupDirectory.prepare(parent: cache, kind: .itemPhoto)
+        let backupRoot = try PackingBackupDirectory.prepare(parent: cache)
+        check(photoRoot != backupRoot)
+        let ownedPhotos = try PackingPendingItemPhotoStore(directory: photoRoot)
+        let orphan = try ownedPhotos.prepare(scope: scope, draftJSON: draft)
+        let backupStore = try PackingPendingBackupStore(directory: backupRoot)
+        var delivered = false
+        let backupReceipt = try backupStore.stage(scope: scope) { _ in defer { delivered = true }; return delivered ? Data() : Data("private backup".utf8) }
+        let unknown = photoRoot.appendingPathComponent("unknown.txt"); try Data("keep".utf8).write(to: unknown)
+        _ = try PackingBackupDirectory.prepare(parent: cache, kind: .itemPhoto)
+        check(!fm.fileExists(atPath: photoRoot.appendingPathComponent(orphan.ticket + ".sealed").path))
+        check(fm.fileExists(atPath: backupRoot.appendingPathComponent(backupReceipt.ticket + ".sealed").path))
+        try check(Data(contentsOf: unknown) == Data("keep".utf8))
         print("ImageIO JPEG preparation, metadata removal and encrypted item-draft handoff passed.")
     }
 }

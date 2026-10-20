@@ -671,5 +671,6 @@ class ScanBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(PackingAccountPlugin())
         bridge?.registerPluginInstance(PackingPrintPlugin())
         bridge?.registerPluginInstance(PackingFilesPlugin())
+        bridge?.registerPluginInstance(PackingPhotoPlugin())
     }
 }

@@ -99,7 +99,7 @@ jobs:
       - name: Check ImageIO reference photos and encrypted editor handoff
         shell: bash
         run: |
-          xcrun swiftc -sanitize=thread -g -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingPendingBackupStore.swift ios/App/App/PackingReferencePhoto.swift ios/App/App/PackingPendingItemPhotoStore.swift scripts/test-ios-item-photos.swift -o "$RUNNER_TEMP/item-photo-checks"
+          xcrun swiftc -sanitize=thread -g -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingPendingBackupStore.swift ios/App/App/PackingReferencePhoto.swift ios/App/App/PackingPendingItemPhotoStore.swift ios/App/App/PackingCaptureBridgeValues.swift ios/App/App/PackingBackupRuntime.swift ios/App/App/PackingItemPhotoRuntime.swift scripts/test-ios-item-photos.swift -o "$RUNNER_TEMP/item-photo-checks"
           TSAN_OPTIONS=halt_on_error=1:exitcode=66 "$RUNNER_TEMP/item-photo-checks" "$RUNNER_TEMP/item-photo-result.json"
           node scripts/check-ios-item-photo.mjs "$RUNNER_TEMP/item-photo-result.json"
       - name: Check native capture authority and provider compatibility
