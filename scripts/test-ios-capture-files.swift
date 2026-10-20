@@ -19,6 +19,7 @@ import Foundation
         func refuses(_ message: String, _ action: () throws -> Void) {
             do { try action(); preconditionFailure(message) } catch {}
         }
+        refuses("Remote URLs must not become storage roots") { _ = try PackingCaptureFiles(documents: URL(string: "https://example.invalid/tmp")!) }
 
         stage("create new owned capture")
         let firstID = id(), first = try files.create(firstID)

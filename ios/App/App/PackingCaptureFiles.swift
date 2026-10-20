@@ -10,6 +10,7 @@ struct PackingCaptureFiles {
     private let marker = ".packing-capture-v1"
 
     init(documents: URL) throws {
+        guard documents.isFileURL else { throw PackingCaptureFileError.unsafePath }
         let base = URL(fileURLWithPath: try Self.canonicalPath(documents.path), isDirectory: true)
         guard base.isFileURL, try FileManager.default.attributesOfItem(atPath: base.path)[.type] as? FileAttributeType == .typeDirectory else {
             throw PackingCaptureFileError.unsafePath
