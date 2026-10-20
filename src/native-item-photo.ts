@@ -9,7 +9,7 @@ interface PhotoPlugin {
 }
 const Photo=registerPlugin<PhotoPlugin>('PackingPhoto');
 const uuid=/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
-export function nativeItemPhotosAvailable(){return Capacitor.isNativePlatform()&&Capacitor.getPlatform()==='android'&&Capacitor.isPluginAvailable('PackingPhoto');}
+export function nativeItemPhotosAvailable(){return Capacitor.isNativePlatform()&&['android','ios'].includes(Capacitor.getPlatform())&&Capacitor.isPluginAvailable('PackingPhoto');}
 function requireLease(lease?:string):asserts lease is string {if(!nativeItemPhotosAvailable()||!lease||!uuid.test(lease))throw new Error('Unlock native photo storage before continuing.');}
 export async function pickNativeItemPhoto(draft:ItemEditorDraft,source:'camera'|'library',lease?:string){
   requireLease(lease);if(!isItemEditorDraft(draft))throw new Error('The item draft cannot be prepared for a photo.');
