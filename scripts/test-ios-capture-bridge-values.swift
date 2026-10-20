@@ -24,12 +24,14 @@ import Foundation
         let guest = try authority.selectGuest(expectedRevision: locked.revision)
         let guestState = authority.state(), guestWire = PackingCaptureBridgeValues.state(guestState)
         precondition(guestWire["lease"] as? String == guest.lease && guestWire["protectedWorkspace"] as? Bool == false)
+        PackingCaptureBridgeValues.lockProtected(authority)
+        precondition(authority.state().lease == guest.lease)
         precondition(!authority.close(expectedRevision: locked.revision) && authority.state().lease == guest.lease)
         let access = try authority.openWorkspace(expectedRevision: guestState.revision, workspaceID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
             accountID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", dataKey: key)
         let wire = PackingCaptureBridgeValues.state(authority.state())
         precondition(wire["lease"] as? String == access.lease && wire["protectedWorkspace"] as? Bool == true)
-        authority.close()
+        PackingCaptureBridgeValues.lockProtected(authority)
         refuses("Lifecycle revocation keeps old accesses unusable") { try access.check() }
         precondition(PackingCaptureBridgeValues.state(authority.state())["lease"] is NSNull)
         let budget = PackingCaptureQueueBudget()

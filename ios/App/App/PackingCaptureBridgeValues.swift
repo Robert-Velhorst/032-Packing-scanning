@@ -18,6 +18,10 @@ enum PackingCaptureBridgeValues {
     static func state(_ state: PackingCaptureAuthority.State) -> [String: Any] {
         ["version": 1, "revision": state.revision, "lease": state.lease.map { $0 as Any } ?? NSNull(), "protectedWorkspace": state.protectedWorkspace]
     }
+    static func lockProtected(_ authority: PackingCaptureAuthority) {
+        let state = authority.state()
+        if state.protectedWorkspace { authority.close(expectedRevision: state.revision) }
+    }
 }
 
 /** Lock-isolated pending count for native I/O; no plugin/UI object crosses the worker boundary. */

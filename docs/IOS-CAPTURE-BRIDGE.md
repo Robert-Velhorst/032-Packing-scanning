@@ -23,8 +23,10 @@ existing iOS 18 Object Capture route. Protected scans use the in-memory LiDAR
 screen on a scene-depth-capable device and publish through encrypted storage.
 There is no protected-to-guest camera or filesystem fallback.
 
-Selection changes refuse an active capture. Locking and background/protected-data
-loss revoke authority and cancel it. `captureWorkspaceLocked` identifies the
+Selection changes refuse an active capture. Explicit locking revokes the selected
+authority. Background/protected-data loss revokes protected selections, while the
+keyless guest lease survives resume; both camera controllers cancel on interruption.
+`captureWorkspaceLocked` identifies the
 previous opaque lease so the web session can close. Stale revision locks do not
 close a newer selection. Both guest and protected completion handlers recheck
 the captured authority after dismissal before returning a result. Guest cleanup

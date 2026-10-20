@@ -36,7 +36,7 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
     }
     deinit { NotificationCenter.default.removeObserver(self); authority.close() }
     @objc private func storageUnavailable() {
-        authority.close() // Key revocation does not wait for a queued UI task.
+        PackingCaptureBridgeValues.lockProtected(authority) // Key revocation does not wait for a queued UI task.
         Task { @MainActor in _ = self.storageState() }
     }
     @MainActor private func storageState() -> [String: Any] {
