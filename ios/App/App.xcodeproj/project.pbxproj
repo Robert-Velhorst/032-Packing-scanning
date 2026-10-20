@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        FD0321111111111111111111 /* PackingVoxelSolid.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD0322222222222222222222 /* PackingVoxelSolid.swift */; };
         FC0321111111111111111111 /* PackingCaptureBridgeValues.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0322222222222222222222 /* PackingCaptureBridgeValues.swift */; };
         FB0321111111111111111111 /* PackingScanEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0322222222222222222222 /* PackingScanEnvelope.swift */; };
         EF0321111111111111111111 /* PackingDepthFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF0322222222222222222222 /* PackingDepthFlow.swift */; };
@@ -32,6 +33,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        FD0322222222222222222222 /* PackingVoxelSolid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingVoxelSolid.swift; sourceTree = "<group>"; };
         FC0322222222222222222222 /* PackingCaptureBridgeValues.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingCaptureBridgeValues.swift; sourceTree = "<group>"; };
         FB0322222222222222222222 /* PackingScanEnvelope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingScanEnvelope.swift; sourceTree = "<group>"; };
         EF0322222222222222222222 /* PackingDepthFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingDepthFlow.swift; sourceTree = "<group>"; };
@@ -101,6 +103,7 @@
                 EE0322222222222222222222 /* PackingDepthSource.swift */,
                 EF0322222222222222222222 /* PackingDepthFlow.swift */,
                 FA0322222222222222222222 /* PackingDepthViewController.swift */,
+                FD0322222222222222222222 /* PackingVoxelSolid.swift */,
                 FB0322222222222222222222 /* PackingScanEnvelope.swift */,
                 FC0322222222222222222222 /* PackingCaptureBridgeValues.swift */,
                 AC0322222222222222222222 /* PackingAccountPlugin.swift */,
@@ -207,6 +210,7 @@
                 EE0321111111111111111111 /* PackingDepthSource.swift in Sources */,
                 EF0321111111111111111111 /* PackingDepthFlow.swift in Sources */,
                 FA0321111111111111111111 /* PackingDepthViewController.swift in Sources */,
+                FD0321111111111111111111 /* PackingVoxelSolid.swift in Sources */,
                 FB0321111111111111111111 /* PackingScanEnvelope.swift in Sources */,
                 FC0321111111111111111111 /* PackingCaptureBridgeValues.swift in Sources */,
                 AC0321111111111111111111 /* PackingAccountPlugin.swift in Sources */,

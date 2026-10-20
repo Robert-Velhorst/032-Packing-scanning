@@ -18,6 +18,8 @@ on:
       - 'scripts/test-ios-depth-flow.swift'
       - 'scripts/test-ios-envelope.swift'
       - 'scripts/CheckIosEnvelope.java'
+      - 'scripts/CheckIosVoxelSolid.java'
+      - 'scripts/test-ios-voxel-solid.swift'
       - 'scripts/check-ios-depth-result.mjs'
       - 'scripts/test-ios-capture-bridge-values.swift'
       - 'scripts/check-ios-capture-provider.mjs'
@@ -40,6 +42,8 @@ on:
       - 'scripts/test-ios-depth-flow.swift'
       - 'scripts/test-ios-envelope.swift'
       - 'scripts/CheckIosEnvelope.java'
+      - 'scripts/CheckIosVoxelSolid.java'
+      - 'scripts/test-ios-voxel-solid.swift'
       - 'scripts/check-ios-depth-result.mjs'
       - 'scripts/test-ios-capture-bridge-values.swift'
       - 'scripts/check-ios-capture-provider.mjs'
@@ -103,6 +107,13 @@ jobs:
           mkdir -p "$RUNNER_TEMP/envelope-java"
           javac -d "$RUNNER_TEMP/envelope-java" android/app/src/main/java/com/packingscanning/app/scanning/ScanEnvelope.java android/app/src/main/java/com/packingscanning/app/scanning/DepthCloud.java android/app/src/main/java/com/packingscanning/app/scanning/CaptureGuidance.java scripts/CheckIosEnvelope.java
           java -cp "$RUNNER_TEMP/envelope-java" CheckIosEnvelope "$RUNNER_TEMP/envelope-parity.txt"
+      - name: Check observed-shell reconstruction and Android-native parity
+        shell: bash
+        run: |
+          xcrun swiftc -O -parse-as-library ios/App/App/PackingVoxelSolid.swift scripts/test-ios-voxel-solid.swift -o "$RUNNER_TEMP/voxel-solid-checks"
+          "$RUNNER_TEMP/voxel-solid-checks" "$RUNNER_TEMP/voxel-solid-parity.txt"
+          javac -cp "$RUNNER_TEMP/envelope-java" -d "$RUNNER_TEMP/envelope-java" android/app/src/main/java/com/packingscanning/app/scanning/VoxelSolid.java scripts/CheckIosVoxelSolid.java
+          java -cp "$RUNNER_TEMP/envelope-java" CheckIosVoxelSolid "$RUNNER_TEMP/voxel-solid-parity.txt"
       - name: Check depth capture flow and stale callbacks
         shell: bash
         run: |
