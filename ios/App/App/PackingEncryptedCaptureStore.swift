@@ -11,6 +11,8 @@ final class PackingEncryptedCaptureStore {
     private let base: URL
     private let beforePublish: () throws -> Void
     private let clock: () -> Date
+    // Immutable selection identity; comparing it does not acquire another authority's lock.
+    let boundLease: String
     private static let names: Set<String> = ["capture.json.sealed", "points.ply.sealed"]
 
     init(directory: URL, access: PackingCaptureAuthority.Access, beforePublish: @escaping () throws -> Void = {}, clock: @escaping () -> Date = Date.init) throws {
@@ -18,7 +20,7 @@ final class PackingEncryptedCaptureStore {
         guard directory.isFileURL, let account = access.accountID, let workspace = access.workspaceID else {
             throw PackingCaptureAuthorityError.guest
         }
-        self.access = access; self.beforePublish = beforePublish; self.clock = clock
+        self.access = access; self.beforePublish = beforePublish; self.clock = clock; boundLease = access.lease
         let privateBase = URL(fileURLWithPath: try Self.canonical(directory.path), isDirectory: true)
         base = privateBase
         let namespace = privateBase.appendingPathComponent("ProtectedScanCaptures-v1", isDirectory: true)
