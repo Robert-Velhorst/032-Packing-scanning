@@ -1,6 +1,6 @@
 package com.packingscanning.app;
 import android.graphics.*;
-import android.media.ExifInterface;
+import androidx.exifinterface.media.ExifInterface;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import com.packingscanning.app.files.ReferencePhotoDecoder;
