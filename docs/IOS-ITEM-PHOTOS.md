@@ -86,3 +86,10 @@ Apple documents [thumbnail creation](https://developer.apple.com/documentation/i
 and [adding decoded images and selected properties to a destination](https://developer.apple.com/documentation/imageio/cgimagedestinationaddimage(_:_:_:)).
 
 Apple documents the [Photos picker](https://developer.apple.com/documentation/photokit/selecting-photos-and-videos-in-ios) and [item-provider temporary file lifetime](https://developer.apple.com/documentation/foundation/nsitemprovider/loadfilerepresentation(fortypeidentifier:completionhandler:)).
+
+Before presenting a native photo/document handoff, the scan bridge explicitly
+revokes the original protected lease and emits its lock event. This does not rely
+on a modal triggering background notifications. Guest leases remain selected,
+and stale handoffs cannot close a different selection. The encrypted pending
+payload keeps only its frozen original target; plaintext review still requires
+a fresh matching lease after unlocking.
