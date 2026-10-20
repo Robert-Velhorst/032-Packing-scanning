@@ -89,6 +89,11 @@ private enum InjectedStoreFailure: Error { case stop }
         let otherAccess = try otherAuthority.openWorkspace(expectedRevision: otherAuthority.state().revision, workspaceID: workspace, accountID: otherID, dataKey: key)
         let otherStore = try PackingEncryptedCaptureStore(directory: fixture, access: otherAccess)
         check(otherStore.root != reopened.root)
+        let rootMarker = reopened.root.appendingPathComponent(".keycheck")
+        let savedRootMarker = try Data(contentsOf: rootMarker)
+        try Data(contentsOf: otherStore.root.appendingPathComponent(".keycheck")).write(to: rootMarker)
+        refuses("A same-key marker from another account must not authenticate") { _ = try reopened.readMetadata(captureID: first) }
+        try savedRootMarker.write(to: rootMarker)
         try otherStore.write(captureID: first, metadata: Data("other account".utf8), points: points)
         try check(otherStore.delete(captureID: first))
         try check(reopened.readMetadata(captureID: first) == metadata)
@@ -98,6 +103,10 @@ private enum InjectedStoreFailure: Error { case stop }
         refuses("Changed root key checks must stop retained stores") { _ = try reopened.readMetadata(captureID: first) }
         refuses("Changed root key checks must block new files") { try reopened.write(captureID: id(), metadata: metadata, points: points) }
         try originalMarker.write(to: marker)
+        let heldMarker = fixture.appendingPathComponent("held-keycheck")
+        try fm.moveItem(at: marker, to: heldMarker)
+        refuses("An existing store without its key check must not accept a new key") { _ = try PackingEncryptedCaptureStore(directory: fixture, access: authority.access(lease: authority.state().lease ?? "")) }
+        try fm.moveItem(at: heldMarker, to: marker)
         let workspaceAccess = try otherAuthority.openWorkspace(expectedRevision: otherAuthority.state().revision, workspaceID: otherID, accountID: account, dataKey: key)
         let workspaceStore = try PackingEncryptedCaptureStore(directory: fixture, access: workspaceAccess)
         check(workspaceStore.root != reopened.root)
