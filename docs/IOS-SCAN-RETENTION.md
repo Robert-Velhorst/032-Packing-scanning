@@ -21,9 +21,11 @@ Only `points.ply.sealed` is removed, after authenticating both files and checkin
 exact known children, regular-file type, single link, original inode, root,
 workspace key and live lease. Links, unknown children and corrupt ciphertext are
 preserved with a failed confirmation. Source metadata remains byte-identical.
-Delete/Clear recognize authenticated typed depth metadata after point removal;
-they continue to preserve unknown data and Clear preflights all recognized
-captures before removing any. This is not orphan recovery or workspace erasure.
+Delete/Clear recognize authenticated typed depth metadata after point removal.
+Clear uses the same streamed selector for two passes: it preflights every
+recognized capture before removing any, then reauthenticates each deletion.
+Retained metadata does not exhaust a fixed folder-count limit. Unknown data stays
+untouched. This is not orphan recovery or workspace erasure.
 
 Confirmations include IDs whose expired source is already absent, so an
 interrupted reply can be reconciled later. An I/O or authority failure can leave

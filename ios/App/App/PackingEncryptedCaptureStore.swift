@@ -327,17 +327,19 @@ final class PackingEncryptedCaptureStore: @unchecked Sendable {
     func clearCaptures() throws -> Int {
         try access.checked {
             try checkRoot(); try verifyKeyCheck()
-            let entries = try manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
-            guard entries.count <= 1002 else { throw PackingEncryptedStoreError.invalidCapture }
-            let ids = entries.map(\.lastPathComponent).filter { UUID(uuidString: $0)?.uuidString.lowercased() == $0 }.sorted()
-            // Authenticate all recognized captures before removing any; unknown/orphan names stay untouched.
-            for id in ids {
-                try autoreleasepool {
-                    _ = try authenticatedFiles(captureID: id, now: clock())
+            func visit(_ action: (String) throws -> Void) throws {
+                var after: String?
+                while true {
+                    let ids = try retentionWindow(afterID: after), batch = Array(ids.prefix(100))
+                    for id in batch { try autoreleasepool { try action(id) } }
+                    guard ids.count > batch.count else { break }
+                    after = batch.last
                 }
             }
+            // Complete global preflight before any deletion. Unknown/orphan names stay untouched.
+            try visit { _ = try authenticatedFiles(captureID: $0, now: clock()) }
             var removed = 0
-            for id in ids { if try autoreleasepool(invoking: { try delete(captureID: id) }) { removed += 1 } }
+            try visit { if try delete(captureID: $0) { removed += 1 } }
             return removed
         }
     }
