@@ -9,6 +9,7 @@ on:
       - 'capacitor.config.ts'
       - 'vite.config.ts'
       - 'scripts/build-ios.sh'
+      - 'scripts/test-ios-capture-files.swift'
       - '.github/workflows/ios.yml'
   push:
     branches: [main]
@@ -19,6 +20,7 @@ on:
       - 'capacitor.config.ts'
       - 'vite.config.ts'
       - 'scripts/build-ios.sh'
+      - 'scripts/test-ios-capture-files.swift'
       - '.github/workflows/ios.yml'
   workflow_dispatch:
 
@@ -44,6 +46,11 @@ jobs:
           node-version: 26.12.0
           cache: npm
       - run: npm ci --ignore-scripts
+      - name: Check native capture file boundaries
+        shell: bash
+        run: |
+          xcrun swiftc -parse-as-library ios/App/App/PackingCaptureFiles.swift scripts/test-ios-capture-files.swift -o "$RUNNER_TEMP/capture-file-checks"
+          "$RUNNER_TEMP/capture-file-checks"
       - name: Build bundled web assets and native iOS app
         shell: bash
         run: bash scripts/build-ios.sh 2>&1 | tee "$RUNNER_TEMP/packing-ios-build.log"
