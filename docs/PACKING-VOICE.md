@@ -8,7 +8,7 @@ Choose **Pack step by step**. Each step shows the item, its saved reference phot
 
 Each step has a numbered 3D model with rotate, zoom and reset controls, plus a top-view SVG diagram. Earlier planned items and confirmed items are identified separately in the legend. A solid dot marks the coordinate reference corner. Graphics failure leaves written instructions and the top-view alternative available. Navigation saves the selected item, so reopening packing resumes that step; removed items fall back to the first unpacked placement.
 
-**Printable sequence** provides the same ordered placements and diagrams with bag contents, packed status, exclusions and warnings. Browser printing uses the system dialog. Android uses a native PrintManager adapter with a generic job title; phone execution remains unverified. Native iOS printing is unavailable and the interface explains the limitation. Opening the sequence never prints automatically. A printed copy does not update after replanning.
+**Printable sequence** provides the same ordered placements and diagrams with bag contents, packed status, exclusions and warnings. Browser printing uses the system dialog. Android uses a native PrintManager adapter with a generic job title; phone execution remains unverified. iOS uses a native system print bridge with iPhone sheet and iPad popover presentation; [device/printer acceptance](IOS-PRINTING.md) remains required. Opening the sequence never prints automatically. A printed copy does not update after replanning.
 
 | Control | Result |
 | --- | --- |
