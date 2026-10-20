@@ -253,7 +253,7 @@ private final class NativeScanModel: ObservableObject {
     }
 
     func cleanup() {
-        try? files.delete(scanId)
+        _ = try? files.delete(scanId)
     }
 
     private static func feedbackMessage(_ feedback: ObjectCaptureSession.Feedback) -> String {
