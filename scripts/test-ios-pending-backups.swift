@@ -6,6 +6,12 @@ private final class PendingClock: @unchecked Sendable {
     func set(_ value:TimeInterval) { lock.lock(); defer { lock.unlock() }; now=value }
 }
 private enum ReaderFailure:Error { case stopped }
+private final class PendingResults: @unchecked Sendable {
+    private let lock=NSLock();private var entries:[String:Data]=[:];private var failures=0
+    func record(_ ticket:String,_ data:Data) { lock.lock();defer { lock.unlock() };entries[ticket]=data }
+    func failed() { lock.lock();defer { lock.unlock() };failures += 1 }
+    var snapshot:([String:Data],Int) { lock.lock();defer { lock.unlock() };return (entries,failures) }
+}
 @main enum PendingBackupChecks {
     static func check(_ value:Bool,file:StaticString = #filePath,line:UInt = #line) {
         if !value { FileHandle.standardError.write(Data("Pending backup assertion failed at \(file):\(line)\n".utf8)); fatalError("Pending backup assertion failed") }
@@ -108,6 +114,48 @@ private enum ReaderFailure:Error { case stopped }
         let fresh=try PackingPendingBackupStore(directory:store.root);try fresh.close();try check(Data(contentsOf:unknown)==marker)
         let alias=fixture.appendingPathComponent("directory-alias");try fm.createSymbolicLink(at:alias,withDestinationURL:store.root)
         refuses { _=try PackingPendingBackupStore(directory:alias) }
+        let concurrent=try PackingPendingBackupStore(directory:directory("concurrent"))
+        let results=PendingResults()
+        DispatchQueue.concurrentPerform(iterations:16) { iteration in
+            do {
+                let bytes=Data("parallel-\(iteration)".utf8);var done=false
+                let receipt=try concurrent.stage(scope:guest) { _ in defer { done=true };return done ? Data() : bytes }
+                results.record(receipt.ticket,bytes)
+            } catch PackingPendingBackupError.full {} catch { results.failed() }
+        }
+        let staged=results.snapshot;check(staged.0.count==2 && staged.1==0)
+        DispatchQueue.concurrentPerform(iterations:32) { _ in
+            do {
+                for (ticket,bytes) in staged.0 {
+                    var read=Data();try concurrent.read(ticket:ticket,scope:guest) { read.append($0) }
+                    if read != bytes { results.failed() }
+                }
+            } catch { results.failed() }
+        }
+        check(results.snapshot.1==0);try concurrent.close()
+        let closing=try PackingPendingBackupStore(directory:directory("closing"))
+        refuses { _=try closing.stage(scope:guest) { _ in try closing.close();return Data([1]) } }
+        try check(fm.contentsOfDirectory(atPath:closing.root.path).isEmpty)
+        let consuming=try PackingPendingBackupStore(directory:directory("consuming"))
+        var emittedCount=0
+        let consumeTicket=try consuming.stage(scope:guest) { size in
+            let count=min(size,payload.count-emittedCount);defer { emittedCount += count };return payload.subdata(in:emittedCount..<(emittedCount+count))
+        }
+        var exposed=0
+        refuses { try consuming.read(ticket:consumeTicket.ticket,scope:guest) { bytes in exposed += bytes.count;try consuming.close() } }
+        check(exposed==PackingPendingBackupStore.chunkBytes)
+        let nested=try PackingPendingBackupStore(directory:directory("nested"))
+        var outerDone=false,innerDone=false,rejected=false
+        _=try nested.stage(scope:guest) { _ in
+            if outerDone { return Data() };outerDone=true
+            _=try nested.stage(scope:guest) { _ in
+                if innerDone { return Data() };innerDone=true
+                do { _=try nested.stage(scope:guest) { _ in Data([1]) } } catch PackingPendingBackupError.full { rejected=true }
+                return Data([2])
+            }
+            return Data([3])
+        }
+        check(rejected);try nested.close()
         try small.close();withExtendedLifetime(authority) {}
         print("iOS pending backup checks passed: encrypted chunks, short reads, full authentication, scope/lease binding, expiry, bounded input, link refusal, unknown preservation and process-only keys")
     }

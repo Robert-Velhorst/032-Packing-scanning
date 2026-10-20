@@ -53,6 +53,7 @@ final class PackingPendingBackupStore: @unchecked Sendable {
     private let rootInode: UInt64
     private var entries: [String: Entry] = [:]
     private var closed = false
+    private var staging = 0
 
     /** Caller provides a private directory. Existing untracked files are never erased here. */
     init(directory: URL, purpose: Purpose = .backup, maximum: Int? = nil,
@@ -124,7 +125,8 @@ final class PackingPendingBackupStore: @unchecked Sendable {
     func stage(scope: Scope, read: (Int) throws -> Data) throws -> Receipt {
         lock.lock(); defer { lock.unlock() }
         try available(); try expire()
-        guard entries.count < 2 else { throw PackingPendingBackupError.full }
+        guard entries.count + staging < 2 else { throw PackingPendingBackupError.full }
+        staging += 1; defer { staging -= 1 }
         let created = clock(); guard created.isFinite else { throw PackingPendingBackupError.expired }
         let ticket = UUID().uuidString.lowercased(), partial = try url(ticket, partial: true), finished = try url(ticket)
         let descriptor = Darwin.open(partial.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, mode_t(0o600))
@@ -147,6 +149,7 @@ final class PackingPendingBackupStore: @unchecked Sendable {
                 let requested = Self.chunkBytes - chunk.count
                 var next = try read(requested)
                 defer { next.resetBytes(in: 0..<next.count) }
+                guard !closed else { throw PackingPendingBackupError.unavailable }
                 guard next.count <= requested, next.count <= maximum - total - chunk.count else { throw PackingPendingBackupError.invalid }
                 if next.isEmpty { eof = true; break }
                 chunk.append(next)
@@ -163,7 +166,7 @@ final class PackingPendingBackupStore: @unchecked Sendable {
             if final { break }
             total += chunk.count; index += 1
         }
-        try handle.synchronize(); try handle.close(); try checkRoot()
+        try handle.synchronize(); try handle.close(); try available()
         try Self.check(partial, directory: false)
         guard try Self.inode(partial) == original else { throw PackingPendingBackupError.invalid }
         guard renamex_np(partial.path, finished.path, UInt32(RENAME_EXCL)) == 0 else { throw PackingPendingBackupError.io }
@@ -186,6 +189,7 @@ final class PackingPendingBackupStore: @unchecked Sendable {
         let key = SymmetricKey(data: entry.key)
         var total = 0, index = 0
         while true {
+            guard !closed, entries[entry.ticket] === entry, !entry.key.isEmpty else { throw PackingPendingBackupError.unavailable }
             let now = clock()
             guard now.isFinite, now >= entry.created, now - entry.created < Self.lifetime else { throw PackingPendingBackupError.expired }
             let length = try exact(handle, 4)
@@ -199,7 +203,9 @@ final class PackingPendingBackupStore: @unchecked Sendable {
                 guard total > 0, (try handle.read(upToCount: 1) ?? Data()).isEmpty else { throw PackingPendingBackupError.invalid }
                 return
             }
-            try body(chunk); total += count; index += 1
+            try body(chunk)
+            guard !closed, entries[entry.ticket] === entry, !entry.key.isEmpty else { throw PackingPendingBackupError.unavailable }
+            total += count; index += 1
         }
     }
     /** Verify the complete stream before exposing any plaintext to a destination. */
@@ -210,7 +216,7 @@ final class PackingPendingBackupStore: @unchecked Sendable {
         guard let entry = entries[ticket] else { throw PackingPendingBackupError.expired }
         guard scope == entry.scope else { throw PackingPendingBackupError.wrongScope }
         try Self.check(path, directory: false)
-        let descriptor = Darwin.open(path.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        let descriptor = Darwin.open(path.path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
         guard descriptor >= 0 else { throw PackingPendingBackupError.io }
         let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true); defer { try? handle.close() }
         var info = stat()
