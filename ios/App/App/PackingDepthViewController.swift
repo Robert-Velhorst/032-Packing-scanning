@@ -122,7 +122,7 @@ final class PackingDepthViewController: UIViewController {
     private func checkForeground() throws {
         try access.check()
         guard UIApplication.shared.isProtectedDataAvailable,
-              view.window?.windowScene?.activationState == .foregroundActive else { throw PackingDepthScreenError.interrupted }
+              PackingForeground.isActive(viewIfLoaded?.window) else { throw PackingDepthScreenError.interrupted }
     }
     @objc private func primaryTapped() {
         switch flow.phase {

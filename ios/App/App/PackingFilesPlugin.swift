@@ -44,7 +44,7 @@ public class PackingFilesPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDe
 
     @MainActor private func liveAccess(_ call: CAPPluginCall) throws -> PackingCaptureAuthority.Access {
         guard UIApplication.shared.isProtectedDataAvailable,
-              bridge?.viewController?.view.window?.windowScene?.activationState == .foregroundActive,
+              PackingForeground.isActive(bridge?.viewController?.viewIfLoaded?.window),
               let lease = call.getString("lease"), let scan = bridge?.plugin(withName: "PackingScan") as? PackingScanPlugin else {
             throw PackingFilesFailure.unavailable
         }

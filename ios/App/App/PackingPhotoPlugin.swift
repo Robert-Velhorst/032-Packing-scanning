@@ -43,7 +43,7 @@ public class PackingPhotoPlugin: CAPPlugin, CAPBridgedPlugin, PHPickerViewContro
     @MainActor private var operation: PackingPhotoOperation?
     @MainActor private func liveAccess(_ call: CAPPluginCall) throws -> PackingCaptureAuthority.Access {
         guard UIApplication.shared.isProtectedDataAvailable,
-              bridge?.viewController?.view.window?.windowScene?.activationState == .foregroundActive,
+              PackingForeground.isActive(bridge?.viewController?.viewIfLoaded?.window),
               let lease = call.getString("lease"), let scan = bridge?.plugin(withName: "PackingScan") as? PackingScanPlugin else { throw PackingPhotoFailure.unavailable }
         return try scan.documentAccess(lease: lease)
     }
@@ -105,7 +105,7 @@ public class PackingPhotoPlugin: CAPPlugin, CAPBridgedPlugin, PHPickerViewContro
     }
     @MainActor private func presenter() throws -> UIViewController {
         guard UIApplication.shared.isProtectedDataAvailable,
-              let controller = bridge?.viewController, controller.view.window?.windowScene?.activationState == .foregroundActive,
+              let controller = bridge?.viewController, PackingForeground.isActive(controller.viewIfLoaded?.window),
               controller.presentedViewController == nil else { throw PackingPhotoFailure.unavailable }; return controller
     }
     @MainActor private func showLibrary(_ op: PackingPhotoOperation) throws {
