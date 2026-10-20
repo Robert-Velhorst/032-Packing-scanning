@@ -7,12 +7,12 @@ exact access; a later workspace selection cannot redirect its queued operations.
 Guest authority is refused. Account/workspace UUIDs select separate directories
 under `ProtectedScanCaptures-v1`; no key is persisted.
 
-This module is compiled and tested directly. It is not yet exposed through the
-iOS bridge, native scanning, workspace UI or retention. Its low-level write/read
+This module is compiled and tested directly and used by the protected iOS scan
+bridge after its workspace handshake. Retention is still unimplemented. Its low-level write/read
 methods still support bounded opaque bytes. `savePointCapture` and
 `readPointCapture` now require validated binary point data and matching internal
-provenance; product point-cloud consumers must use that path. The complete capture
-workflow is still required. Object Capture
+provenance; product point-cloud consumers must use that path. The connected capture
+workflow still needs physical-device acceptance. Object Capture
 images, checkpoints and USDZ files are not encrypted by this module.
 
 ## Publication and reads
@@ -132,4 +132,5 @@ bounds, category semantics, envelope and cap consistency. Saved review describes
 the confidence category explicitly, and benchmark provenance retains the distinct
 iOS method. CI passes actual Swift-generated synthetic result/preview JSON through
 the production TypeScript parsers, separately from Swift/Java numeric parity.
-The native workspace/scan bridge is still required before exposing this path.
+The [native workspace/scan bridge](IOS-CAPTURE-BRIDGE.md) exposes this path only
+with the selected live protected lease.

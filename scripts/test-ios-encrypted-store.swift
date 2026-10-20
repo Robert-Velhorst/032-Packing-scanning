@@ -68,15 +68,41 @@ private final class StoreTestClock: @unchecked Sendable {
             try check(file.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
         }
         refuses("Existing captures must never be overwritten") { try store.write(captureID: first, metadata: Data("new".utf8), points: points) }
+        stage("scoped clear preflights recognized files and preserves unknown data")
+        let clearBase = fixture.appendingPathComponent("clear-fixture", isDirectory: true)
+        try fm.createDirectory(at: clearBase, withIntermediateDirectories: false)
+        let clearStore = try PackingEncryptedCaptureStore(directory: clearBase, access: access)
+        let clearOtherAuthority = PackingCaptureAuthority()
+        defer { withExtendedLifetime(clearOtherAuthority) {} }
+        let clearOtherAccess = try clearOtherAuthority.openWorkspace(expectedRevision: clearOtherAuthority.state().revision,
+            workspaceID: "cccccccc-cccc-cccc-cccc-cccccccccccc", accountID: account, dataKey: key)
+        let clearOther = try PackingEncryptedCaptureStore(directory: clearBase, access: clearOtherAccess), clearOtherID = id()
+        try clearOther.write(captureID: clearOtherID, metadata: metadata, points: points)
+        let clearA = id(), clearB = id()
+        try clearStore.write(captureID: clearA, metadata: metadata, points: points)
+        try clearStore.write(captureID: clearB, metadata: metadata, points: points)
+        let clearUnknown = clearStore.root.appendingPathComponent("unknown.json")
+        try Data("keep".utf8).write(to: clearUnknown)
+        let extra = clearStore.root.appendingPathComponent(clearB).appendingPathComponent("unknown.txt")
+        try Data("keep".utf8).write(to: extra)
+        refuses("Clear must preflight unknown capture children before deleting known captures") { _ = try clearStore.clearCaptures() }
+        try check(clearStore.readMetadata(captureID: clearA) == metadata)
+        try check(Data(contentsOf: extra) == Data("keep".utf8))
+        try fm.removeItem(at: extra)
+        try check(clearStore.clearCaptures() == 2)
+        try check(Data(contentsOf: clearUnknown) == Data("keep".utf8))
+        try check(clearOther.readMetadata(captureID: clearOtherID) == metadata)
+        try check(store.readMetadata(captureID: first) == metadata)
         refuses("Traversal IDs must fail") { try store.write(captureID: "../outside", metadata: metadata, points: points) }
         refuses("Metadata bounds must precede staging") { try store.write(captureID: id(), metadata: Data(repeating: 0, count: 20001), points: points) }
         refuses("Point bounds must precede staging") { try store.write(captureID: id(), metadata: metadata, points: Data(repeating: 0, count: 8000001)) }
         stage("failure rollback contains only ciphertext")
         let failed = id()
         let failing = try PackingEncryptedCaptureStore(directory: fixture, access: access, beforePublish: {
-            let pending = try fm.contentsOfDirectory(at: store.root, includingPropertiesForKeys: nil).filter { $0.lastPathComponent.hasPrefix(".pending-") }
+            let workerFiles = FileManager()
+            let pending = try workerFiles.contentsOfDirectory(at: store.root, includingPropertiesForKeys: nil).filter { $0.lastPathComponent.hasPrefix(".pending-") }
             precondition(pending.count == 1)
-            for file in try fm.contentsOfDirectory(at: pending[0], includingPropertiesForKeys: nil) {
+            for file in try workerFiles.contentsOfDirectory(at: pending[0], includingPropertiesForKeys: nil) {
                 let data = try Data(contentsOf: file)
                 precondition(data.starts(with: Data("PSC1".utf8)) && data.range(of: metadata) == nil && data.range(of: points) == nil)
             }
@@ -88,7 +114,7 @@ private final class StoreTestClock: @unchecked Sendable {
         stage("occupied destination must survive publication race")
         let raced = id(), racedFolder = store.root.appendingPathComponent(raced, isDirectory: true)
         let racing = try PackingEncryptedCaptureStore(directory: fixture, access: access, beforePublish: {
-            try fm.createDirectory(at: racedFolder, withIntermediateDirectories: false)
+            try FileManager().createDirectory(at: racedFolder, withIntermediateDirectories: false)
             try Data("keep".utf8).write(to: racedFolder.appendingPathComponent("unknown.txt"))
         })
         refuses("Exclusive directory rename must not replace a competing destination") { try racing.write(captureID: raced, metadata: metadata, points: points) }

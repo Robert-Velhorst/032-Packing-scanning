@@ -21,7 +21,7 @@ final class PackingDepthViewController: UIViewController {
     private let access: PackingCaptureAuthority.Access
     private let store: PackingEncryptedCaptureStore
     private let target: PackingPointCapture.Target
-    private let completion: (Result<PackingPointCapture, Error>) -> Void
+    private let completion: @MainActor (Result<PackingPointCapture, Error>) -> Void
     private var flow = PackingDepthFlow()
     private let worker = DispatchQueue(label: "com.packingscanning.depth-source")
     private let camera = ARView(frame: .zero, cameraMode: .ar, automaticallyConfigureSession: false)
@@ -45,7 +45,7 @@ final class PackingDepthViewController: UIViewController {
     private var halfExtent: Float { [Float(0.3), 0.6, 1][max(0, area.selectedSegmentIndex)] }
 
     init(access: PackingCaptureAuthority.Access, store: PackingEncryptedCaptureStore,
-         target: PackingPointCapture.Target, completion: @escaping (Result<PackingPointCapture, Error>) -> Void) throws {
+         target: PackingPointCapture.Target, completion: @escaping @MainActor (Result<PackingPointCapture, Error>) -> Void) throws {
         try access.check()
         guard access.workspaceID != nil, store.boundLease == access.lease else { throw PackingDepthSourceError.wrongWorkspace }
         self.access = access; self.store = store; self.target = target; self.completion = completion
@@ -303,6 +303,7 @@ final class PackingDepthViewController: UIViewController {
         reviewEye.position.z = halfExtent * 4; updateReviewRotation(); return true
     }
     @objc private func cancelTapped() { finish(.failure(PackingDepthScreenError.cancelled)) }
+    func cancelForWorkspaceChange() { finish(.failure(PackingDepthScreenError.interrupted)) }
     @objc private func interrupted() { finish(.failure(PackingDepthScreenError.interrupted)) }
     @objc private func resignedActive() {
         if flow.phase == .capturing || flow.phase == .reviewing || flow.phase == .saving { interrupted() }

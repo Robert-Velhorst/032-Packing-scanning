@@ -6,7 +6,7 @@ export type { CaptureStorageState } from './native-plugin';
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 function storageState(value:CaptureStorageState){if(value?.version!==1||!uuid.test(value.revision)||value.lease!==null&&!uuid.test(value.lease)||typeof value.protectedWorkspace!=='boolean'||value.protectedWorkspace&&value.lease===null)throw new Error('The capture storage reply is invalid. Reload before unlocking.');return value;}
 export async function getCaptureStorageState():Promise<CaptureStorageState|undefined>{
-  if(!Capacitor.isNativePlatform()||Capacitor.getPlatform()!=='android'||!Capacitor.isPluginAvailable('PackingScan'))return undefined;
+  if(!Capacitor.isNativePlatform()||!['android','ios'].includes(Capacitor.getPlatform())||!Capacitor.isPluginAvailable('PackingScan'))return undefined;
   try{return storageState(await PackingScan.getStorageState());}catch(error){if((error as {code?:string})?.code==='UNIMPLEMENTED')return undefined;throw error;}
 }
 export async function selectGuestCaptureStorage(revision:string){return storageState(await PackingScan.selectGuestStorage({revision}));}

@@ -1,11 +1,45 @@
 import Capacitor
+import ARKit
 import RealityKit
 import SwiftUI
 import UIKit
 
+private enum PackingCaptureIOFailure: Error, Sendable { case unconfirmed }
+
+/** The SDK call remains on the main actor; workers transfer only Sendable JSON bytes. */
+@MainActor private final class PackingCaptureReply {
+    private let call: CAPPluginCall
+    private let access: PackingCaptureAuthority.Access
+    private let budget: PackingCaptureQueueBudget
+    private var completed = false
+    init(call: CAPPluginCall, access: PackingCaptureAuthority.Access, budget: PackingCaptureQueueBudget) {
+        self.call = call; self.access = access; self.budget = budget
+    }
+    func finish(_ result: Result<Data, PackingCaptureIOFailure>) {
+        guard !completed else { return }; completed = true
+        defer { budget.release() }
+        do {
+            let data = try result.get()
+            let reply = try access.checked {
+                guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw PackingCaptureIOFailure.unconfirmed }
+                return object
+            }
+            try access.check(); call.resolve(reply)
+        } catch {
+            call.reject("The original capture workspace or saved source could not be confirmed. Unlock it again before retrying.", "STORAGE_CHANGED")
+        }
+    }
+}
+
 @objc(PackingScanPlugin)
 public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
-    private var captureBusy = false
+    @MainActor private var captureBusy = false
+    private let authority = PackingCaptureAuthority()
+    @MainActor private var selectedLease: String?
+    @MainActor private var protectedStore: PackingEncryptedCaptureStore?
+    @MainActor private var cancelScan: (@MainActor () -> Void)?
+    private let storageWorker = DispatchQueue(label: "com.packingscanning.capture-storage")
+    private let storageBudget = PackingCaptureQueueBudget()
     public let identifier = "PackingScanPlugin"
     public let jsName = "PackingScan"
     public let pluginMethods: [CAPPluginMethod] = [
@@ -13,10 +47,130 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "scanObject", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "deleteCapture", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clearCaptures", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getStorageState", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "selectGuestStorage", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openWorkspaceStorage", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "lockStorage", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "touchStorage", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getCapturePreview", returnType: CAPPluginReturnPromise),
     ]
+
+    public override func load() {
+        authority.close()
+        for name in [UIApplication.didEnterBackgroundNotification, UIApplication.protectedDataWillBecomeUnavailableNotification] {
+            NotificationCenter.default.addObserver(self, selector: #selector(storageUnavailable), name: name, object: nil)
+        }
+    }
+    deinit { NotificationCenter.default.removeObserver(self); authority.close() }
+    @objc private func storageUnavailable() {
+        PackingCaptureBridgeValues.lockProtected(authority) // Key revocation does not wait for a queued UI task.
+        Task { @MainActor in _ = self.storageState() }
+    }
+    @MainActor private func storageState() -> [String: Any] {
+        let state = authority.state()
+        if let previous = selectedLease, previous != state.lease {
+            selectedLease = nil; protectedStore = nil
+            let cancel = cancelScan; cancelScan = nil; cancel?()
+            notifyListeners("captureWorkspaceLocked", data: ["lease": previous])
+        }
+        return PackingCaptureBridgeValues.state(state)
+    }
+    private func bound(_ call: CAPPluginCall) throws -> PackingCaptureAuthority.Access {
+        guard let lease = call.getString("lease") else { throw PackingCaptureAuthorityError.changed }
+        return try authority.access(lease: lease)
+    }
+    @MainActor private func didSelect(_ access: PackingCaptureAuthority.Access, store: PackingEncryptedCaptureStore?) {
+        let previous = selectedLease
+        selectedLease = access.lease; protectedStore = store
+        if let previous, previous != access.lease { notifyListeners("captureWorkspaceLocked", data: ["lease": previous]) }
+    }
+    @MainActor private func prepareStore(_ access: PackingCaptureAuthority.Access) throws -> PackingEncryptedCaptureStore {
+        let directory = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        return try PackingEncryptedCaptureStore(directory: directory, access: access)
+    }
+    @objc func getStorageState(_ call: CAPPluginCall) { Task { @MainActor in call.resolve(self.storageState()) } }
+    @objc func selectGuestStorage(_ call: CAPPluginCall) {
+        Task { @MainActor in
+            guard !self.captureBusy else { call.reject("Finish or cancel the current scan first.", "CAPTURE_BUSY"); return }
+            do {
+                guard let revision = call.getString("revision") else { throw PackingCaptureAuthorityError.changed }
+                let access = try self.authority.selectGuest(expectedRevision: revision)
+                self.didSelect(access, store: nil); call.resolve(self.storageState())
+            } catch { call.reject("The capture selection changed. Reload saved workspaces.", "STORAGE_CHANGED") }
+        }
+    }
+    @objc func openWorkspaceStorage(_ call: CAPPluginCall) {
+        Task { @MainActor in
+            var options = call.jsObjectRepresentation
+            let raw = options.removeValue(forKey: "keyBytes"); call.options = options
+            do {
+                var key = try PackingCaptureBridgeValues.key(raw)
+                defer { key.resetBytes(in: 0..<key.count) }
+                guard !self.captureBusy, UIApplication.shared.isProtectedDataAvailable,
+                      self.bridge?.viewController?.view.window?.windowScene?.activationState == .foregroundActive,
+                      let revision = call.getString("revision"), let workspace = call.getString("workspaceId"), let account = call.getString("accountId") else {
+                    throw PackingCaptureAuthorityError.changed
+                }
+                let access = try self.authority.openWorkspace(expectedRevision: revision, workspaceID: workspace, accountID: account, dataKey: key)
+                do {
+                    let store = try self.prepareStore(access)
+                    self.didSelect(access, store: store); call.resolve(self.storageState())
+                } catch {
+                    self.authority.close(expectedRevision: access.lease); _ = self.storageState(); throw error
+                }
+            } catch { call.reject("The protected capture workspace could not be opened. Reload and unlock it again.", "STORAGE_CHANGED") }
+        }
+    }
+    @objc func lockStorage(_ call: CAPPluginCall) {
+        Task { @MainActor in
+            guard let revision = call.getString("revision") else { call.reject("The capture revision is missing.", "STORAGE_CHANGED"); return }
+            self.authority.close(expectedRevision: revision); call.resolve(self.storageState())
+        }
+    }
+    @objc func touchStorage(_ call: CAPPluginCall) {
+        Task { @MainActor in
+            do {
+                guard UIApplication.shared.isProtectedDataAvailable,
+                      self.bridge?.viewController?.view.window?.windowScene?.activationState == .foregroundActive else { throw PackingCaptureAuthorityError.changed }
+                try self.bound(call).touch(); call.resolve()
+            }
+            catch { _ = self.storageState(); call.reject("The capture workspace is locked.", "STORAGE_CHANGED") }
+        }
+    }
+    @MainActor private func runProtected(_ call: CAPPluginCall, access: PackingCaptureAuthority.Access,
+        action: @escaping @Sendable (PackingEncryptedCaptureStore) throws -> [String: Any]) {
+        guard let store = protectedStore, store.boundLease == access.lease, access.workspaceID != nil else {
+            call.reject("The protected capture selection changed.", "STORAGE_CHANGED"); return
+        }
+        let budget = storageBudget
+        guard budget.claim() else { call.reject("Wait for the current capture-storage request.", "STORAGE_BUSY"); return }
+        let channel = PackingCaptureReply(call: call, access: access, budget: budget)
+        storageWorker.async {
+            let result: Result<Data, PackingCaptureIOFailure>
+            do { result = .success(try access.checked { try JSONSerialization.data(withJSONObject: action(store)) }) }
+            catch { result = .failure(.unconfirmed) }
+            Task { @MainActor in channel.finish(result) }
+        }
+    }
+    @objc func getCapturePreview(_ call: CAPPluginCall) {
+        Task { @MainActor in
+            guard !self.captureBusy, let id = call.getString("id") else { call.reject("Finish the active scan before reviewing saved geometry.", "CAPTURE_BUSY"); return }
+            do {
+                let access = try self.bound(call)
+                self.runProtected(call, access: access) { try $0.readPointCapture(captureID: id).previewResult() }
+            } catch { call.reject("The capture workspace is locked.", "STORAGE_CHANGED") }
+        }
+    }
 
     @objc func getCapabilities(_ call: CAPPluginCall) {
         Task { @MainActor in
+            _ = self.storageState()
+            if self.authority.state().protectedWorkspace {
+                let supported = ARWorldTrackingConfiguration.isSupported && ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth)
+                call.resolve(["supported": supported, "platform": "ios", "minimumOsVersion": 15,
+                    "reason": supported ? "" : "Protected depth capture requires a supported LiDAR device. Enter or measure dimensions manually."])
+                return
+            }
             guard #available(iOS 18.0, *) else {
                 call.resolve(["supported": false, "platform": "ios", "minimumOsVersion": 18, "reason": "Guided 3D capture needs iOS 18 or later on a supported iPhone or iPad. You can enter or measure the dimensions here."])
                 return
@@ -38,6 +192,10 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
         }
 
         Task { @MainActor in
+            let access: PackingCaptureAuthority.Access
+            do { access = try self.bound(call) }
+            catch { _ = self.storageState(); call.reject("Unlock or select the original capture workspace before scanning.", "STORAGE_CHANGED"); return }
+            if access.workspaceID != nil { self.scanDepth(call, access: access, target: target); return }
             guard #available(iOS 18.0, *) else {
                 call.reject("Guided 3D capture needs iOS 18 or later on a supported iPhone or iPad.", "UNSUPPORTED_DEVICE")
                 return
@@ -59,16 +217,24 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
                 let model = try NativeScanModel(scanId: scanId, target: target)
                 let controller = NativeScanViewController(model: model)
                 self.captureBusy = true
+                self.cancelScan = { [weak controller] in controller?.cancelCapture() }
                 controller.onComplete = { [weak self, weak presenter] result in
                     self?.captureBusy = false
+                    self?.cancelScan = nil
                     guard let presenter else {
                         call.reject("The scan screen closed unexpectedly.", "PRESENTATION_FAILED")
                         return
                     }
                     presenter.dismiss(animated: true) {
-                        switch result {
-                        case .success(let payload): call.resolve(payload)
-                        case .failure(let error): call.reject(error.localizedDescription, "SCAN_FAILED")
+                        do {
+                            try access.check()
+                            switch result {
+                            case .success(let payload): call.resolve(payload)
+                            case .failure(let error): call.reject(error.localizedDescription, "SCAN_FAILED")
+                            }
+                        } catch {
+                            _ = try? PackingCaptureFiles.appStore().delete(scanId)
+                            call.reject("The original capture selection changed before the scan returned.", "STORAGE_CHANGED")
                         }
                     }
                 }
@@ -80,6 +246,33 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    @MainActor private func scanDepth(_ call: CAPPluginCall, access: PackingCaptureAuthority.Access, target: String) {
+        guard !captureBusy, let presenter = bridge?.viewController, presenter.presentedViewController == nil,
+              presenter.view.window?.windowScene?.activationState == .foregroundActive, UIApplication.shared.isProtectedDataAvailable,
+              let store = protectedStore, store.boundLease == access.lease,
+              ARWorldTrackingConfiguration.isSupported, ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth),
+              let target = PackingPointCapture.Target(rawValue: target) else {
+            call.reject("The protected LiDAR camera screen could not be opened. Check device support and the active workspace.", "PRESENTATION_FAILED"); return
+        }
+        do {
+            let controller = try PackingDepthViewController(access: access, store: store, target: target) { [weak self, weak presenter] result in
+                self?.captureBusy = false; self?.cancelScan = nil
+                guard let presenter else { call.reject("The scan screen closed unexpectedly.", "PRESENTATION_FAILED"); return }
+                presenter.dismiss(animated: true) {
+                    do {
+                        try access.check()
+                        switch result {
+                        case .success(let capture): call.resolve(try access.checked { try capture.scanResult() })
+                        case .failure(let error): call.reject(error.localizedDescription, "SCAN_FAILED")
+                        }
+                    } catch { call.reject("The original capture workspace changed before the scan returned.", "STORAGE_CHANGED") }
+                }
+            }
+            captureBusy = true; cancelScan = { [weak controller] in controller?.cancelForWorkspaceChange() }
+            presenter.present(controller, animated: true)
+        } catch { call.reject("The protected camera could not confirm its original workspace. Unlock it again.", "STORAGE_CHANGED") }
+    }
+
     @objc func deleteCapture(_ call: CAPPluginCall) {
         guard let id = call.getString("id"), UUID(uuidString: id)?.uuidString.lowercased() == id else {
             call.reject("The scan identifier is invalid.", "INVALID_SCAN_ID")
@@ -87,7 +280,11 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         Task { @MainActor in
             guard !self.captureBusy else { call.reject("Finish or cancel the current scan before removing originals.", "CAPTURE_BUSY"); return }
-            do { call.resolve(["deleted": try PackingCaptureFiles.appStore().delete(id)]) }
+            do {
+                let access = try self.bound(call)
+                if access.workspaceID != nil { self.runProtected(call, access: access) { ["deleted": try $0.delete(captureID: id)] } }
+                else { call.resolve(["deleted": try access.checked { try PackingCaptureFiles.appStore().delete(id) }]) }
+            }
             catch { call.reject("The saved scan could not be removed.", "DELETE_FAILED") }
         }
     }
@@ -95,7 +292,11 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func clearCaptures(_ call: CAPPluginCall) {
         Task { @MainActor in
             guard !self.captureBusy else { call.reject("Finish or cancel the current scan before removing originals.", "CAPTURE_BUSY"); return }
-            do { call.resolve(["deleted": try PackingCaptureFiles.appStore().clear()]) }
+            do {
+                let access = try self.bound(call)
+                if access.workspaceID != nil { self.runProtected(call, access: access) { ["deleted": try $0.clearCaptures()] } }
+                else { call.resolve(["deleted": try access.checked { try PackingCaptureFiles.appStore().clear() }]) }
+            }
             catch { call.reject("Saved scans could not be removed.", "DELETE_FAILED") }
         }
     }
@@ -119,7 +320,7 @@ private final class NativeScanModel: ObservableObject {
     @Published var feedback: [String] = []
     @Published var progress = ""
 
-    var onComplete: ((Result<[String: Any], Error>) -> Void)?
+    var onComplete: (@MainActor (Result<[String: Any], Error>) -> Void)?
     private var hasCompleted = false
 
     init(scanId: String, target: String) throws {
@@ -293,7 +494,7 @@ private enum NativeScanError: LocalizedError {
 @MainActor
 private final class NativeScanViewController: UIViewController {
     private let model: NativeScanModel
-    var onComplete: ((Result<[String: Any], Error>) -> Void)? {
+    var onComplete: (@MainActor (Result<[String: Any], Error>) -> Void)? {
         didSet { model.onComplete = onComplete }
     }
 
@@ -304,6 +505,7 @@ private final class NativeScanViewController: UIViewController {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    func cancelCapture() { model.cancel() }
 
     override func loadView() {
         NotificationCenter.default.addObserver(self, selector: #selector(interrupted), name: UIApplication.didEnterBackgroundNotification, object: nil)

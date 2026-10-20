@@ -53,11 +53,12 @@ audit. The native source test runs under Thread Sanitizer with concurrent frozen
 reads, encrypted round trips and cancellation/read contention. A passing run does
 not prove every possible schedule or device framework race.
 
-The controller is not yet called from `PackingScanPlugin` or exposed to web UI.
+`PackingScanPlugin` now calls this controller for a selected protected workspace
+and a supported LiDAR device, using the shared web workspace handshake.
 The result/preview formatters and web parsers now share the depth method and
 category semantics; version-2 source metadata retains quality and estimated bounds.
-The workspace/scan bridge handshake and reconstruction remain required before
-enabling the complete protected scan workflow.
+Reconstruction and physical acceptance remain required for full feature/release
+readiness. The guest Object Capture route stays separate and lease-bound.
 No screenshot or physical-device execution is claimed. Device tests must cover
 orientation/iPad layout, large text/VoiceOver, review gestures, camera denial,
 interruptions during permission/review/save, queued-frame races, memory and storage

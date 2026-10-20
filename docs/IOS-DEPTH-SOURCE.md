@@ -44,9 +44,9 @@ read-back, identity binding, malformed buffers/poses, unsupported confidence and
 depth values, repeated frames, tracking loss, cancellation, duration and expiry.
 The iOS targets compile the actual ARKit delegate for simulator and device.
 
-This is not exposed in the app yet. The controller still needs permission and
-supported-device checks, foreground/lock cancellation, a visible capture box and
-point review, restart/finish controls, bridge-bound workspace selection, quality
-metadata, dimensions/reconstruction and a matching web contract. Physical LiDAR
+The [capture screen](IOS-DEPTH-SCREEN.md) and [bridge](IOS-CAPTURE-BRIDGE.md) connect
+permission/device checks, visible bounds and point review, cancellation, workspace
+selection and validated result/preview formatting to this source. Reconstruction
+remains unimplemented. Physical LiDAR
 projection, tracking, coverage, interruption, memory and storage behavior remain
-unverified. No account-bound scan capability is advertised by this module.
+unverified. Compiled integration is not device or full-product acceptance.

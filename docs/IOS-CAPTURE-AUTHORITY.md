@@ -1,11 +1,12 @@
 # iOS capture authority and authenticated-file core
 
 `PackingCaptureAuthority` implements the runtime lease and cryptographic boundary
-needed before iOS retention and protected capture storage can be connected.
+used by the protected iOS capture bridge.
 It is compiled into the native target and exercised directly by Mac CI.
-The running iOS bridge does not expose this core yet: protected workspace
-opening, encrypted capture persistence, file/photo staging and retention still
-need their complete native workflows. No new protection capability is advertised.
+`PackingScanPlugin` now exposes the revision/lease handshake and opens encrypted
+capture storage only for the selected workspace. See the [bridge workflow](IOS-CAPTURE-BRIDGE.md).
+File/photo staging, retention, reconstruction and device acceptance remain separate
+unfinished work; the handshake is not proof of those features or server identity.
 
 ## Authority
 
