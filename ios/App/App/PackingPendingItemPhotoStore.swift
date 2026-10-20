@@ -62,6 +62,10 @@ final class PackingPendingItemPhotoStore: @unchecked Sendable {
         guard !draftJSON.isEmpty, draftJSON.utf8.count <= Self.maximumDraftBytes else { throw PackingPendingItemPhotoError.invalid }
         var bytes = Data(draftJSON.utf8); defer { bytes.resetBytes(in: 0..<bytes.count) }
         let ticket = try stage(scope: scope, draft: bytes, jpeg: nil)
+        let now = clock()
+        guard now.isFinite, now >= created, now - created < PackingPendingBackupStore.lifetime else {
+            try? encrypted.discard(ticket: ticket); throw PackingPendingItemPhotoError.expired
+        }
         let entry = Entry(scope: scope, created: created, request: ticket); entries[ticket] = entry
         return receipt(ticket, entry)
     }
