@@ -11,6 +11,8 @@ on:
       - 'scripts/build-ios.sh'
       - 'scripts/test-ios-voice.swift'
       - 'scripts/test-ios-capture-files.swift'
+      - 'scripts/test-ios-capture-authority.swift'
+      - 'scripts/check-ios-capture-provider.mjs'
       - '.github/workflows/ios.yml'
   push:
     branches: [main]
@@ -23,6 +25,8 @@ on:
       - 'scripts/build-ios.sh'
       - 'scripts/test-ios-voice.swift'
       - 'scripts/test-ios-capture-files.swift'
+      - 'scripts/test-ios-capture-authority.swift'
+      - 'scripts/check-ios-capture-provider.mjs'
       - '.github/workflows/ios.yml'
   workflow_dispatch:
 
@@ -48,6 +52,12 @@ jobs:
           node-version: 26.12.0
           cache: npm
       - run: npm ci --ignore-scripts
+      - name: Check native capture authority and provider compatibility
+        shell: bash
+        run: |
+          xcrun swiftc -parse-as-library ios/App/App/PackingCaptureAuthority.swift scripts/test-ios-capture-authority.swift -o "$RUNNER_TEMP/capture-authority-checks"
+          "$RUNNER_TEMP/capture-authority-checks" "$RUNNER_TEMP/capture-provider-fixture.json"
+          node scripts/check-ios-capture-provider.mjs "$RUNNER_TEMP/capture-provider-fixture.json"
       - name: Check native capture file boundaries
         shell: bash
         run: |
