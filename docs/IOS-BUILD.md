@@ -53,7 +53,9 @@ runtime behavior, native feature parity, release signing or App Store acceptance
 Physical iPhone/iPad camera and reconstruction, permissions, file providers,
 Keychain persistence, offline behavior, lifecycle interruption and measured
 scan/packing trials remain required. iOS protected workspaces, the corresponding
-encrypted capture storage, and the outstanding voice/printing workflows need
+encrypted capture storage, and the outstanding voice workflows need
 their own implementation and acceptance before claiming parity with Android.
+The [native printing bridge](IOS-PRINTING.md) is implemented separately; system
+dialog, pagination and printer/device acceptance remain required.
 See the [full release checkpoint](RELEASE-READINESS-20261020.md) and the README's
 product acceptance criteria.

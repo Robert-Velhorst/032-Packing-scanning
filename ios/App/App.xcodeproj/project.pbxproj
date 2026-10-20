@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        AF0321111111111111111111 /* PackingPrintPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0322222222222222222222 /* PackingPrintPlugin.swift */; };
         AC0321111111111111111111 /* PackingAccountPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0322222222222222222222 /* PackingAccountPlugin.swift */; };
 		A51D11111111111111111111 /* PackingScanPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A51D22222222222222222222 /* PackingScanPlugin.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
@@ -20,6 +21,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        AF0322222222222222222222 /* PackingPrintPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingPrintPlugin.swift; sourceTree = "<group>"; };
         AC0322222222222222222222 /* PackingAccountPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingAccountPlugin.swift; sourceTree = "<group>"; };
 		A51D22222222222222222222 /* PackingScanPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingScanPlugin.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
@@ -69,6 +71,7 @@
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				A51D22222222222222222222 /* PackingScanPlugin.swift */,
                 AC0322222222222222222222 /* PackingAccountPlugin.swift */,
+                AF0322222222222222222222 /* PackingPrintPlugin.swift */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
@@ -163,6 +166,7 @@
 			files = (
 				A51D11111111111111111111 /* PackingScanPlugin.swift in Sources */,
                 AC0321111111111111111111 /* PackingAccountPlugin.swift in Sources */,
+                AF0321111111111111111111 /* PackingPrintPlugin.swift in Sources */,
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

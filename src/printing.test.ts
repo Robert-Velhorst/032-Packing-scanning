@@ -1,10 +1,48 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { printPackingSequence } from './printing';
 
-vi.mock('@capacitor/core', () => ({ Capacitor: { isNativePlatform: () => false, isPluginAvailable: () => false }, registerPlugin: () => ({}) }));
-afterEach(() => vi.unstubAllGlobals());
+const native = vi.hoisted(() => ({ platform: false, available: false, print: vi.fn<() => Promise<void>>() }));
+vi.mock('@capacitor/core', () => ({
+  Capacitor: { isNativePlatform: () => native.platform, isPluginAvailable: () => native.available },
+  registerPlugin: () => ({ printSequence: native.print }),
+}));
+afterEach(() => { vi.unstubAllGlobals(); native.platform = false; native.available = false; native.print.mockReset(); });
 
 describe('explicit packing-sequence printing', () => {
+  function nativeSequence() {
+    native.platform = true;
+    const sequence = { isConnected: true, querySelectorAll: () => [] };
+    vi.stubGlobal('document', { hidden: false, querySelector: () => sequence, querySelectorAll: () => [] });
+    vi.stubGlobal('requestAnimationFrame', (callback: () => void) => queueMicrotask(callback));
+    const print = vi.fn(); vi.stubGlobal('window', { print });
+    return print;
+  }
+  it('uses the native bridge for the prepared sequence without a browser print fallback', async () => {
+    const browserPrint = nativeSequence();
+    native.available = true; native.print.mockResolvedValue();
+    await expect(printPackingSequence()).resolves.toBeUndefined();
+    expect(native.print).toHaveBeenCalledTimes(1);
+    expect(browserPrint).not.toHaveBeenCalled();
+  });
+  it('preserves native interruption errors without opening another print dialog', async () => {
+    const browserPrint = nativeSequence();
+    native.available = true; native.print.mockRejectedValue(new Error('Printing was interrupted.'));
+    await expect(printPackingSequence()).rejects.toThrow('Printing was interrupted.');
+    expect(browserPrint).not.toHaveBeenCalled();
+  });
+  it('refuses native printing when the plugin is absent', async () => {
+    const browserPrint = nativeSequence();
+    await expect(printPackingSequence()).rejects.toThrow('Printing is unavailable');
+    expect(native.print).not.toHaveBeenCalled();
+    expect(browserPrint).not.toHaveBeenCalled();
+  });
+  it('refuses a native request that becomes hidden while preparing', async () => {
+    nativeSequence(); native.available = true;
+    const pending = printPackingSequence();
+    Object.defineProperty(document, 'hidden', { value: true });
+    await expect(pending).rejects.toThrow('sequence changed');
+    expect(native.print).not.toHaveBeenCalled();
+  });
   it('does not print a different screen when the user leaves during preparation', async () => {
     const sequence = { isConnected: true, querySelectorAll: () => [] };
     vi.stubGlobal('document', { querySelector: () => sequence, querySelectorAll: () => [] });
