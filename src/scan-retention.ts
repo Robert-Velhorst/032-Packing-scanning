@@ -20,10 +20,11 @@ export function parseScanRetentionReply(value: unknown): ScanRetentionReply {
   return r as ScanRetentionReply;
 }
 /** Change source availability only: geometry, measurements, photos and progress stay exact. */
-export function recordRemovedScanSources(data: AppData, reply: ScanRetentionReply): AppData {
+export function recordRemovedScanSources(data: AppData, reply: ScanRetentionReply, platform: 'android'|'ios' = 'android'): AppData {
   const ids = new Set(reply.removedIds); let changed = false;
   function mark<T extends AppData['libraryItems'][number] | AppData['containers'][number]>(record: T): T {
-    if (record.scan?.platform !== 'android' || !ids.has(record.scan.id) || record.scan.sourceRetention?.reason === 'raw_scan_retention') return record;
+    if (record.scan?.platform !== platform || platform === 'ios' && record.scan.method !== 'arkit_scene_depth'
+      || !ids.has(record.scan.id) || record.scan.sourceRetention?.reason === 'raw_scan_retention') return record;
     changed = true;
     return { ...record, scan: { ...record.scan, modelStoredLocally: false, sourceRetention: { reason: 'raw_scan_retention', confirmedAt: reply.confirmedAt } } };
   }

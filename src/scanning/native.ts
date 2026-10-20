@@ -21,7 +21,7 @@ export function captureClient(lease?:string){
     scanObject:async(target:ScanTarget,recognize=false)=>{live();const capabilities=await getScanCapabilities();live();if(!capabilities.supported)throw new Error(capabilities.reason??'Guided capture is unavailable.');capturing=true;try{return await run(()=>scanObject(target,lease,true,recognize&&target==='item'&&capabilities.recognitionSupported===true));}finally{capturing=false;}},
     deleteScanCapture:(id?:string)=>run(()=>deleteScanCapture(id,lease)),clearScanCaptures:()=>run(()=>clearScanCaptures(lease)),
     pruneExpiredScanSources:(days:ScanRetentionDays,afterId?:string):Promise<ScanRetentionReply>=>run(async()=>{
-      if(!Capacitor.isNativePlatform()||Capacitor.getPlatform()!=='android'||!lease||!uuid.test(lease)||days==null||!validScanRetentionDays(days)||afterId!==undefined&&!uuid.test(afterId))throw Error('Raw scan cleanup requires a supported period and the original unlocked Android workspace.');
+      if(!Capacitor.isNativePlatform()||!['android','ios'].includes(Capacitor.getPlatform())||!lease||!uuid.test(lease)||days==null||!validScanRetentionDays(days)||afterId!==undefined&&!uuid.test(afterId))throw Error('Raw scan cleanup requires a supported period and the original unlocked device workspace.');
       if(capturing)throw Error('Finish the current scan before raw source cleanup.');
       return parseScanRetentionReply(await PackingScan.pruneExpiredSources({lease,days,...(afterId?{afterId}:{})}));
     }),
@@ -33,7 +33,7 @@ export function captureClient(lease?:string){
 export type CaptureClient=ReturnType<typeof captureClient>;
 
 export async function getScanRetentionCapabilities():Promise<boolean>{
-  if(!Capacitor.isNativePlatform()||Capacitor.getPlatform()!=='android'||!isScannerAvailable())return false;
+  if(!Capacitor.isNativePlatform()||!['android','ios'].includes(Capacitor.getPlatform())||!isScannerAvailable())return false;
   try{const value=await PackingScan.getRetentionCapabilities();if(value?.version!==1||typeof value.supported!=='boolean')throw Error('Invalid cleanup capability reply.');return value.supported;}
   catch(error){if((error as {code?:string})?.code==='UNIMPLEMENTED')return false;throw error;}
 }

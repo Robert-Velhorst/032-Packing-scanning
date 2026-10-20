@@ -1,7 +1,23 @@
 import Darwin
+import CoreFoundation
 import Foundation
 
 enum PackingEncryptedStoreError: Error { case unsafePath, invalidCapture, occupied, io }
+
+struct PackingScanRetentionPolicy: Sendable {
+    let days: Int
+    let afterID: String?
+    static func parse(_ raw: [String: Any]) throws -> Self {
+        guard let number = raw["days"] as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+              [7.0,30,90].contains(number.doubleValue) else { throw PackingEncryptedStoreError.invalidCapture }
+        var after: String?
+        if let rawID = raw["afterId"] {
+            guard let id = rawID as? String, UUID(uuidString: id)?.uuidString.lowercased() == id else { throw PackingEncryptedStoreError.invalidCapture }
+            after = id
+        }
+        return Self(days: number.intValue, afterID: after)
+    }
+}
 
 /** Opaque authenticated point/metadata storage, bound permanently to one live access. */
 // Immutable selection/paths; all filesystem operations serialize through access.checked.
@@ -214,17 +230,68 @@ final class PackingEncryptedCaptureStore: @unchecked Sendable {
             try verifyKeyCheck(); return data
         }
     }
+    /** Authenticate exactly owned files; retained metadata alone is valid only with typed depth provenance. */
+    private func authenticatedFiles(captureID: String, now: Date) throws -> (URL, Bool) {
+        let folder = try captureURL(captureID); try check(folder, directory: true)
+        let files = try manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
+        let names = Set(files.map(\.lastPathComponent))
+        guard names == Self.names || names == ["capture.json.sealed"] else { throw PackingEncryptedStoreError.invalidCapture }
+        for file in files { try check(file, directory: false) }
+        let metadata = try readMetadata(captureID: captureID)
+        let hasPoints = names.contains("points.ply.sealed")
+        if hasPoints { _ = try readPoints(captureID: captureID) }
+        else { _ = try PackingPointCapture.validatedDepthCompletionDate(captureID: captureID, metadata: metadata, now: now) }
+        return (folder, hasPoints)
+    }
+    /** Explicit opt-in policy only; native age, original lease, no web paths or timestamps. */
+    func pruneExpiredSources(_ policy: PackingScanRetentionPolicy) throws -> [String: Any] {
+        try access.checked {
+            guard [7,30,90].contains(policy.days), policy.afterID == nil || UUID(uuidString: policy.afterID!)?.uuidString.lowercased() == policy.afterID else {
+                throw PackingEncryptedStoreError.invalidCapture
+            }
+            try checkRoot(); try verifyKeyCheck()
+            let now = clock(), age = now.timeIntervalSince1970
+            guard age.isFinite, age >= Double(policy.days) * 86400, age <= 253_402_300_799 else { throw PackingEncryptedStoreError.invalidCapture }
+            let cutoff = now.addingTimeInterval(-Double(policy.days) * 86400)
+            let entries = try manager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+            guard entries.count <= 1002 else { throw PackingEncryptedStoreError.invalidCapture }
+            let ids = entries.map(\.lastPathComponent).filter { UUID(uuidString: $0)?.uuidString.lowercased() == $0 && (policy.afterID == nil || $0 > policy.afterID!) }.sorted()
+            let batch = Array(ids.prefix(100))
+            var removed: [String] = [], deleted = 0, skipped = 0, failed = 0
+            for id in batch {
+                try autoreleasepool {
+                    try access.check(); try checkRoot(); try verifyKeyCheck()
+                    let completed: Date
+                    do { completed = try PackingPointCapture.validatedDepthCompletionDate(captureID: id, metadata: readMetadata(captureID: id), now: now) }
+                    catch { try access.check(); skipped += 1; return }
+                    guard completed <= cutoff else { return }
+                    do {
+                        let (folder, hasPoints) = try authenticatedFiles(captureID: id, now: now)
+                        if hasPoints {
+                            let source = folder.appendingPathComponent("points.ply.sealed")
+                            let original = try inode(source)
+                            try access.check(); try checkRoot(); try verifyKeyCheck(); try check(source, directory: false)
+                            guard try inode(source) == original else { throw PackingEncryptedStoreError.unsafePath }
+                            guard Darwin.unlink(source.path) == 0 else { throw PackingEncryptedStoreError.io }
+                            try syncDirectory(folder)
+                            guard !manager.fileExists(atPath: source.path) else { throw PackingEncryptedStoreError.io }
+                            deleted += 1
+                        }
+                        removed.append(id)
+                    } catch { try access.check(); failed += 1 }
+                }
+            }
+            try access.check(); try checkRoot(); try verifyKeyCheck()
+            let formatter = ISO8601DateFormatter(); formatter.formatOptions = [.withInternetDateTime,.withFractionalSeconds]
+            return ["version": 1,"confirmedAt": formatter.string(from: now),"removedIds": removed,"checkedCount": batch.count,
+                    "deletedCount": deleted,"skippedCount": skipped,"failedCount": failed,"nextCursor": ids.count > batch.count ? batch.last! as Any : NSNull()]
+        }
+    }
     @discardableResult func delete(captureID: String) throws -> Bool {
         try access.checked {
             try verifyKeyCheck()
-            let folder = try captureURL(captureID)
-            guard manager.fileExists(atPath: folder.path) else { return false }
-            try check(folder, directory: true)
-            let contents = try manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
-            guard Set(contents.map(\.lastPathComponent)) == Self.names else { throw PackingEncryptedStoreError.invalidCapture }
-            for child in contents { try check(child, directory: false) }
-            _ = try readMetadata(captureID: captureID)
-            _ = try readPoints(captureID: captureID)
+            guard manager.fileExists(atPath: try captureURL(captureID).path) else { return false }
+            let (folder, _) = try authenticatedFiles(captureID: captureID, now: clock())
             try access.check(); try checkRoot()
             try manager.removeItem(at: folder)
             try syncDirectory(root)
@@ -240,11 +307,7 @@ final class PackingEncryptedCaptureStore: @unchecked Sendable {
             // Authenticate all recognized captures before removing any; unknown/orphan names stay untouched.
             for id in ids {
                 try autoreleasepool {
-                    let folder = try captureURL(id); try check(folder, directory: true)
-                    let files = try manager.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)
-                    guard Set(files.map(\.lastPathComponent)) == Self.names else { throw PackingEncryptedStoreError.invalidCapture }
-                    for file in files { try check(file, directory: false) }
-                    _ = try readMetadata(captureID: id); _ = try readPoints(captureID: id)
+                    _ = try authenticatedFiles(captureID: id, now: clock())
                 }
             }
             var removed = 0

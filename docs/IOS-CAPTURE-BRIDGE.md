@@ -59,8 +59,9 @@ source. Reconstruction checks every saved point and the shared web parser binds
 the result to the reviewed source before explicit adoption. See
 [iOS reconstruction](IOS-VOXEL-RECONSTRUCTION.md). Bag interiors use a separate
 [reviewed cavity path](IOS-CAVITY-RECONSTRUCTION.md) with explicit opening and seed.
-iOS backup/file/photo and retention parity also
-remain unfinished. Accounts/service deployment settings are unchanged.
+iOS retention uses the opt-in [raw-source policy](IOS-SCAN-RETENTION.md). Native
+backup/file/photo parity remains unfinished. Accounts/service deployment settings
+are unchanged.
 
 Mac checks execute production key/state encoding, revision/key authority, pending
 request contention and scoped filesystem cleanup against synthetic fixtures.

@@ -62,6 +62,8 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "getCapturePreview", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "reconstructCapture", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "reconstructInterior", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getRetentionCapabilities", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "pruneExpiredSources", returnType: CAPPluginReturnPromise),
     ]
 
     public override func load() {
@@ -191,6 +193,24 @@ public class PackingScanPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.runProtected(call, access: access) { try $0.readPointCapture(captureID: id).interiorResult(review: review) }
             } catch let error as PackingVoxelCavityError { call.reject(error.localizedDescription, "INTERIOR_UNAVAILABLE") }
             catch { call.reject("The capture workspace is locked.", "STORAGE_CHANGED") }
+        }
+    }
+
+    @objc func getRetentionCapabilities(_ call: CAPPluginCall) {
+        Task { @MainActor in
+            _ = self.storageState()
+            let state = self.authority.state()
+            call.resolve(["version": 1,"supported": state.protectedWorkspace && state.lease != nil && state.lease == self.protectedStore?.boundLease])
+        }
+    }
+    @objc func pruneExpiredSources(_ call: CAPPluginCall) {
+        Task { @MainActor in
+            guard !self.captureBusy else { call.reject("Finish the current scan before raw source cleanup.", "CAPTURE_BUSY"); return }
+            do {
+                let access = try self.bound(call)
+                let policy = try PackingScanRetentionPolicy.parse(call.jsObjectRepresentation)
+                self.runProtected(call, access: access) { try $0.pruneExpiredSources(policy) }
+            } catch { call.reject("Choose a supported retention period in the original unlocked workspace.", "RETENTION_INVALID") }
         }
     }
 
