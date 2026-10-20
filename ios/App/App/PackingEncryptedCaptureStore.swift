@@ -4,18 +4,20 @@ import Foundation
 enum PackingEncryptedStoreError: Error { case unsafePath, invalidCapture, occupied, io }
 
 /** Opaque authenticated point/metadata storage, bound permanently to one live access. */
-final class PackingEncryptedCaptureStore {
+// Immutable selection/paths; all filesystem operations serialize through access.checked.
+// Injected callbacks must themselves be Sendable. No mutable store field escapes that boundary.
+final class PackingEncryptedCaptureStore: @unchecked Sendable {
     private let manager = FileManager.default
     private let access: PackingCaptureAuthority.Access
     let root: URL
     private let base: URL
-    private let beforePublish: () throws -> Void
-    private let clock: () -> Date
+    private let beforePublish: @Sendable () throws -> Void
+    private let clock: @Sendable () -> Date
     // Immutable selection identity; comparing it does not acquire another authority's lock.
     let boundLease: String
     private static let names: Set<String> = ["capture.json.sealed", "points.ply.sealed"]
 
-    init(directory: URL, access: PackingCaptureAuthority.Access, beforePublish: @escaping () throws -> Void = {}, clock: @escaping () -> Date = Date.init) throws {
+    init(directory: URL, access: PackingCaptureAuthority.Access, beforePublish: @escaping @Sendable () throws -> Void = {}, clock: @escaping @Sendable () -> Date = { Date() }) throws {
         try access.check()
         guard directory.isFileURL, let account = access.accountID, let workspace = access.workspaceID else {
             throw PackingCaptureAuthorityError.guest

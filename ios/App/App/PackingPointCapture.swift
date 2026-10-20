@@ -4,8 +4,8 @@ import Foundation
 enum PackingPointCaptureError: Error { case invalidMetadata, invalidPoints }
 
 /** Validated internal source, not a dimension estimate or a shared ScanResult. */
-struct PackingPointCapture {
-    enum Target: String, Codable { case item, containerInterior = "container_interior" }
+struct PackingPointCapture: Sendable {
+    enum Target: String, Codable, Sendable { case item, containerInterior = "container_interior" }
     private struct Provenance: Codable {
         let version: Int
         let id: String

@@ -5,7 +5,9 @@ import simd
 enum PackingDepthSourceError: Error { case invalidFrame, stopped, incomplete, wrongWorkspace }
 
 /** In-memory LiDAR source. Serialized by its lock and the original revocable authority. */
-final class PackingDepthSource {
+// Swift cannot infer NSLock isolation. Every mutable source field is accessed under lock;
+// operations acquire the original authority before that lock, never in the reverse order.
+final class PackingDepthSource: @unchecked Sendable {
     struct Status {
         let pointCount: Int
         let acceptedFrames: Int
@@ -13,11 +15,13 @@ final class PackingDepthSource {
         let capped: Bool
         let readinessIssue: String?
     }
+    struct Preview { let points: [SIMD3<Float>]; let captureToWorld: simd_float4x4? }
     private struct Cell: Hashable { let x: Int; let y: Int; let z: Int }
     private let access: PackingCaptureAuthority.Access
     private let halfExtent: Float
     private let lock = NSLock()
     private var stopped = false
+    private var frozen = false
     private var worldToCapture: simd_float4x4?
     private var lastTimestamp: TimeInterval?
     private var firstTimestamp: TimeInterval?
@@ -44,7 +48,7 @@ final class PackingDepthSource {
     func cancel() { lock.lock(); defer { lock.unlock() }; stopped = true; erase() }
     func trackingUnavailable() {
         lock.lock(); defer { lock.unlock() }
-        if worldToCapture != nil { stopped = true; erase() }
+        if worldToCapture != nil && !frozen { stopped = true; erase() }
     }
 
     private static func rigid(_ value: simd_float4x4) -> Bool {
@@ -68,6 +72,7 @@ final class PackingDepthSource {
             return try access.checked {
                 lock.lock(); defer { lock.unlock() }
                 guard !stopped else { throw PackingDepthSourceError.stopped }
+                guard !frozen else { return false }
                 guard trackingNormal else {
                     if worldToCapture != nil { throw PackingDepthSourceError.stopped }
                     return false
@@ -170,13 +175,31 @@ final class PackingDepthSource {
             return Status(pointCount: points.count, acceptedFrames: frames, viewCount: directions.count, capped: capped, readinessIssue: readiness())
         } } catch { cancel(); throw error }
     }
+    func preview() throws -> Preview {
+        do { return try access.checked {
+            lock.lock(); defer { lock.unlock() }
+            guard !stopped else { throw PackingDepthSourceError.stopped }
+            let step = max(1, Int(ceil(Double(points.count) / 2000)))
+            return Preview(points: Swift.stride(from: 0, to: points.count, by: step).map {
+                SIMD3(points[$0].x, points[$0].y, points[$0].z)
+            }, captureToWorld: worldToCapture.map { simd_inverse($0) })
+        } } catch { cancel(); throw error }
+    }
+    func freezeForReview() throws {
+        try access.checked {
+            lock.lock(); defer { lock.unlock() }
+            guard !stopped else { throw PackingDepthSourceError.stopped }
+            guard readiness() == nil else { throw PackingDepthSourceError.incomplete }
+            frozen = true
+        }
+    }
     /** Publish only into the exact original workspace, with no plaintext file staging. */
     func finish(target: PackingPointCapture.Target, store: PackingEncryptedCaptureStore) throws -> PackingPointCapture {
         guard store.boundLease == access.lease else { throw PackingDepthSourceError.wrongWorkspace }
         do { return try access.checked {
             lock.lock(); defer { lock.unlock() }
             guard !stopped else { throw PackingDepthSourceError.stopped }
-            guard readiness() == nil else { throw PackingDepthSourceError.incomplete }
+            guard frozen, readiness() == nil else { throw PackingDepthSourceError.incomplete }
             var ply = Data(("ply\nformat binary_little_endian 1.0\ncomment units metres; capture-local right-handed camera frame\nelement vertex \(points.count)\nproperty float x\nproperty float y\nproperty float z\nproperty float confidence\nend_header\n").utf8)
             for point in points { for axis in 0..<4 {
                 var bits = point[axis].bitPattern.littleEndian
@@ -205,13 +228,14 @@ final class PackingARDepthReceiver: NSObject, ARSessionDelegate {
             intrinsics: frame.camera.intrinsics,
             imageSize: SIMD2(Int(frame.camera.imageResolution.width), Int(frame.camera.imageResolution.height)),
             cameraToWorld: frame.camera.transform, timestamp: frame.timestamp, trackingNormal: normal) }
-        catch { session.pause(); source.cancel() }
+        catch { source.cancel() }
     }
-    func sessionWasInterrupted(_ session: ARSession) { session.pause(); source.cancel() }
+    // Only the controller owns session start/stop. An old queued callback must never pause a restarted session.
+    func sessionWasInterrupted(_ session: ARSession) { source.cancel() }
     func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
         if case .normal = camera.trackingState { return }
         source.trackingUnavailable()
     }
-    func session(_ session: ARSession, didFailWithError error: Error) { session.pause(); source.cancel() }
+    func session(_ session: ARSession, didFailWithError error: Error) { source.cancel() }
 }
 #endif
