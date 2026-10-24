@@ -146,12 +146,12 @@ def inspect_archive(archive, expected_assets=None):
     return libraries
 
 
-def sdk_check(command):
-    result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+def sdk_check(command, *, capture_streams=False):
+    result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
     if result.returncode:
         diagnostic = (result.stdout + result.stderr).strip()[-4000:]
         raise ValueError(f"{Path(command[0]).name} failed ({result.returncode}): {diagnostic}")
-    return result.stdout
+    return result if capture_streams else result.stdout
 
 
 def verify(args):
@@ -168,10 +168,11 @@ def verify(args):
         sdk_check([str(args.build_tools / "zipalign"), "-c", "-P", "16", "4", str(apk)])
         certificate = None
         if role != "release":
-            output = sdk_check([str(args.build_tools / "apksigner"), "verify", "--verbose", "--print-certs", str(apk)])
-            matches = re.findall(r"Signer #\d+ certificate SHA-256 digest: ([a-fA-F0-9]{64})", output)
+            checked = sdk_check([str(args.build_tools / "apksigner"), "verify", "--verbose", "--print-certs", str(apk)], capture_streams=True)
+            matches = re.findall(r"Signer #\d+ certificate SHA-256 digest: ([a-fA-F0-9]{64})", checked.stdout)
             if len(matches) != 1:
-                raise ValueError("Expected one verified QA signer")
+                diagnostic = (checked.stdout + "\n" + checked.stderr).strip()[-4000:]
+                raise ValueError(f"Expected one verified QA signer for {role}; found {len(matches)} digest lines. SDK output: {diagnostic}")
             certificate = matches[0].lower()
             certificates.append(certificate)
         with zipfile.ZipFile(apk) as archive:
