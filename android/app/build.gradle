@@ -2,7 +2,12 @@ apply plugin: 'com.android.application'
 
 android {
     namespace = "com.packingscanning.app"
-    compileSdk = rootProject.ext.compileSdkVersion
+    buildToolsVersion rootProject.ext.androidBuildToolsVersion
+    compileSdk {
+        version = release(rootProject.ext.compileSdkVersion) {
+            minorApiLevel = rootProject.ext.compileSdkMinor
+        }
+    }
     androidResources { noCompress += 'tflite' }
     defaultConfig {
         applicationId "com.packingscanning.app"
