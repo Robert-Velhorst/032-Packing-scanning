@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "node_minimum_stable": {"24": "24.22.1", "26": "26.12.1"},
+  "java": {
+    "feature": 27,
+    "version": "27.0.1",
+    "qualification_runtime": "27.0.1+9",
+    "qualification_vendor_version": "Zulu27.30+107-CA",
+    "release_source": "https://docs.azul.com/core/version-search"
+  },
+  "android": {
+    "compile_major": 37,
+    "compile_minor": 2,
+    "platform": "android-37.2",
+    "target_major": 37,
+    "build_tools": "37.0.0",
+    "release_source": "https://dl.google.com/android/repository/repository2-3.xml"
+  },
+  "xcode": {
+    "version": "27.1",
+    "build": "27A9275",
+    "ios_sdk": "27.1",
+    "release_source": "https://developer.apple.com/news/releases/?id=10152026a"
+  }
+}

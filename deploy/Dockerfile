@@ -6,17 +6,17 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 RUN set -eux; \
     case "$TARGETARCH" in \
-      amd64) node_arch=x64; node_sha=fd47865ecd6391ebb431fc815e01b9135bf83ded5cf373247e9331e196b7aded ;; \
-      arm64) node_arch=arm64; node_sha=fd6cc729fa4448c2ac27c3fca5606019ced63c65a15c152c8df03e0cbce7f4c5 ;; \
+      amd64) node_arch=x64; node_sha=6170b2d474e1c626f43cff3adc118df9fe3b573258a4fc3d850c8dbc6b079bbd ;; \
+      arm64) node_arch=arm64; node_sha=42aa04922591ee5d4dbc7740d452621acf28508239daa512f5ee8c47ee224fdb ;; \
       *) echo "Unsupported target architecture: $TARGETARCH" >&2; exit 1 ;; \
     esac; \
     curl --fail --location --silent --show-error \
-      "https://nodejs.org/dist/v26.12.0/node-v26.12.0-linux-${node_arch}.tar.xz" \
+      "https://nodejs.org/dist/v26.12.1/node-v26.12.1-linux-${node_arch}.tar.xz" \
       --output node.tar.xz; \
     echo "${node_sha}  node.tar.xz" | sha256sum --check --status; \
     tar -xJf node.tar.xz --directory /usr/local --strip-components=1; \
     rm node.tar.xz; \
-    node --version | grep --fixed-strings --line-regexp "v26.12.0"
+    node --version | grep --fixed-strings --line-regexp "v26.12.1"
 
 FROM node-runtime AS build
 WORKDIR /app

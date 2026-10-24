@@ -17,11 +17,11 @@ failure is [recorded in Actions](https://github.com/Robert-Velhorst/032-Packing-
 
 ## Build command
 
-On Linux/macOS with Node 24.22+ or 26+, Java 21 and Android SDK platform 36:
+The current selections are recorded in `mobile-runtime.json`: patched Node 24.22.1 or 26.12.1, stable Java 27.0.1, Android platform 37.2 and build-tools 37.0.0. On Linux/macOS:
 
 ```sh
 npm ci --ignore-scripts
-export JAVA_HOME=/path/to/installed/java21
+export JAVA_HOME=/path/to/installed/java27
 export PATH="$JAVA_HOME/bin:$PATH"
 export ANDROID_HOME=/path/to/installed/android-sdk
 bash scripts/build-android.sh
@@ -30,8 +30,10 @@ bash scripts/build-android.sh
 On Windows use the existing `scripts/build-android.ps1`, supplying its Java and
 SDK paths and the desired app-specific tasks. Neither helper installs the SDK
 or accepts licenses. The Gradle wrapper verifies its downloaded distribution
-with the checked-in SHA-256. The app uses [SDK 36 as required for Capacitor
-8](https://capacitorjs.com/docs/updating/8-0#android).
+with the checked-in SHA-256. The app compiles against stable API 37 minor 2, using the official expanded
+[compileSdk syntax](https://developer.android.com/build). Its target SDK is
+major 37; the minimum installable Android API remains 24. The compile SDK
+minor and target SDK major are separate settings.
 
 The shell helper builds the production web assets, synchronizes Android assets,
 then runs app-specific native unit tests, debug assembly, unsigned release
@@ -39,8 +41,12 @@ assembly, instrumentation-test assembly, debug lint and release lint. Gradle use
 persistent daemon. SDK tools/dependencies required by Gradle must already be
 available under the operator's accepted SDK installation.
 
-`.github/workflows/android.yml` uses the [standard Ubuntu 24.04 runner's
-preinstalled Java 21 and SDK 36](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md).
+`.github/workflows/android.yml` installs the current free Zulu CA Java 27.0.1
+build with the SHA-pinned official setup-java action. It installs only the
+selected stable Android platform/build-tools packages in the disposable runner
+and records the actual compiler, Java vendor/build and SDK package properties.
+The qualifier requires Zulu 27.30.107, not an older same-version vendor build.
+Local launchers do not install SDKs or accept licenses.
 It has read-only repository permissions, a 30-minute deadline, and cancels an
 obsolete run of the same workflow/ref. Build logs, unit-test XML and lint
 reports are retained for seven days. Signing keys and service credentials are
@@ -102,3 +108,19 @@ uninstall an existing installation containing data to bypass a signing mismatch.
 The instrumentation APK is provided for deliberate test execution, not as proof
 that those tests have already run. iOS device testing still needs operator
 signing/provisioning; an unsigned compiled app is not an installable release.
+
+
+## Current stable mobile refresh
+
+The source refresh also selects AndroidX Activity 1.13.0, AppCompat 1.8.0,
+Core 1.19.1, Fragment 1.9.1, WebKit 1.18.0 and Cordova framework 15.1.0.
+These were checked against public Google/Maven Central stable artifact metadata.
+Cordova is a major upgrade and must pass the existing native checks. The other
+queried direct artifact coordinates remain at their current stable releases.
+JUnit 4 coordinates being current does not establish migration to the latest
+JUnit platform, and direct pins do not prove the complete resolved graph current.
+
+Earlier native test/build checkpoints do not qualify this new toolchain or
+target-SDK behavior. Current-head CI, then device/emulator camera, permissions,
+provider and persistence acceptance are required. No operator SDK, signing or
+release deployment was changed by preparing this draft.

@@ -9,6 +9,8 @@ on:
       - 'capacitor.config.ts'
       - 'vite.config.ts'
       - 'scripts/build-ios.sh'
+      - 'scripts/check-mobile-runtime.mjs'
+      - 'mobile-runtime.json'
       - 'scripts/test-ios-voice.swift'
       - 'scripts/test-ios-capture-files.swift'
       - '.github/workflows/ios.yml'
@@ -21,6 +23,8 @@ on:
       - 'capacitor.config.ts'
       - 'vite.config.ts'
       - 'scripts/build-ios.sh'
+      - 'scripts/check-mobile-runtime.mjs'
+      - 'mobile-runtime.json'
       - 'scripts/test-ios-voice.swift'
       - 'scripts/test-ios-capture-files.swift'
       - '.github/workflows/ios.yml'
@@ -36,17 +40,27 @@ concurrency:
 jobs:
   simulator:
     name: Unsigned iOS simulator and device builds
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 30
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
       PACKING_ACCOUNT_ORIGIN: ''
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 26.12.0
+          node-version: 26.12.1
           cache: npm
+      - name: Read pinned mobile SDK versions
+        id: mobile
+        run: node scripts/check-mobile-runtime.mjs profile >> "$GITHUB_OUTPUT"
+      - name: Select and verify Apple's final Xcode build
+        shell: bash
+        env:
+          SELECTED_DEVELOPER_DIR: ${{ steps.mobile.outputs.xcode-developer-dir }}
+        run: |
+          echo "DEVELOPER_DIR=$SELECTED_DEVELOPER_DIR" >> "$GITHUB_ENV"
+      - name: Record actual Xcode, Swift and SDK identities
+        run: node scripts/check-mobile-runtime.mjs ios > "$RUNNER_TEMP/packing-ios-runtime.json"
       - run: npm ci --ignore-scripts
       - name: Check native capture file boundaries
         shell: bash
@@ -61,6 +75,8 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-build-log
-          path: ${{ runner.temp }}/packing-ios-build.log
+          path: |
+            ${{ runner.temp }}/packing-ios-build.log
+            ${{ runner.temp }}/packing-ios-runtime.json
           retention-days: 7
           if-no-files-found: ignore
