@@ -146,12 +146,44 @@ def inspect_archive(archive, expected_assets=None):
     return libraries
 
 
-def sdk_check(command):
-    result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+def sdk_check(command, *, capture_streams=False):
+    result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
     if result.returncode:
         diagnostic = (result.stdout + result.stderr).strip()[-4000:]
         raise ValueError(f"{Path(command[0]).name} failed ({result.returncode}): {diagnostic}")
-    return result.stdout
+    return result if capture_streams else result.stdout
+
+
+def qa_signer_digest(output):
+    # SDK 37 names certificates by their verified signing scheme. Older SDKs
+    # number the signer. Bind either representation to the SDK's signer count
+    # and successful verification, never to a matching substring in a DN.
+    if output.splitlines().count("Verifies") != 1:
+        raise ValueError("Missing successful SDK signature verification")
+    if re.findall(r"^Number of signers: ([0-9]+)$", output, re.M) != ["1"]:
+        raise ValueError("Expected exactly one verified QA signer")
+    verified = set(re.findall(
+        r"^Verified using (v(?:1|2|3|3\.1|3\.2|4)) scheme \([^\r\n]+\): true$", output, re.M))
+    if not verified:
+        raise ValueError("No signing scheme verified")
+    labels, digests = set(), set()
+    for line in output.splitlines():
+        if "certificate SHA-256 digest:" not in line:
+            continue
+        match = re.fullmatch(
+            r"(Signer #([1-9][0-9]*)|V(1|2|3|3\.1|3\.2|4) Signer:) certificate SHA-256 digest: ([a-fA-F0-9]{64})", line)
+        if not match:
+            raise ValueError("Unsupported or ambiguous SDK signer certificate line")
+        label, number, scheme, digest = match.groups()
+        if label in labels or (number is not None and number != "1"):
+            raise ValueError("Duplicate or additional QA signer")
+        if scheme is not None and "v" + scheme not in verified:
+            raise ValueError("Certificate belongs to an unverified signing scheme")
+        labels.add(label)
+        digests.add(digest.lower())
+    if not labels or len(digests) != 1:
+        raise ValueError("Missing or conflicting verified QA signer certificates")
+    return digests.pop()
 
 
 def verify(args):
@@ -168,11 +200,12 @@ def verify(args):
         sdk_check([str(args.build_tools / "zipalign"), "-c", "-P", "16", "4", str(apk)])
         certificate = None
         if role != "release":
-            output = sdk_check([str(args.build_tools / "apksigner"), "verify", "--verbose", "--print-certs", str(apk)])
-            matches = re.findall(r"Signer #\d+ certificate SHA-256 digest: ([a-fA-F0-9]{64})", output)
-            if len(matches) != 1:
-                raise ValueError("Expected one verified QA signer")
-            certificate = matches[0].lower()
+            checked = sdk_check([str(args.build_tools / "apksigner"), "verify", "--verbose", "--print-certs", str(apk)], capture_streams=True)
+            try:
+                certificate = qa_signer_digest(checked.stdout)
+            except ValueError as error:
+                diagnostic = (checked.stdout + "\n" + checked.stderr).strip()[-4000:]
+                raise ValueError(f"Invalid QA signer for {role}: {error}. SDK output: {diagnostic}") from error
             certificates.append(certificate)
         with zipfile.ZipFile(apk) as archive:
             libraries = inspect_archive(archive, assets if role != "instrumentation" else None)

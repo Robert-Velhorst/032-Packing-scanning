@@ -9,6 +9,11 @@ on:
       - 'capacitor.config.ts'
       - 'vite.config.ts'
       - 'scripts/build-android.sh'
+      - 'scripts/build-android.ps1'
+      - 'scripts/verify_android_apks.py'
+      - 'scripts/test_android_apks.py'
+      - 'scripts/check-mobile-runtime.mjs'
+      - 'mobile-runtime.json'
       - 'scripts/verify_android_apks.py'
       - 'scripts/test_android_apks.py'
       - '.github/workflows/android.yml'
@@ -21,6 +26,11 @@ on:
       - 'capacitor.config.ts'
       - 'vite.config.ts'
       - 'scripts/build-android.sh'
+      - 'scripts/build-android.ps1'
+      - 'scripts/verify_android_apks.py'
+      - 'scripts/test_android_apks.py'
+      - 'scripts/check-mobile-runtime.mjs'
+      - 'mobile-runtime.json'
       - 'scripts/verify_android_apks.py'
       - 'scripts/test_android_apks.py'
       - '.github/workflows/android.yml'
@@ -44,14 +54,30 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 26.12.0
+          node-version: 26.12.1
           cache: npm
-      - name: Select preinstalled Java 21
+      - name: Read pinned mobile SDK versions
+        id: mobile
+        run: node scripts/check-mobile-runtime.mjs profile >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: zulu
+          java-version: ${{ steps.mobile.outputs.java-version }}
+          check-latest: true
+      - name: Install the selected stable Android platform and build tools
         shell: bash
+        env:
+          SELECTED_ANDROID_PLATFORM: ${{ steps.mobile.outputs.android-platform }}
+          SELECTED_ANDROID_BUILD_TOOLS: ${{ steps.mobile.outputs.android-build-tools }}
         run: |
-          test -x "$JAVA_HOME_21_X64/bin/java"
-          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
-          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+          set -euo pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;$SELECTED_ANDROID_PLATFORM" \
+            "build-tools;$SELECTED_ANDROID_BUILD_TOOLS"
+      - name: Record the actual compiler and SDK selection
+        env:
+          MOBILE_QUALIFICATION: '1'
+        run: node scripts/check-mobile-runtime.mjs android > "$RUNNER_TEMP/packing-android-runtime.json"
       - run: npm ci --ignore-scripts
       - name: Build bundled app, run native tests and lint
         shell: bash
@@ -60,6 +86,7 @@ jobs:
         shell: bash
         env:
           PACKING_HEAD_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          SELECTED_ANDROID_BUILD_TOOLS: ${{ steps.mobile.outputs.android-build-tools }}
         run: |
           python3 -B -m unittest discover -s scripts -p 'test_android_apks.py'
           mkdir "$RUNNER_TEMP/android-guest-qa"
@@ -70,7 +97,7 @@ jobs:
             --debug "$RUNNER_TEMP/android-guest-qa/app-debug.apk" \
             --instrumentation "$RUNNER_TEMP/android-guest-qa/app-debug-androidTest.apk" \
             --release "$RUNNER_TEMP/android-guest-qa/app-release-unsigned.apk" \
-            --dist dist --build-tools "$ANDROID_HOME/build-tools/36.0.0" \
+            --dist dist --build-tools "$ANDROID_HOME/build-tools/$SELECTED_ANDROID_BUILD_TOOLS" \
             --source-revision "$(git rev-parse HEAD)" --head-revision "$PACKING_HEAD_REVISION" \
             --output "$RUNNER_TEMP/android-guest-qa/android-artifacts.json"
       - name: Preserve verified guest QA APKs
@@ -87,6 +114,7 @@ jobs:
           name: android-build-diagnostics
           path: |
             ${{ runner.temp }}/packing-android-build.log
+            ${{ runner.temp }}/packing-android-runtime.json
             android/app/build/test-results/testDebugUnitTest/*.xml
             android/app/build/reports/lint-results-*.html
           retention-days: 7
