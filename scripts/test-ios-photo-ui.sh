@@ -48,15 +48,9 @@ if(bytes.length<3||bytes.length>12*1024*1024||bytes[0]!==255||bytes[1]!==216||by
 writeFileSync(destination,bytes,{flag:'wx',mode:0o600});
 NODE
 xcrun simctl list runtimes --json > "$task_scratch/runtimes.json"
-task_runtime="$(node --input-type=module - "$task_scratch/runtimes.json" <<'NODE'
-import {readFileSync} from 'node:fs';
-const available=JSON.parse(readFileSync(process.argv[2],'utf8')).runtimes.filter(runtime=>runtime.isAvailable&&runtime.name.startsWith('iOS ')&&Number(runtime.version.split('.')[0])>=18);
-available.sort((a,b)=>a.version.localeCompare(b.version,'en',{numeric:true}));
-if(!available.length)throw Error('An installed iOS 18+ simulator runtime is required; this script does not download SDKs.');
-process.stdout.write(available.at(-1).identifier);
-NODE
-)"
-task_device="$(xcrun simctl create "$task_name" com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro "$task_runtime")"
+task_selection="$(node .github/qualification/simulator-selection.mjs "$task_scratch/runtimes.json" "$task_scratch/simulator-selection.json")"
+IFS=$'\t' read -r task_runtime task_device_type <<< "$task_selection"
+task_device="$(xcrun simctl create "$task_name" "$task_device_type" "$task_runtime")"
 [[ "$task_device" =~ ^[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}$ ]] || { echo 'Invalid created simulator identifier.' >&2; exit 1; }
 xcrun simctl boot "$task_device"
 xcrun simctl bootstatus "$task_device" -b
