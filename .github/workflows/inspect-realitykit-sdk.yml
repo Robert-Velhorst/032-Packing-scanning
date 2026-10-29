@@ -1,0 +1,27 @@
+name: Inspect selected public RealityKit SDK declarations
+on:
+  push:
+    branches: [qualify/packing-realitykit-api-20261029]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: xcode-27
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.15.2'
+      - name: Read public Simulator and device SDK declaration metadata
+        run: python .github/qualification/inspect-realitykit-sdk.py
+      - name: Retain public API declaration evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: public-RealityKit-API
+          path: ${{ runner.temp }}/packing-realitykit-API/*.json
+          if-no-files-found: error
+          retention-days: 14
