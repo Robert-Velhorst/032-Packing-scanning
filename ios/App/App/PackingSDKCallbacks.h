@@ -2,8 +2,21 @@
 #import <dispatch/dispatch.h>
 
 @class CAPPluginCall;
+@class CAPPlugin;
 
 NS_ASSUME_NONNULL_BEGIN
+
+// The guard must synchronously invoke action on the SDK queue, or omit it.
+// It must not retain action. A missing invocation rejects the stale response.
+typedef void (^PackingCallbackDeliveryGuard)(dispatch_block_t action);
+FOUNDATION_EXPORT BOOL PackingCallbacksSetDeliveryGuard(NSString *token,
+    PackingCallbackDeliveryGuard guard, NSString *failureMessage, NSString * _Nullable failureCode);
+
+// SDK owner binding is weak; actor code exchanges only its immutable owner ID.
+FOUNDATION_EXPORT BOOL PackingCallbacksBindOwner(CAPPlugin *plugin, dispatch_queue_t sdkQueue, NSString *owner);
+FOUNDATION_EXPORT BOOL PackingCallbacksSetOwnerRevocation(NSString *owner, dispatch_block_t revoke);
+FOUNDATION_EXPORT void PackingCallbacksUnbindOwner(NSString *owner, NSString *message, NSString * _Nullable code);
+FOUNDATION_EXPORT BOOL PackingCallbacksNotifyOwner(NSString *owner, NSString *event, NSData *json);
 
 // Promise calls only. Registration must run on the actual SDK serial queue.
 // A nil result leaves the call with its caller; no callback is invoked.

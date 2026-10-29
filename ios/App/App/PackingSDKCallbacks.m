@@ -18,19 +18,100 @@
 @property(nonatomic) BOOL cancelled;
 @property(nonatomic, copy) NSString *cancellationMessage;
 @property(nonatomic, copy) NSString *cancellationCode;
+@property(nonatomic, copy) PackingCallbackDeliveryGuard deliveryGuard;
+@property(nonatomic, copy) NSString *guardFailureMessage;
+@property(nonatomic, copy) NSString *guardFailureCode;
 @end
 @implementation PackingCallbackEntry
 @end
 
+@interface PackingCallbackOwner : NSObject
+@property(nonatomic, weak) CAPPlugin *plugin;
+@property(nonatomic, strong) dispatch_queue_t queue;
+@property(nonatomic, copy) dispatch_block_t revoke;
+@end
+@implementation PackingCallbackOwner
+@end
+
 static NSLock *PackingTableLock;
 static NSMutableDictionary<NSString *, PackingCallbackEntry *> *PackingTable;
+static NSMutableDictionary<NSString *, PackingCallbackOwner *> *PackingOwners;
 
 static void PackingInitialize(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         PackingTableLock = [[NSLock alloc] init];
         PackingTable = [[NSMutableDictionary alloc] init];
+        PackingOwners = [[NSMutableDictionary alloc] init];
     });
+}
+
+BOOL PackingCallbacksBindOwner(CAPPlugin *plugin, dispatch_queue_t sdkQueue, NSString *owner) {
+    dispatch_assert_queue(sdkQueue);
+    if (owner.length == 0) { return NO; }
+    PackingInitialize();
+    [PackingTableLock lock];
+    PackingCallbackOwner *existing = PackingOwners[owner];
+    if (existing != nil) {
+        BOOL same = existing.plugin == plugin && existing.queue == sdkQueue;
+        [PackingTableLock unlock];
+        return same;
+    }
+    if (PackingOwners.count >= 64) { [PackingTableLock unlock]; return NO; }
+    PackingCallbackOwner *binding = [[PackingCallbackOwner alloc] init];
+    binding.plugin = plugin;
+    binding.queue = sdkQueue;
+    PackingOwners[owner] = binding;
+    [PackingTableLock unlock];
+    return YES;
+}
+
+BOOL PackingCallbacksSetOwnerRevocation(NSString *owner, dispatch_block_t revoke) {
+    PackingInitialize();
+    [PackingTableLock lock];
+    PackingCallbackOwner *binding = PackingOwners[owner];
+    if (binding != nil) { binding.revoke = revoke; }
+    [PackingTableLock unlock];
+    // An owner may disappear while UI work opens its lease. Revoke that lease
+    // immediately rather than storing an orphan key. Never call under table lock.
+    if (binding == nil) { revoke(); }
+    return binding != nil;
+}
+
+void PackingCallbacksUnbindOwner(NSString *owner, NSString *message, NSString *code) {
+    PackingInitialize();
+    [PackingTableLock lock];
+    dispatch_block_t revoke = PackingOwners[owner].revoke;
+    [PackingOwners removeObjectForKey:owner];
+    [PackingTableLock unlock];
+    if (revoke != nil) { revoke(); }
+    PackingCallbacksCancelOwner(owner, message, code);
+}
+
+BOOL PackingCallbacksNotifyOwner(NSString *owner, NSString *event, NSData *json) {
+    PackingInitialize();
+    [PackingTableLock lock];
+    PackingCallbackOwner *binding = PackingOwners[owner];
+    [PackingTableLock unlock];
+    if (binding == nil) { return NO; }
+    NSString *name = [event copy];
+    NSString *identity = [owner copy];
+    NSData *bytes = [json copy];
+    dispatch_async(binding.queue, ^{
+        dispatch_assert_queue(binding.queue);
+        [PackingTableLock lock];
+        BOOL current = PackingOwners[identity] == binding;
+        [PackingTableLock unlock];
+        if (!current) { return; }
+        CAPPlugin *plugin = binding.plugin;
+        if (plugin == nil) { return; }
+        NSError *error = nil;
+        id result = [NSJSONSerialization JSONObjectWithData:bytes options:0 error:&error];
+        if (error == nil && [result isKindOfClass:NSDictionary.class]) {
+            [plugin notifyListeners:name data:result];
+        }
+    });
+    return YES;
 }
 
 NSString *PackingCallbacksRegister(CAPPluginCall *call, dispatch_queue_t sdkQueue, NSString *owner) {
@@ -79,6 +160,38 @@ BOOL PackingCallbacksIsPending(NSString *token) {
     return pending;
 }
 
+BOOL PackingCallbacksSetDeliveryGuard(NSString *token, PackingCallbackDeliveryGuard guard,
+                                      NSString *failureMessage, NSString *failureCode) {
+    PackingInitialize();
+    [PackingTableLock lock];
+    PackingCallbackEntry *entry = PackingTable[token];
+    BOOL accepted = entry != nil && !entry.claimed && !entry.cancelled;
+    if (accepted) {
+        entry.deliveryGuard = guard;
+        entry.guardFailureMessage = failureMessage;
+        entry.guardFailureCode = failureCode;
+    }
+    [PackingTableLock unlock];
+    return accepted;
+}
+
+static void PackingApplyDeliveryGuard(PackingCallbackEntry *entry, dispatch_block_t response) {
+    dispatch_assert_queue(entry.queue);
+    // Guard fields become immutable when the terminal response is claimed.
+    // Do not hold the registry lock while acquiring an authority lock/calling SDK.
+    __block BOOL invoked = NO;
+    __block BOOL closed = NO;
+    dispatch_block_t once = ^{
+        dispatch_assert_queue(entry.queue);
+        if (closed || invoked) { return; }
+        invoked = YES;
+        response();
+    };
+    if (entry.deliveryGuard != nil) { entry.deliveryGuard(once); } else { once(); }
+    closed = YES;
+    if (!invoked) { [entry.call reject:entry.guardFailureMessage :entry.guardFailureCode :nil :nil]; }
+}
+
 static BOOL PackingDeliverCancellation(NSString *token, PackingCallbackEntry *entry) {
     dispatch_assert_queue(entry.queue);
     [PackingTableLock lock];
@@ -97,7 +210,7 @@ BOOL PackingCallbacksResolveNil(NSString *token) {
     dispatch_async(entry.queue, ^{
         dispatch_assert_queue(entry.queue);
         if (PackingDeliverCancellation(token, entry)) { return; }
-        [entry.call resolve];
+        PackingApplyDeliveryGuard(entry, ^{ [entry.call resolve]; });
     });
     return YES;
 }
@@ -110,13 +223,15 @@ BOOL PackingCallbacksResolveJSON(NSString *token, NSData *json) {
     dispatch_async(entry.queue, ^{
         dispatch_assert_queue(entry.queue);
         if (PackingDeliverCancellation(token, entry)) { return; }
-        NSError *error = nil;
-        id result = [NSJSONSerialization JSONObjectWithData:payload options:0 error:&error];
-        if (error != nil || ![result isKindOfClass:NSDictionary.class]) {
-            [entry.call reject:@"The native response could not be encoded." :@"NATIVE_RESPONSE_INVALID" :nil :nil];
-            return;
-        }
-        [entry.call resolve:result];
+        PackingApplyDeliveryGuard(entry, ^{
+            NSError *error = nil;
+            id result = [NSJSONSerialization JSONObjectWithData:payload options:0 error:&error];
+            if (error != nil || ![result isKindOfClass:NSDictionary.class]) {
+                [entry.call reject:@"The native response could not be encoded." :@"NATIVE_RESPONSE_INVALID" :nil :nil];
+                return;
+            }
+            [entry.call resolve:result];
+        });
     });
     return YES;
 }

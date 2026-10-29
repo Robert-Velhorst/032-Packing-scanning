@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        89998FDCF0FA83DEE5784444 /* PackingWorkspaceKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A221B4607599CF4E7590F5E /* PackingWorkspaceKey.swift */; };
         73D52A2B0E7A61266865CE11 /* PackingSDKCallbacks.m in Sources */ = {isa = PBXBuildFile; fileRef = E03AB1DC81EE70EDE608B7C0 /* PackingSDKCallbacks.m */; };
         0B3F6898BD311A81C16CFA1C /* PackingCallbackToken.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F565E043106E30C0E76600 /* PackingCallbackToken.swift */; };
 
@@ -49,6 +50,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        1A221B4607599CF4E7590F5E /* PackingWorkspaceKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingWorkspaceKey.swift; sourceTree = "<group>"; };
         E03AB1DC81EE70EDE608B7C0 /* PackingSDKCallbacks.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = PackingSDKCallbacks.m; sourceTree = "<group>"; };
         6CDAB3C0880B9422F98C04A5 /* PackingSDKCallbacks.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PackingSDKCallbacks.h; sourceTree = "<group>"; };
         86AE4C9F08E141DE443F9CE5 /* PackingNative-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PackingNative-Bridging-Header.h; sourceTree = "<group>"; };
@@ -158,6 +160,7 @@
                 FC0322222222222222222222 /* PackingCaptureBridgeValues.swift */,
                 AC0322222222222222222222 /* PackingAccountPlugin.swift */,
                 AF0322222222222222222222 /* PackingPrintPlugin.swift */,
+                1A221B4607599CF4E7590F5E /* PackingWorkspaceKey.swift */,
                 E03AB1DC81EE70EDE608B7C0 /* PackingSDKCallbacks.m */,
                 6CDAB3C0880B9422F98C04A5 /* PackingSDKCallbacks.h */,
                 86AE4C9F08E141DE443F9CE5 /* PackingNative-Bridging-Header.h */,
@@ -303,6 +306,7 @@
                 FC0321111111111111111111 /* PackingCaptureBridgeValues.swift in Sources */,
                 AC0321111111111111111111 /* PackingAccountPlugin.swift in Sources */,
                 AF0321111111111111111111 /* PackingPrintPlugin.swift in Sources */,
+                89998FDCF0FA83DEE5784444 /* PackingWorkspaceKey.swift in Sources */,
                 73D52A2B0E7A61266865CE11 /* PackingSDKCallbacks.m in Sources */,
                 0B3F6898BD311A81C16CFA1C /* PackingCallbackToken.swift in Sources */,
 

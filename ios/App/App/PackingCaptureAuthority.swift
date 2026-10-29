@@ -115,6 +115,16 @@ final class PackingCaptureAuthority {
             lastInteraction = now
             try owner.check(self)
         }
+        /** Revoke only this exact current lease, using the existing owner/lock.
+         * No new authority reference, key alias or unchecked conformance is added.
+         * A stale capability must never close a newer selected workspace.
+         */
+        func revokeCurrentLease() {
+            guard let owner else { return }
+            owner.lock.lock(); defer { owner.lock.unlock() }
+            guard owner.active === self else { return }
+            owner.revoke()
+        }
         func check() throws { try checked {} }
         func checked<T>(_ operation: () throws -> T) throws -> T {
             guard let owner else { throw PackingCaptureAuthorityError.changed }

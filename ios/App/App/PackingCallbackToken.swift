@@ -10,6 +10,18 @@ struct PackingCallbackToken: Sendable {
 
     var isPending: Bool { PackingCallbacksIsPending(token) }
 
+    func authorize(_ access: PackingCaptureAuthority.Access, failureMessage: String, failureCode: String) throws {
+        // Checked Sendable captures only the existing lock-protected access.
+        // The SDK's opaque action is invoked synchronously on the SDK queue
+        // inside that lock; it is never retained or sent to another actor.
+        let guardResponse: @Sendable (@escaping () -> Void) -> Void = { action in
+            _ = try? access.checked { action() }
+        }
+        guard PackingCallbacksSetDeliveryGuard(token, guardResponse, failureMessage, failureCode) else {
+            throw PackingCaptureAuthorityError.changed
+        }
+    }
+
     init?(call: CAPPluginCall, sdkQueue: DispatchQueue, owner: String) {
         dispatchPrecondition(condition: .onQueue(sdkQueue))
         guard let token = PackingCallbacksRegister(call, sdkQueue, owner) else { return nil }
@@ -28,5 +40,28 @@ struct PackingCallbackToken: Sendable {
 
     @discardableResult func reject(_ message: String, _ code: String? = nil) -> Bool {
         PackingCallbacksReject(token, message, code)
+    }
+}
+
+struct PackingSDKOwner: Sendable {
+    let id: String
+
+    func bind(_ plugin: CAPPlugin, sdkQueue: DispatchQueue) -> Bool {
+        dispatchPrecondition(condition: .onQueue(sdkQueue))
+        return PackingCallbacksBindOwner(plugin, sdkQueue, id)
+    }
+
+    func installRevocation(_ access: PackingCaptureAuthority.Access) -> Bool {
+        let revoke: @Sendable () -> Void = { access.revokeCurrentLease() }
+        return PackingCallbacksSetOwnerRevocation(id, revoke)
+    }
+
+    func notify(_ event: String, data: [String: Any]) -> Bool {
+        guard let bytes = try? JSONSerialization.data(withJSONObject: data) else { return false }
+        return PackingCallbacksNotifyOwner(id, event, bytes)
+    }
+
+    func close(_ message: String, _ code: String? = nil) {
+        PackingCallbacksUnbindOwner(id, message, code)
     }
 }
