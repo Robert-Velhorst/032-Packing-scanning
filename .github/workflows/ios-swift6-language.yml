@@ -1,7 +1,7 @@
-name: iOS Swift 6 language qualification
+name: iOS current Swift 6.4.1 language qualification
 on:
   push:
-    branches: [qualify/packing-swift6-language-20261029]
+    branches: [qualify/packing-swift641-language6-20261029]
 permissions:
   contents: read
 
@@ -31,6 +31,8 @@ jobs:
           python-version: '3.15.2'
       - name: Use current stable npm
         run: npm install --global npm@12.2.1
+      - name: Verify and select official stable Swift 6.4.1 toolchain
+        run: python .github/qualification/install-current-stable-swift.py
       - name: Bind original native inputs and final stable toolchain
         run: python .github/qualification/photo-geometry-source.py before
       - run: npm ci --ignore-scripts
@@ -167,3 +169,13 @@ jobs:
             ${{ runner.temp }}/packing-photo-geometry/*.swift
           retention-days: 14
           if-no-files-found: error
+      - name: Retain Swift package signer and actual compiler selection evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: current-stable-Swift-verification
+          path: |
+            ${{ runner.temp }}/packing-current-stable-swift/*.json
+            ${{ runner.temp }}/packing-current-stable-swift/*.log
+          if-no-files-found: error
+          retention-days: 14
