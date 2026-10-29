@@ -64,10 +64,21 @@ for item in objects:
         destination=exports/('attachment-'+str(len(payloads))+suffix)
         execute('export-'+str(len(payloads)),['export','object','--legacy','--type','file','--path',str(bundle),'--id',reference,'--output-path',str(destination)])
         attachments.append({'label':label,'uti':uti,'file':destination.name,'exported':destination.exists()})
-after=snapshot();assert before==after
+after=snapshot()
+changes=[{'path':p,'before':before.get(p),'after':after.get(p)}for p in sorted(before.keys()|after.keys())if before.get(p)!=after.get(p)]
+assert hashlib.sha256(archive.read_bytes()).hexdigest()=='b3a2265f56d2cd6d6721573e0f7fc5770431c21fa2b6feb5addbd1df53a12213'
+video_source=Path('.github/qualification/scene-video-frames.swift')
+if video_source.exists():
+    binary=out/'frames-generator'
+    compile_result=subprocess.run(['xcrun','swiftc','-parse-as-library',str(video_source),'-o',str(binary)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    (out/'video-compile.log').write_bytes(compile_result.stdout+compile_result.stderr)
+    assert compile_result.returncode==0,'Owned diagnostic frame generator failed to compile; inspect exact compiler log.'
+    decoded=subprocess.run([str(binary),str(exports)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+    (out/'video-decode.log').write_bytes(decoded.stdout+decoded.stderr)
+    assert decoded.returncode==0,'Saved video frame decoding failed; inspect exact decoder log.'
 report={'source_run':40806503241,'source_head':'b5238165c4263aa9bf65c5dd798a876c47203e18','input_artifact':12869476345,'input_sha256':hashlib.sha256(raw).hexdigest(),
- 'input_payload_files':len(before),'all_input_files_unchanged':True,'commands':commands,'selected_attachments':attachments,
+ 'input_payload_files':len(before),'all_input_files_unchanged':not changes,'disposable_extracted_copy_changes':changes,'pristine_archive_unchanged':True,'commands':commands,'selected_attachments':attachments,
  'SDK_cases_or_application_or_provider_execution':False,'legacy_flag_scope':'saved result object format reader only'}
 (out/'inspection.json').write_text(json.dumps(report,indent=2)+'\n')
-print(json.dumps({'input_files_unchanged':True,'read_only_commands':len(commands),'selected_attachments':len(attachments)}))
+print(json.dumps({'pristine_archive_unchanged':True,'disposable_copy_changes':len(changes),'diagnostic_commands':len(commands),'selected_attachments':len(attachments)}))
 assert any(p.is_file() and p.suffix in ('.txt','.png','.jpeg') and p.stat().st_size for p in exports.rglob('*')),'No readable exported attachments; inspect retained tool diagnostics.'
