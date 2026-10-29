@@ -160,4 +160,54 @@ struct PackingReloadEpochTests {
         #expect(drained.wait(timeout: .now() + 5) == .success)
         #expect(observed.wait(timeout: .now()) == .success)
     }
+
+    @Test func eventDoesNotEscapeAfterTeardownBetweenCheckAndDelivery() {
+        let queue = DispatchQueue(label: "packing.reload.check.delivery")
+        let owner = UUID().uuidString
+        let checked = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let closed = DispatchSemaphore(value: 0)
+        let eventDelivered = DispatchSemaphore(value: 0)
+        let drained = DispatchSemaphore(value: 0)
+        PackingQualificationSetBeforeNotify {
+            checked.signal()
+            _ = release.wait(timeout: .now() + 10)
+        }
+        queue.async {
+            let plugin = CAPPlugin()
+            plugin.eventListeners = [:]
+            plugin.retainedEventArguments = [:]
+            let listener = CAPPluginCall(callbackId: UUID().uuidString, methodName: "listener", options: [:], success: { _, _ in
+                eventDelivered.signal()
+            }, error: { _ in })!
+            plugin.addEventListener("captureWorkspaceLocked", listener: listener)
+            #expect(PackingCallbacksBindOwner(plugin, queue, owner))
+            if let epoch = PackingCallbacksOwnerEpoch(owner) {
+                #expect(PackingCallbacksNotifyOwnerForEpoch(owner, epoch, "captureWorkspaceLocked", Data("{}".utf8)))
+            } else { Issue.record("Missing owner epoch") }
+            let drain = CAPPluginCall(callbackId: UUID().uuidString, methodName: "drain", options: [:], success: { _, _ in
+                dispatchPrecondition(condition: .onQueue(queue))
+                #expect(plugin.hasListeners("captureWorkspaceLocked"))
+                plugin.eventListeners = [:]
+                drained.signal()
+            }, error: { _ in Issue.record("Drain unexpectedly rejected."); drained.signal() })!
+            if let token = PackingCallbacksRegister(drain, queue, UUID().uuidString) {
+                #expect(PackingCallbacksResolveNil(token))
+            } else { Issue.record("Drain registration failed."); drained.signal() }
+        }
+        #expect(checked.wait(timeout: .now() + 5) == .success)
+        DispatchQueue.global().async {
+            PackingCallbacksUnbindOwner(owner, "Closed", "STORAGE_CHANGED")
+            closed.signal()
+        }
+        let closedBeforeDelivery = closed.wait(timeout: .now() + 1) == .success
+        release.signal()
+        #expect(drained.wait(timeout: .now() + 5) == .success)
+        if closedBeforeDelivery {
+            #expect(eventDelivered.wait(timeout: .now()) == .timedOut)
+        } else {
+            #expect(closed.wait(timeout: .now() + 5) == .success)
+        }
+        PackingQualificationSetBeforeNotify(nil)
+    }
 }

@@ -40,6 +40,7 @@ static NSUInteger PackingCancelEpoch(NSString *, NSString *, NSString *, NSStrin
 static NSCondition *PackingTableLock;
 static NSMutableDictionary<NSString *, PackingCallbackEntry *> *PackingTable;
 static NSMutableDictionary<NSString *, PackingCallbackOwner *> *PackingOwners;
+static dispatch_block_t PackingQualificationBeforeNotify;
 
 static void PackingInitialize(void) {
     static dispatch_once_t once;
@@ -48,6 +49,14 @@ static void PackingInitialize(void) {
         PackingTable = [[NSMutableDictionary alloc] init];
         PackingOwners = [[NSMutableDictionary alloc] init];
     });
+}
+
+// This setter and hook exist only in the isolated test fixture.
+void PackingQualificationSetBeforeNotify(dispatch_block_t hook) {
+    PackingInitialize();
+    [PackingTableLock lock];
+    PackingQualificationBeforeNotify = [hook copy];
+    [PackingTableLock unlock];
 }
 
 BOOL PackingCallbacksBindOwner(CAPPlugin *plugin, dispatch_queue_t sdkQueue, NSString *owner) {
@@ -184,8 +193,10 @@ static BOOL PackingNotifyOwner(NSString *owner, NSString *expectedEpoch, NSStrin
         dispatch_assert_queue(queue);
         [PackingTableLock lock];
         BOOL current = PackingOwners[identity] == binding && !binding.resetting && [binding.epoch isEqualToString:epoch];
+        dispatch_block_t qualificationHook = PackingQualificationBeforeNotify;
         [PackingTableLock unlock];
         if (!current) { return; }
+        if (qualificationHook != nil) { qualificationHook(); }
         CAPPlugin *plugin = binding.plugin;
         if (plugin == nil) { return; }
         NSError *error = nil;
