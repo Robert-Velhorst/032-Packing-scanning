@@ -2,6 +2,18 @@ import XCTest
 import CoreGraphics
 import ImageIO
 
+// The native fixture is normalized and asserted as 512x2048 before seeding.
+// object-fit:contain centers that portrait inside a wide image element. Sample
+// the fitted photo, so letterboxing cannot create false negatives/positives.
+private func referencePhotoContentRect(_ size: CGSize) -> CGRect? {
+    guard size.width.isFinite, size.height.isFinite,
+          size.width > 0, size.height > 0 else { return nil }
+    let scale = min(size.width / 512, size.height / 2048)
+    let width = 512 * scale, height = 2048 * scale
+    return CGRect(x: (size.width - width) / 2, y: (size.height - height) / 2,
+                  width: width, height: height).integral.intersection(CGRect(origin: .zero, size: size))
+}
+
 final class PackingPhotoUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
@@ -72,11 +84,13 @@ final class PackingPhotoUITests: XCTestCase {
         let attachment = XCTAttachment(screenshot: screenshot); attachment.name = "Rendered synthetic reference photo"; attachment.lifetime = .keepAlways; add(attachment)
         guard let source = CGImageSourceCreateWithData(screenshot.pngRepresentation as CFData, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { XCTFail("Reference screenshot could not be decoded"); return }
+        guard let content = referencePhotoContentRect(CGSize(width: CGFloat(image.width), height: CGFloat(image.height))),
+              let photo = image.cropping(to: content) else { XCTFail("Rendered reference photo bounds are invalid"); return }
         var pixels = [UInt8](repeating: 0, count: 32 * 32 * 4)
         let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
             guard let context = CGContext(data: buffer.baseAddress, width: 32, height: 32, bitsPerComponent: 8, bytesPerRow: 32 * 4,
                 space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return false }
-            context.draw(image, in: CGRect(x: 0, y: 0, width: 32, height: 32)); return true
+            context.draw(photo, in: CGRect(x: 0, y: 0, width: 32, height: 32)); return true
         }
         XCTAssertTrue(drawn)
         let red = stride(from: 0, to: pixels.count, by: 4).filter { pixels[$0] > 150 && pixels[$0 + 1] < 100 && pixels[$0 + 2] < 100 }.count
