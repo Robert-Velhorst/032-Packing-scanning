@@ -1,0 +1,85 @@
+name: Android current stable qualification
+
+on:
+  push:
+    branches: ['qualify/packing-android-current-20261029']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: Android tests, lint and assemblies
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      PACKING_ACCOUNT_ORIGIN: ''
+      NPM_CONFIG_ENGINE_STRICT: 'true'
+      NPM_CONFIG_STRICT_PEER_DEPS: 'true'
+      GRADLE_USER_HOME: ${{ runner.temp }}/packing-android-gradle
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.0
+          cache: npm
+      - name: Select current stable Java 27
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '27.0.1+0'
+      - name: Use current stable npm
+        run: npm install --global npm@12.2.1
+      - name: Install final Android SDK and stable metadata gate
+        shell: bash
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37.2' 'build-tools;37.0.0'
+          mkdir -p "$GRADLE_USER_HOME/init.d"
+          cp .github/qualification/android-stable-metadata.gradle "$GRADLE_USER_HOME/init.d/packing-stable-metadata.gradle"
+          java -version
+          node --version
+          npm --version
+      - run: npm ci --ignore-scripts
+      - name: Build bundled app, run native tests and lint
+        shell: bash
+        run: bash scripts/build-android.sh 2>&1 | tee "$RUNNER_TEMP/packing-android-build.log"
+      - name: Verify guest APK signatures, bundled assets and 16 KB alignment
+        shell: bash
+        env:
+          PACKING_HEAD_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python3 -B -m unittest discover -s scripts -p 'test_android_apks.py'
+          mkdir "$RUNNER_TEMP/android-guest-qa"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/android-guest-qa/"
+          cp android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk "$RUNNER_TEMP/android-guest-qa/"
+          cp android/app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/android-guest-qa/"
+          python3 -B scripts/verify_android_apks.py \
+            --debug "$RUNNER_TEMP/android-guest-qa/app-debug.apk" \
+            --instrumentation "$RUNNER_TEMP/android-guest-qa/app-debug-androidTest.apk" \
+            --release "$RUNNER_TEMP/android-guest-qa/app-release-unsigned.apk" \
+            --dist dist --build-tools "$ANDROID_HOME/build-tools/37.0.0" \
+            --source-revision "$(git rev-parse HEAD)" --head-revision "$PACKING_HEAD_REVISION" \
+            --output "$RUNNER_TEMP/android-guest-qa/android-artifacts.json"
+      - name: Preserve verified guest QA APKs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-guest-qa-apks
+          path: ${{ runner.temp }}/android-guest-qa/
+          retention-days: 7
+          if-no-files-found: error
+      - name: Preserve native build diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-build-diagnostics
+          path: |
+            ${{ runner.temp }}/packing-android-build.log
+            android/app/build/test-results/testDebugUnitTest/*.xml
+            android/app/build/reports/lint-results-*.html
+          retention-days: 7
+          if-no-files-found: ignore

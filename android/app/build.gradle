@@ -39,7 +39,7 @@ dependencies {
     implementation 'androidx.exifinterface:exifinterface:1.4.2'
     implementation project(':capacitor-android')
     implementation 'com.google.ar:core:1.57.0'
-    implementation 'com.google.ai.edge.litert:litert:2.3.0'
+    implementation 'com.google.ai.edge.litert:litert:2.3.2'
     testImplementation "junit:junit:$junitVersion"
     testImplementation 'org.json:json:20260814'
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"

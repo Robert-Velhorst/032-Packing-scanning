@@ -12,6 +12,8 @@ on:
       - 'scripts/verify_android_apks.py'
       - 'scripts/test_android_apks.py'
       - '.github/workflows/android.yml'
+      - '.github/qualification/android-stable-metadata.gradle'
+      - 'scripts/build-android.ps1'
   push:
     branches: [main]
     paths:
@@ -24,6 +26,8 @@ on:
       - 'scripts/verify_android_apks.py'
       - 'scripts/test_android_apks.py'
       - '.github/workflows/android.yml'
+      - '.github/qualification/android-stable-metadata.gradle'
+      - 'scripts/build-android.ps1'
   workflow_dispatch:
 
 permissions:
@@ -40,18 +44,31 @@ jobs:
     timeout-minutes: 30
     env:
       PACKING_ACCOUNT_ORIGIN: ''
+      NPM_CONFIG_ENGINE_STRICT: 'true'
+      NPM_CONFIG_STRICT_PEER_DEPS: 'true'
+      GRADLE_USER_HOME: ${{ runner.temp }}/packing-android-gradle
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 26.12.0
+          node-version: 26.13.0
           cache: npm
-      - name: Select preinstalled Java 21
+      - name: Select current stable Java 27
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '27.0.1+0'
+      - name: Use current stable npm
+        run: npm install --global npm@12.2.1
+      - name: Install final Android SDK and stable metadata gate
         shell: bash
         run: |
-          test -x "$JAVA_HOME_21_X64/bin/java"
-          echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
-          echo "$JAVA_HOME_21_X64/bin" >> "$GITHUB_PATH"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37.2' 'build-tools;37.0.0'
+          mkdir -p "$GRADLE_USER_HOME/init.d"
+          cp .github/qualification/android-stable-metadata.gradle "$GRADLE_USER_HOME/init.d/packing-stable-metadata.gradle"
+          java -version
+          node --version
+          npm --version
       - run: npm ci --ignore-scripts
       - name: Build bundled app, run native tests and lint
         shell: bash
@@ -70,7 +87,7 @@ jobs:
             --debug "$RUNNER_TEMP/android-guest-qa/app-debug.apk" \
             --instrumentation "$RUNNER_TEMP/android-guest-qa/app-debug-androidTest.apk" \
             --release "$RUNNER_TEMP/android-guest-qa/app-release-unsigned.apk" \
-            --dist dist --build-tools "$ANDROID_HOME/build-tools/36.0.0" \
+            --dist dist --build-tools "$ANDROID_HOME/build-tools/37.0.0" \
             --source-revision "$(git rev-parse HEAD)" --head-revision "$PACKING_HEAD_REVISION" \
             --output "$RUNNER_TEMP/android-guest-qa/android-artifacts.json"
       - name: Preserve verified guest QA APKs

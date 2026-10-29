@@ -8,16 +8,16 @@ $ErrorActionPreference = 'Stop'
 $taskRepo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $taskLocalTools = Join-Path $taskRepo '.local-tools'
 if (-not $JavaHome) {
-    $JavaHome = (Get-ChildItem -LiteralPath (Join-Path $taskLocalTools 'java21') -Directory -ErrorAction SilentlyContinue |
+    $JavaHome = (Get-ChildItem -LiteralPath (Join-Path $taskLocalTools 'java27') -Directory -ErrorAction SilentlyContinue |
         Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'bin/java.exe') } |
         Select-Object -First 1).FullName
 }
 if (-not $SdkRoot) { $SdkRoot = Join-Path $taskLocalTools 'android-sdk' }
 if (-not $JavaHome -or -not (Test-Path -LiteralPath (Join-Path $JavaHome 'bin/java.exe'))) {
-    throw 'Supply -JavaHome pointing to an installed Java 21 JDK.'
+    throw 'Supply -JavaHome pointing to an installed Java 27 JDK.'
 }
-if (-not (Test-Path -LiteralPath (Join-Path $SdkRoot 'platforms/android-36/android.jar'))) {
-    throw 'Supply -SdkRoot pointing to an Android SDK with platform 36 installed. This script does not install the SDK or accept licences.'
+if (-not (Test-Path -LiteralPath (Join-Path $SdkRoot 'platforms/android-37.2/android.jar'))) {
+    throw 'Supply -SdkRoot pointing to an Android SDK with platform 37.2 installed. This script does not install the SDK or accept licences.'
 }
 
 $taskPreviousEnvironment = @{}

@@ -1,0 +1,23 @@
+// Project-owned current toolchain policy, applied after each Android DSL is configured.
+// Keep generated Capacitor files and vendor sources untouched; never force dependency versions.
+subprojects { androidProject ->
+    ['com.android.application', 'com.android.library'].each { androidPlugin ->
+        androidProject.plugins.withId(androidPlugin) {
+            androidProject.androidComponents.finalizeDsl { extension ->
+                extension.compileSdk {
+                    version = release(rootProject.ext.compileSdkVersion) {
+                        minorApiLevel = rootProject.ext.compileSdkMinorVersion
+                    }
+                }
+                extension.buildToolsVersion = rootProject.ext.buildToolsVersion
+                extension.compileOptions {
+                    sourceCompatibility = JavaVersion.VERSION_27
+                    targetCompatibility = JavaVersion.VERSION_27
+                }
+                if (androidPlugin == 'com.android.application') {
+                    extension.defaultConfig.targetSdk = rootProject.ext.targetSdkVersion
+                }
+            }
+        }
+    }
+}

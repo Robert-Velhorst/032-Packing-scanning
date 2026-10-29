@@ -1,0 +1,18 @@
+// Fail during metadata selection, before an unclassified component's artifact is downloaded.
+// This does not force a replacement or choose a different dependency version.
+gradle.beforeProject { project ->
+    def stableOnly = { selection ->
+        def version = selection.candidate.version
+        // The Android/JRE suffixes identify Guava's published target distributions.
+        // Other suffixes require publisher evidence; never silently choose an older version.
+        if (!(version ==~ /[0-9]+(?:\.[0-9]+)*(?:-(?:jre|android))?/)) {
+            throw new GradleException("Dependency release classification is not approved: ${selection.candidate}")
+        }
+    }
+    project.buildscript.configurations.configureEach { configuration ->
+        configuration.resolutionStrategy.componentSelection.all(stableOnly)
+    }
+    project.configurations.configureEach { configuration ->
+        configuration.resolutionStrategy.componentSelection.all(stableOnly)
+    }
+}
