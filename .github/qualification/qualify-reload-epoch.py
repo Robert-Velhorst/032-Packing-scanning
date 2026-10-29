@@ -40,6 +40,7 @@ def main():
             'ios/App/App/PackingSDKCallbacks.m': 'Sources/PackingSDKCallbacks/PackingSDKCallbacks.m',
             'ios/App/App/PackingCallbackToken.swift': 'Sources/PackingCallbackConsumer/PackingCallbackToken.swift',
             '.github/qualification/PackingScanGeneration.swift': 'Sources/PackingCallbackConsumer/PackingScanGeneration.swift',
+            '.github/qualification/PackingGuestScanOwnership.swift': 'Sources/PackingCallbackConsumer/PackingGuestScanOwnership.swift',
             '.github/qualification/stock-boundary-probe.swift': 'Sources/PackingCallbackConsumer/Boundary.swift',
             'ios/App/App/PackingPrintPlugin.swift': 'Sources/PackingCallbackConsumer/PackingPrintPlugin.swift',
             'ios/App/App/PackingForeground.swift': 'Sources/PackingCallbackConsumer/PackingForeground.swift',
@@ -50,6 +51,7 @@ def main():
             '.github/qualification/PackingScanSupportTests.swift': 'Tests/PackingScanSupportTests/PackingScanSupportTests.swift',
             '.github/qualification/PackingReloadEpochTests.swift': 'Tests/PackingReloadEpochTests/PackingReloadEpochTests.swift',
             '.github/qualification/PackingCancellationCleanupTests.swift': 'Tests/PackingCancellationCleanupTests/PackingCancellationCleanupTests.swift',
+            '.github/qualification/PackingGuestOwnershipTests.swift': 'Tests/PackingGuestOwnershipTests/PackingGuestOwnershipTests.swift',
             '.github/qualification/PackingCallbackConsumerTests.swift': 'Tests/PackingCallbackConsumerTests/PackingCallbackConsumerTests.swift',
         }
         report['original_checkout_inputs'] = {}
@@ -91,14 +93,14 @@ def main():
                                    'IPHONEOS_DEPLOYMENT_TARGET=15.4', 'CODE_SIGNING_ALLOWED=NO', 'test'])
         test_source = '\n'.join(p.read_text(encoding='utf-8') for p in sorted((consumer / 'Tests').rglob('*.swift')))
         expected = re.findall(r'@Test(?:\s+@MainActor)?\s+func (\w+)\(', test_source)
-        assert len(expected) == 35
+        assert len(expected) == 40
         passed = [name for name in expected if re.search(r'Test ' + name + r'\(\) passed', log)]
         report['component_cases_expected'] = expected
         report['component_cases_reported_passed'] = passed
         assert passed == expected and '** TEST SUCCEEDED **' in log
         report['thread_sanitizer_requested'] = True
         report['test_summary'] = json.loads(run('xcresult-summary', ['xcrun', 'xcresulttool', 'get', 'test-results', 'summary', '--path', str(bundle)], 60))
-        for key, expected_count in [('passedTests', 35), ('failedTests', 0), ('skippedTests', 0)]:
+        for key, expected_count in [('passedTests', 40), ('failedTests', 0), ('skippedTests', 0)]:
             assert report['test_summary'].get(key) == expected_count
         for path, digest in report['consumer_before'].items():
             assert hashlib.sha256((consumer / path).read_bytes()).hexdigest() == digest
@@ -109,7 +111,7 @@ def main():
         if 'SDK_binary_payloads_before' in report:
             report['SDK_binary_payloads_unchanged'] = report['SDK_binary_payloads_before'] == snapshot(artifacts)
         (out / 'result.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
-    print(json.dumps({'component_acceptance': True, 'cases': 35, 'scope': report['scope']}))
+    print(json.dumps({'component_acceptance': True, 'cases': 40, 'scope': report['scope']}))
 
 
 if __name__ == '__main__':

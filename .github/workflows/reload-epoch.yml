@@ -1,7 +1,7 @@
 name: Scan reload generation support qualification
 on:
   push:
-    branches: [qualify/packing-no-eager-cleanup-20261029]
+    branches: [qualify/packing-guest-ownership-20261029]
 permissions:
   contents: read
 jobs:
@@ -37,7 +37,7 @@ jobs:
         run: |
           xcrun swiftc -sanitize=thread -g -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingCaptureBridgeValues.swift scripts/test-ios-capture-bridge-values.swift -o "$RUNNER_TEMP/capture-bridge-checks"
           TSAN_OPTIONS=halt_on_error=1:exitcode=66 "$RUNNER_TEMP/capture-bridge-checks"
-      - name: Run all35 callback Print Scan and cancellation cases with Thread Sanitizer
+      - name: Run all40 callback Print Scan and ownership cases with Thread Sanitizer
         run: python .github/qualification/qualify-reload-epoch.py
       - name: Bind all checked-out inputs after qualification
         if: always()
