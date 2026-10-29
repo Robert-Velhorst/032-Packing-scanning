@@ -275,7 +275,7 @@ BOOL PackingCallbacksSetGuardWithCancellation(NSString *token, PackingCallbackDe
     PackingInitialize();
     [PackingTableLock lock];
     PackingCallbackEntry *entry = PackingTable[token];
-    BOOL accepted = entry != nil && !entry.claimed && !entry.cancelled;
+    BOOL accepted = entry != nil && !entry.claimed && !entry.cancelled && entry.deliveryGuard == nil;
     if (accepted) {
         entry.deliveryGuard = guard;
         entry.guardFailureMessage = failureMessage;
@@ -300,7 +300,10 @@ static void PackingApplyDeliveryGuard(PackingCallbackEntry *entry, dispatch_bloc
     };
     if (entry.deliveryGuard != nil) { entry.deliveryGuard(once); } else { once(); }
     closed = YES;
-    if (!invoked) { [entry.call reject:entry.guardFailureMessage :entry.guardFailureCode :nil :nil]; }
+    if (!invoked) {
+        if (entry.cancellationCleanup != nil) { entry.cancellationCleanup(); }
+        [entry.call reject:entry.guardFailureMessage :entry.guardFailureCode :nil :nil];
+    }
 }
 
 static BOOL PackingDeliverCancellation(NSString *token, PackingCallbackEntry *entry) {
@@ -350,6 +353,7 @@ BOOL PackingCallbacksResolveJSON(NSString *token, NSData *json) {
             NSError *error = nil;
             id result = [NSJSONSerialization JSONObjectWithData:payload options:0 error:&error];
             if (error != nil || ![result isKindOfClass:NSDictionary.class]) {
+                if (entry.cancellationCleanup != nil) { entry.cancellationCleanup(); }
                 [entry.call reject:@"The native response could not be encoded." :@"NATIVE_RESPONSE_INVALID" :nil :nil];
                 return;
             }
@@ -367,6 +371,7 @@ BOOL PackingCallbacksReject(NSString *token, NSString *message, NSString *code) 
     dispatch_async(entry.queue, ^{
         dispatch_assert_queue(entry.queue);
         if (PackingDeliverCancellation(token, entry)) { return; }
+        if (entry.cancellationCleanup != nil) { entry.cancellationCleanup(); }
         [entry.call reject:frozenMessage :frozenCode :nil :nil];
     });
     return YES;
