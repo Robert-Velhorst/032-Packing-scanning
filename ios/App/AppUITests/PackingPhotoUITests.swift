@@ -48,6 +48,7 @@ final class PackingPhotoUITests: XCTestCase {
         XCTFail("Web button is not reachable: \(name)")
     }
     @MainActor private func launchGuest(_ app: XCUIApplication) {
+        app.launchEnvironment["PACKING_SYNTHETIC_GUEST_UI_DIAGNOSTICS"] = "1"
         app.launch()
         let guest = app.webViews.buttons["Use guest packs"]
         if guest.waitForExistence(timeout: 10) { guest.tap() }

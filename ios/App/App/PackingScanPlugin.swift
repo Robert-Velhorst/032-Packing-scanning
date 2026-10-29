@@ -675,6 +675,13 @@ private struct NativeScanFlow: View {
 
 @objc(ScanBridgeViewController)
 class ScanBridgeViewController: CAPBridgeViewController {
+    #if DEBUG && targetEnvironment(simulator)
+    override func webViewConfiguration(for instanceConfiguration: InstanceConfiguration) -> WKWebViewConfiguration {
+        let configuration = super.webViewConfiguration(for: instanceConfiguration)
+        PackingUIQualificationLog.install(on: configuration)
+        return configuration
+    }
+    #endif
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(PackingScanPlugin())
         bridge?.registerPluginInstance(PackingVoicePlugin())
@@ -684,3 +691,52 @@ class ScanBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(PackingPhotoPlugin())
     }
 }
+#if DEBUG && targetEnvironment(simulator)
+import WebKit
+import OSLog
+
+/// Opt-in synthetic guest UI diagnostics. No release/device implementation or account response logging.
+@MainActor private final class PackingUIQualificationLog: NSObject, WKScriptMessageHandler {
+    private static let logger = Logger(subsystem: "com.packingscanning.app.UIQualification", category: "synthetic-ui")
+    private var messages = 0
+
+    static func install(on configuration: WKWebViewConfiguration) {
+        guard ProcessInfo.processInfo.environment["PACKING_SYNTHETIC_GUEST_UI_DIAGNOSTICS"] == "1" else { return }
+        let controller = configuration.userContentController
+        controller.add(PackingUIQualificationLog(), name: "packingSyntheticQualification")
+        controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard messages < 100, message.frameInfo.isMainFrame,
+              let url = message.frameInfo.request.url, url.scheme == "capacitor", url.host == "localhost",
+              let body = message.body as? [String: String],
+              let kind = body["kind"], ["error", "rejection", "dom"].contains(kind),
+              body.keys.allSatisfy({ ["kind", "name", "text", "path", "line", "column"].contains($0) }),
+              body.values.allSatisfy({ $0.utf8.count <= 2048 }),
+              let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]),
+              let text = String(data: data, encoding: .utf8) else { return }
+        messages += 1
+        Self.logger.error("UIQUAL \(text, privacy: .public)")
+    }
+
+    private static let source = #"""
+    (() => {
+      const clean = value => String(value ?? '').replace(/(https?:\/\/[^\s?#]+)[?#][^\s]*/g, '$1').slice(0, 1024);
+      const emit = value => { try { window.webkit.messageHandlers.packingSyntheticQualification.postMessage(value); } catch {} };
+      window.addEventListener('error', event => emit({kind:'error', name:clean(event.error?.name), text:clean(event.message), path:clean((event.filename || '').split(/[?#]/)[0]), line:String(event.lineno || 0), column:String(event.colno || 0)}));
+      window.addEventListener('unhandledrejection', event => emit({kind:'rejection', name:clean(event.reason?.name), text:clean(event.reason?.message ?? event.reason)}));
+      let last = '', pending = false;
+      const describe = () => {
+        pending = false;
+        const root = document.getElementById('root');
+        const state = [document.visibilityState, root?.childElementCount ?? -1, root?.querySelectorAll('button').length ?? 0, root?.querySelectorAll('input').length ?? 0].join(':');
+        if (state !== last) { last = state; emit({kind:'dom', text:state}); }
+      };
+      new MutationObserver(() => { if (!pending) { pending = true; setTimeout(describe, 200); } }).observe(document, {childList:true, subtree:true});
+      document.addEventListener('visibilitychange', describe);
+      document.addEventListener('DOMContentLoaded', describe);
+    })();
+    """#
+}
+#endif

@@ -36,7 +36,7 @@ else:
             assert re.fullmatch(r'[0-9A-Fa-f-]{36}',selected['udid'])
             (root/'selected-simulator.json').write_text(json.dumps({'name':selected['name'],'udid':selected['udid'],'session':session},indent=2)+'\n')
             with (root/'app-console.ndjson').open('wb')as output,(root/'stream-errors.log').open('wb')as errors:
-                stream=subprocess.Popen(['xcrun','simctl','spawn',selected['udid'],'log','stream','--style','ndjson','--level','debug','--predicate','process == "App"'],stdin=subprocess.DEVNULL,stdout=output,stderr=errors)
+                stream=subprocess.Popen(['xcrun','simctl','spawn',selected['udid'],'log','stream','--style','ndjson','--level','info','--predicate','process == "App" AND subsystem == "com.packingscanning.app.UIQualification"'],stdin=subprocess.DEVNULL,stdout=output,stderr=errors)
                 while not stopping and stream.poll()is None and time.monotonic()-started<1800:
                     if (root/'app-console.ndjson').stat().st_size>64*1024*1024:truncated=True;break
                     time.sleep(.5)
