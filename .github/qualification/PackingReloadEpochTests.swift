@@ -85,6 +85,9 @@ struct PackingReloadEpochTests {
         let drained = DispatchSemaphore(value: 0)
         queue.async {
             let plugin = CAPPlugin()
+            // Match the SDK load-time listener state, as the existing Scan support controls do.
+            plugin.eventListeners = [:]
+            plugin.retainedEventArguments = [:]
             let listener = CAPPluginCall(callbackId: UUID().uuidString, methodName: "listener", options: [:], success: { _, _ in
                 eventDelivered.signal()
             }, error: { _ in })!
@@ -105,10 +108,18 @@ struct PackingReloadEpochTests {
                 teardownDone.signal()
             }
             #expect(enteredRevoker.wait(timeout: .now() + 5) == .success)
-            queue.async {
-                withExtendedLifetime(plugin) { withExtendedLifetime(listener) {} }
+            // A real SDK promise keeps the plugin alive until the event's
+            // queue position has passed, without sending the plugin to Swift actors.
+            let drain = CAPPluginCall(callbackId: UUID().uuidString, methodName: "drain", options: [:], success: { _, _ in
+                dispatchPrecondition(condition: .onQueue(queue))
+                #expect(plugin.hasListeners("captureWorkspaceLocked"))
+                plugin.eventListeners = [:]
                 drained.signal()
+            }, error: { _ in Issue.record("Drain unexpectedly rejected."); drained.signal() })!
+            guard let token = PackingCallbacksRegister(drain, queue, UUID().uuidString) else {
+                Issue.record("Drain registration failed."); drained.signal(); return
             }
+            #expect(PackingCallbacksResolveNil(token))
         }
         #expect(drained.wait(timeout: .now() + 5) == .success)
         #expect(eventDelivered.wait(timeout: .now()) == .timedOut)
@@ -123,6 +134,9 @@ struct PackingReloadEpochTests {
         let drained = DispatchSemaphore(value: 0)
         queue.async {
             let plugin = CAPPlugin()
+            // Match the SDK load-time listener state, as the existing Scan support controls do.
+            plugin.eventListeners = [:]
+            plugin.retainedEventArguments = [:]
             let listener = CAPPluginCall(callbackId: UUID().uuidString, methodName: "listener", options: [:], success: { _, _ in
                 observed.signal()
             }, error: { _ in })!
@@ -131,11 +145,17 @@ struct PackingReloadEpochTests {
             if let epoch = PackingCallbacksOwnerEpoch(owner) {
                 #expect(PackingCallbacksNotifyOwnerForEpoch(owner, epoch, "captureWorkspaceLocked", Data("{}".utf8)))
             } else { Issue.record("Missing owner epoch") }
-            queue.async {
-                withExtendedLifetime(plugin) { withExtendedLifetime(listener) {} }
+            let drain = CAPPluginCall(callbackId: UUID().uuidString, methodName: "drain", options: [:], success: { _, _ in
+                dispatchPrecondition(condition: .onQueue(queue))
+                #expect(plugin.hasListeners("captureWorkspaceLocked"))
+                plugin.eventListeners = [:]
                 PackingCallbacksUnbindOwner(owner, "Closed", nil)
                 drained.signal()
+            }, error: { _ in Issue.record("Drain unexpectedly rejected."); drained.signal() })!
+            guard let token = PackingCallbacksRegister(drain, queue, UUID().uuidString) else {
+                Issue.record("Drain registration failed."); drained.signal(); return
             }
+            #expect(PackingCallbacksResolveNil(token))
         }
         #expect(drained.wait(timeout: .now() + 5) == .success)
         #expect(observed.wait(timeout: .now()) == .success)
