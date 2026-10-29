@@ -1,6 +1,7 @@
-name: Packing current stable dependency resolution
+name: Packing ordinary transitive stable refresh
 on:
-  workflow_dispatch:
+  push:
+    branches: [qualify/packing-transitive-refresh-20261029]
 permissions:
   contents: read
 jobs:
@@ -24,8 +25,8 @@ jobs:
         run: npm install --global npm@12.2.1
       - name: Bind original source and exact current direct profile
         run: python .github/qualification/current-lock-review.py before
-      - name: Resolve ordinary current graph without forced overrides
-        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Refresh all ordinary semver-permitted transitive versions without forced overrides
+        run: npm update --package-lock-only --ignore-scripts --no-audit --no-fund
       - name: Preserve raw full-graph advisory results
         run: npm audit --json > "$RUNNER_TEMP/packing-current-lock/npm-audit.json"
       - name: Reconcile generated lock and original source
