@@ -1,0 +1,42 @@
+name: Packing current stable dependency resolution
+on:
+  push:
+    branches: [qualify/packing-current-stable-20261029]
+permissions:
+  contents: read
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NPM_CONFIG_ENGINE_STRICT: 'true'
+      NPM_CONFIG_STRICT_PEER_DEPS: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '26.13.0'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.15.2'
+      - name: Use current stable npm
+        run: npm install --global npm@12.2.1
+      - name: Bind original source and exact current direct profile
+        run: python .github/qualification/current-lock-review.py before
+      - name: Resolve ordinary current graph without forced overrides
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Preserve raw full-graph advisory results
+        run: npm audit --json > "$RUNNER_TEMP/packing-current-lock/npm-audit.json"
+      - name: Reconcile generated lock and original source
+        if: always()
+        run: python .github/qualification/current-lock-review.py after
+      - name: Retain dependency resolution evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: packing-current-lock
+          path: ${{ runner.temp }}/packing-current-lock/*.json
+          retention-days: 14
+          if-no-files-found: error
