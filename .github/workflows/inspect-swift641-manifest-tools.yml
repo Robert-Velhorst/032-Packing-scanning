@@ -1,0 +1,44 @@
+name: Observe current Swift manifest tool resolution
+on:
+  push:
+    branches: [qualify/packing-swift641-tools-20261029]
+permissions:
+  contents: read
+jobs:
+  observe:
+    runs-on: xcode-27
+    timeout-minutes: 15
+    env:
+      NPM_CONFIG_ENGINE_STRICT: 'true'
+      NPM_CONFIG_STRICT_PEER_DEPS: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 26.13.0
+          cache: npm
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.15.2'
+      - name: Select stable npm
+        run: npm install --global npm@12.2.1
+      - name: Verify and select signed official Swift 6.4.1
+        run: python .github/qualification/install-current-stable-swift.py
+      - name: Materialize unchanged exact locked manifest dependencies
+        run: npm ci --ignore-scripts
+      - name: Observe tool paths and actual verbose manifest resolution
+        run: python .github/qualification/probe-swift641-manifest-tools.py
+      - name: Retain bounded tool and manifest evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: Swift641-manifest-tool-observation
+          path: |
+            ${{ runner.temp }}/packing-swift641-manifest-tools/*.json
+            ${{ runner.temp }}/packing-swift641-manifest-tools/*.log
+            ${{ runner.temp }}/packing-current-stable-swift/*.json
+            ${{ runner.temp }}/packing-current-stable-swift/*.log
+          if-no-files-found: error
+          retention-days: 14
