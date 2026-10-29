@@ -13,6 +13,7 @@
 @property(nonatomic, strong) CAPPluginCall *call;
 @property(nonatomic, strong) dispatch_queue_t queue;
 @property(nonatomic, copy) NSString *owner;
+@property(nonatomic, copy) NSString *epoch;
 // All terminal/cancellation metadata below is protected by PackingTableLock.
 @property(nonatomic) BOOL claimed;
 @property(nonatomic) BOOL cancelled;
@@ -29,18 +30,21 @@
 @property(nonatomic, weak) CAPPlugin *plugin;
 @property(nonatomic, strong) dispatch_queue_t queue;
 @property(nonatomic, copy) dispatch_block_t revoke;
+@property(nonatomic, copy) NSString *epoch;
+@property(nonatomic) BOOL resetting;
 @end
 @implementation PackingCallbackOwner
 @end
 
-static NSLock *PackingTableLock;
+static NSUInteger PackingCancelEpoch(NSString *, NSString *, NSString *, NSString *);
+static NSCondition *PackingTableLock;
 static NSMutableDictionary<NSString *, PackingCallbackEntry *> *PackingTable;
 static NSMutableDictionary<NSString *, PackingCallbackOwner *> *PackingOwners;
 
 static void PackingInitialize(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        PackingTableLock = [[NSLock alloc] init];
+        PackingTableLock = [[NSCondition alloc] init];
         PackingTable = [[NSMutableDictionary alloc] init];
         PackingOwners = [[NSMutableDictionary alloc] init];
     });
@@ -53,6 +57,8 @@ BOOL PackingCallbacksBindOwner(CAPPlugin *plugin, dispatch_queue_t sdkQueue, NSS
     [PackingTableLock lock];
     PackingCallbackOwner *existing = PackingOwners[owner];
     if (existing != nil) {
+        if (existing.resetting) { [PackingTableLock unlock]; return NO; }
+        if (existing.queue == nil) { existing.plugin = plugin; existing.queue = sdkQueue; }
         BOOL same = existing.plugin == plugin && existing.queue == sdkQueue;
         [PackingTableLock unlock];
         return same;
@@ -61,46 +67,123 @@ BOOL PackingCallbacksBindOwner(CAPPlugin *plugin, dispatch_queue_t sdkQueue, NSS
     PackingCallbackOwner *binding = [[PackingCallbackOwner alloc] init];
     binding.plugin = plugin;
     binding.queue = sdkQueue;
+    binding.epoch = NSUUID.UUID.UUIDString;
     PackingOwners[owner] = binding;
     [PackingTableLock unlock];
     return YES;
+}
+
+BOOL PackingCallbacksResetOwner(NSString *owner, NSString *message, NSString *code) {
+    if (owner.length == 0) { return NO; }
+    PackingInitialize();
+    [PackingTableLock lock];
+    PackingCallbackOwner *binding = PackingOwners[owner];
+    if (binding.resetting) { [PackingTableLock unlock]; return NO; }
+    if (binding == nil) {
+        if (PackingOwners.count >= 64) { [PackingTableLock unlock]; return NO; }
+        binding = [[PackingCallbackOwner alloc] init];
+        PackingOwners[owner] = binding;
+    }
+    NSString *previous = binding.epoch;
+    dispatch_block_t revoke = binding.revoke;
+    binding.revoke = nil;
+    binding.epoch = NSUUID.UUID.UUIDString;
+    NSString *current = binding.epoch;
+    binding.resetting = YES;
+    [PackingTableLock unlock];
+    if (revoke != nil) { revoke(); }
+    PackingCancelEpoch(owner, previous, message, code);
+    [PackingTableLock lock];
+    if (PackingOwners[owner] == binding && [binding.epoch isEqualToString:current]) {
+        binding.resetting = NO;
+    }
+    [PackingTableLock broadcast];
+    [PackingTableLock unlock];
+    return YES;
+}
+
+NSString *PackingCallbacksOwnerEpoch(NSString *owner) {
+    PackingInitialize();
+    [PackingTableLock lock];
+    PackingCallbackOwner *binding = PackingOwners[owner];
+    NSString *epoch = binding.resetting ? nil : binding.epoch;
+    [PackingTableLock unlock];
+    return epoch;
+}
+
+NSString *PackingCallbacksTokenEpoch(NSString *token) {
+    PackingInitialize();
+    [PackingTableLock lock];
+    NSString *epoch = PackingTable[token].epoch;
+    [PackingTableLock unlock];
+    return epoch;
+}
+
+BOOL PackingCallbacksSetRevocationForEpoch(NSString *owner, NSString *epoch, dispatch_block_t revoke) {
+    PackingInitialize();
+    [PackingTableLock lock];
+    PackingCallbackOwner *binding = PackingOwners[owner];
+    BOOL accepted = binding != nil && !binding.resetting && [binding.epoch isEqualToString:epoch];
+    if (accepted) { binding.revoke = revoke; }
+    [PackingTableLock unlock];
+    if (!accepted) { revoke(); }
+    return accepted;
 }
 
 BOOL PackingCallbacksSetOwnerRevocation(NSString *owner, dispatch_block_t revoke) {
     PackingInitialize();
     [PackingTableLock lock];
     PackingCallbackOwner *binding = PackingOwners[owner];
-    if (binding != nil) { binding.revoke = revoke; }
+    BOOL accepted = binding != nil && !binding.resetting;
+    if (accepted) { binding.revoke = revoke; }
     [PackingTableLock unlock];
     // An owner may disappear while UI work opens its lease. Revoke that lease
     // immediately rather than storing an orphan key. Never call under table lock.
-    if (binding == nil) { revoke(); }
-    return binding != nil;
+    if (!accepted) { revoke(); }
+    return accepted;
 }
 
 void PackingCallbacksUnbindOwner(NSString *owner, NSString *message, NSString *code) {
     PackingInitialize();
     [PackingTableLock lock];
-    dispatch_block_t revoke = PackingOwners[owner].revoke;
-    [PackingOwners removeObjectForKey:owner];
+    PackingCallbackOwner *binding = PackingOwners[owner];
+    while (binding != nil && binding.resetting) {
+        [PackingTableLock wait];
+        binding = PackingOwners[owner];
+    }
+    if (binding == nil) {
+        [PackingTableLock unlock];
+        PackingCancelEpoch(owner, nil, message, code);
+        return;
+    }
+    dispatch_block_t revoke = binding.revoke;
+    binding.revoke = nil;
+    binding.resetting = YES;
     [PackingTableLock unlock];
     if (revoke != nil) { revoke(); }
     PackingCallbacksCancelOwner(owner, message, code);
+    [PackingTableLock lock];
+    if (PackingOwners[owner] == binding) { [PackingOwners removeObjectForKey:owner]; }
+    [PackingTableLock broadcast];
+    [PackingTableLock unlock];
 }
 
-BOOL PackingCallbacksNotifyOwner(NSString *owner, NSString *event, NSData *json) {
+static BOOL PackingNotifyOwner(NSString *owner, NSString *expectedEpoch, NSString *event, NSData *json) {
     PackingInitialize();
     [PackingTableLock lock];
     PackingCallbackOwner *binding = PackingOwners[owner];
+    NSString *epoch = binding.epoch;
+    dispatch_queue_t queue = binding.queue;
+    BOOL matches = !binding.resetting && (expectedEpoch == nil || [epoch isEqualToString:expectedEpoch]);
     [PackingTableLock unlock];
-    if (binding == nil) { return NO; }
+    if (binding == nil || queue == nil || !matches) { return NO; }
     NSString *name = [event copy];
     NSString *identity = [owner copy];
     NSData *bytes = [json copy];
-    dispatch_async(binding.queue, ^{
-        dispatch_assert_queue(binding.queue);
+    dispatch_async(queue, ^{
+        dispatch_assert_queue(queue);
         [PackingTableLock lock];
-        BOOL current = PackingOwners[identity] == binding;
+        BOOL current = PackingOwners[identity] == binding && [binding.epoch isEqualToString:epoch];
         [PackingTableLock unlock];
         if (!current) { return; }
         CAPPlugin *plugin = binding.plugin;
@@ -114,11 +197,20 @@ BOOL PackingCallbacksNotifyOwner(NSString *owner, NSString *event, NSData *json)
     return YES;
 }
 
+BOOL PackingCallbacksNotifyOwner(NSString *owner, NSString *event, NSData *json) {
+    return PackingNotifyOwner(owner, nil, event, json);
+}
+
+BOOL PackingCallbacksNotifyOwnerForEpoch(NSString *owner, NSString *epoch, NSString *event, NSData *json) {
+    return PackingNotifyOwner(owner, epoch, event, json);
+}
+
 NSString *PackingCallbacksRegister(CAPPluginCall *call, dispatch_queue_t sdkQueue, NSString *owner) {
     dispatch_assert_queue(sdkQueue);
     if (owner.length == 0 || call.keepAlive) { return nil; }
     PackingInitialize();
     [PackingTableLock lock];
+    if (PackingOwners[owner].resetting) { [PackingTableLock unlock]; return nil; }
     NSUInteger owned = 0;
     for (PackingCallbackEntry *entry in PackingTable.allValues) {
         if ([entry.owner isEqualToString:owner]) { owned++; }
@@ -133,6 +225,7 @@ NSString *PackingCallbacksRegister(CAPPluginCall *call, dispatch_queue_t sdkQueu
     entry.call = call;
     entry.queue = sdkQueue;
     entry.owner = owner;
+    entry.epoch = PackingOwners[owner].epoch;
     PackingTable[token] = entry;
     [PackingTableLock unlock];
     return token;
@@ -198,6 +291,15 @@ static BOOL PackingDeliverCancellation(NSString *token, PackingCallbackEntry *en
     BOOL cancelled = entry.cancelled;
     NSString *message = entry.cancellationMessage;
     NSString *code = entry.cancellationCode;
+    // A reset changes the epoch before its revoker and old-epoch cancellation
+    // run. Check here under the same lock so an unguarded old reply cannot
+    // escape through that interval. Nil epochs are legacy unbound owners.
+    if (!cancelled && entry.epoch != nil &&
+        ![PackingOwners[entry.owner].epoch isEqualToString:entry.epoch]) {
+        cancelled = YES;
+        message = @"The capture selection changed. Reload the workspace.";
+        code = @"STORAGE_CHANGED";
+    }
     [PackingTable removeObjectForKey:token];
     [PackingTableLock unlock];
     if (cancelled) { [entry.call reject:message :code :nil :nil]; }
@@ -249,7 +351,7 @@ BOOL PackingCallbacksReject(NSString *token, NSString *message, NSString *code) 
     return YES;
 }
 
-NSUInteger PackingCallbacksCancelOwner(NSString *owner, NSString *message, NSString *code) {
+static NSUInteger PackingCancelMatching(NSString *owner, NSString *message, NSString *code, NSString *epoch, BOOL restricted) {
     PackingInitialize();
     NSString *frozenMessage = [message copy];
     NSString *frozenCode = [code copy];
@@ -258,7 +360,7 @@ NSUInteger PackingCallbacksCancelOwner(NSString *owner, NSString *message, NSStr
     [PackingTableLock lock];
     for (NSString *token in PackingTable.allKeys) {
         PackingCallbackEntry *entry = PackingTable[token];
-        if ([entry.owner isEqualToString:owner] && !entry.cancelled) {
+        if ([entry.owner isEqualToString:owner] && !entry.cancelled && (!restricted || entry.epoch == epoch || [entry.epoch isEqualToString:epoch])) {
             cancelled++;
             entry.cancelled = YES;
             entry.cancellationMessage = frozenMessage;
@@ -278,6 +380,14 @@ NSUInteger PackingCallbacksCancelOwner(NSString *owner, NSString *message, NSStr
         });
     }
     return cancelled;
+}
+
+static NSUInteger PackingCancelEpoch(NSString *owner, NSString *epoch, NSString *message, NSString *code) {
+    return PackingCancelMatching(owner, message, code, epoch, YES);
+}
+
+NSUInteger PackingCallbacksCancelOwner(NSString *owner, NSString *message, NSString *code) {
+    return PackingCancelMatching(owner, message, code, nil, NO);
 }
 
 NSUInteger PackingCallbacksPendingForOwner(NSString *owner) {

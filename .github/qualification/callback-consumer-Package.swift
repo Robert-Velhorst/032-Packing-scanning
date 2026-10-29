@@ -28,6 +28,10 @@ let package = Package(
             "PackingCallbackConsumer", "PackingSDKCallbacks",
             .product(name: "Capacitor", package: "capacitor-swift-pm")
         ])
+        , .testTarget(name: "PackingReloadEpochTests", dependencies: [
+            "PackingCallbackConsumer", "PackingSDKCallbacks",
+            .product(name: "Capacitor", package: "capacitor-swift-pm")
+        ])
     ],
     swiftLanguageModes: [.v6]
 )

@@ -1,0 +1,60 @@
+name: Scan reload generation support qualification
+on:
+  push:
+    branches: [qualify/packing-reload-epoch-20261029]
+permissions:
+  contents: read
+jobs:
+  scan-support:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 26.13.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.15.2'
+      - name: Use current stable npm for the exact source/toolchain binder
+        run: npm install --global npm@12.2.1
+      - name: Verify official stable Swift signer and compiler selection
+        run: python .github/qualification/install-current-stable-swift.py
+      - name: Compose explicit verified Apple platform linker
+        run: python .github/qualification/compose-current-apple-linker.py
+      - name: Bind all checked-out inputs before focused qualification
+        run: python .github/qualification/photo-geometry-source.py before
+      - name: Run original complete native capture authority and provider compatibility command group
+        shell: bash
+        run: |
+          xcrun swiftc -parse-as-library ios/App/App/PackingCaptureAuthority.swift scripts/test-ios-capture-authority.swift -o "$RUNNER_TEMP/capture-authority-checks"
+          "$RUNNER_TEMP/capture-authority-checks" "$RUNNER_TEMP/capture-provider-fixture.json"
+          node scripts/check-ios-capture-provider.mjs "$RUNNER_TEMP/capture-provider-fixture.json"
+      - name: Run original complete native storage bridge values command group
+        shell: bash
+        run: |
+          xcrun swiftc -sanitize=thread -g -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingCaptureBridgeValues.swift scripts/test-ios-capture-bridge-values.swift -o "$RUNNER_TEMP/capture-bridge-checks"
+          TSAN_OPTIONS=halt_on_error=1:exitcode=66 "$RUNNER_TEMP/capture-bridge-checks"
+      - name: Run all26 callback Print Scan and reload cases with Thread Sanitizer
+        run: python .github/qualification/qualify-reload-epoch.py
+      - name: Bind all checked-out inputs after qualification
+        if: always()
+        run: python .github/qualification/photo-geometry-source.py after
+      - name: Preserve focused source and runtime proof without SDK binaries
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: reload-epoch-source-and-runtime
+          path: |
+            ${{ runner.temp }}/packing-stock-SDK-callbacks/*.json
+            ${{ runner.temp }}/packing-stock-SDK-callbacks/*.log
+            ${{ runner.temp }}/packing-photo-geometry/*.json
+            ${{ runner.temp }}/capture-provider-fixture.json
+            ${{ runner.temp }}/packing-current-stable-swift/*.json
+            ${{ runner.temp }}/packing-current-stable-swift/*.log
+            ${{ runner.temp }}/packing-current-apple-linker/*.json
+            ${{ runner.temp }}/packing-current-apple-linker/*.log
+          retention-days: 14
+          if-no-files-found: error

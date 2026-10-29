@@ -12,6 +12,14 @@ typedef void (^PackingCallbackDeliveryGuard)(dispatch_block_t action);
 FOUNDATION_EXPORT BOOL PackingCallbacksSetDeliveryGuard(NSString *token,
     PackingCallbackDeliveryGuard guard, NSString *failureMessage, NSString * _Nullable failureCode);
 
+FOUNDATION_EXPORT BOOL PackingCallbacksResetOwner(NSString *owner, NSString *message, NSString * _Nullable code);
+FOUNDATION_EXPORT NSString * _Nullable PackingCallbacksOwnerEpoch(NSString *owner);
+FOUNDATION_EXPORT NSString * _Nullable PackingCallbacksTokenEpoch(NSString *token);
+// Revocation must only close the lock-protected lease and must not reenter the
+// owner registry; teardown may wait synchronously for an active reset.
+FOUNDATION_EXPORT BOOL PackingCallbacksSetRevocationForEpoch(NSString *owner, NSString *epoch, dispatch_block_t revoke);
+FOUNDATION_EXPORT BOOL PackingCallbacksNotifyOwnerForEpoch(NSString *owner, NSString *epoch, NSString *event, NSData *json);
+
 // SDK owner binding is weak; actor code exchanges only its immutable owner ID.
 FOUNDATION_EXPORT BOOL PackingCallbacksBindOwner(CAPPlugin *plugin, dispatch_queue_t sdkQueue, NSString *owner);
 FOUNDATION_EXPORT BOOL PackingCallbacksSetOwnerRevocation(NSString *owner, dispatch_block_t revoke);
