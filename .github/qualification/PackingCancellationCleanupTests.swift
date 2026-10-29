@@ -2,6 +2,7 @@ import Capacitor
 import Foundation
 import PackingSDKCallbacks
 import Testing
+@testable import PackingCallbackConsumer
 
 @Suite(.serialized)
 struct PackingCancellationCleanupTests {
@@ -88,4 +89,38 @@ struct PackingCancellationCleanupTests {
     @Test func deniedGuardCleansExactlyOnce() { exerciseRejectedTerminal("denied") }
     @Test func explicitRejectionCleansExactlyOnce() { exerciseRejectedTerminal("explicit") }
     @Test func invalidJSONCleansExactlyOnce() { exerciseRejectedTerminal("invalid-json") }
+
+    @Test func duplicateAuthorizationDoesNotDeleteLiveArtifact() {
+        let queue = DispatchQueue(label: "packing.cleanup.duplicate-authorization")
+        let owner = UUID().uuidString
+        let cleanup = DispatchSemaphore(value: 0), delivered = DispatchSemaphore(value: 0)
+        queue.async {
+            let authority = PackingCaptureAuthority()
+            guard let access = try? authority.selectGuest(expectedRevision: authority.state().revision) else {
+                Issue.record("Could not create guest authority."); delivered.signal(); return
+            }
+            let call = CAPPluginCall(callbackId: UUID().uuidString, methodName: "test", options: [:], success: { _, _ in
+                withExtendedLifetime(authority) {}
+                delivered.signal()
+            }, error: { _ in Issue.record("Live reply rejected."); delivered.signal() })!
+            #expect(PackingCallbacksResetOwner(owner, "Reload", "STORAGE_CHANGED"))
+            guard let reply = PackingScanReply(call: call, sdkQueue: queue, owner: owner) else {
+                Issue.record("Reply registration failed."); delivered.signal(); return
+            }
+            do {
+                try reply.authorize(access, failureMessage: "Changed", failureCode: "STORAGE_CHANGED", onDenied: { cleanup.signal() })
+                do {
+                    try reply.authorize(access, failureMessage: "Changed", failureCode: "STORAGE_CHANGED", onDenied: { cleanup.signal() })
+                    Issue.record("A duplicate authorization unexpectedly succeeded.")
+                } catch { }
+                // The first authorization is still live; a second attempt must not
+                // clean its artifact. The queued response must still be delivered.
+                #expect(cleanup.wait(timeout: .now()) == .timedOut)
+                #expect(reply.resolve())
+            } catch { Issue.record("Initial authorization failed."); delivered.signal() }
+        }
+        #expect(delivered.wait(timeout: .now() + 5) == .success)
+        #expect(cleanup.wait(timeout: .now()) == .timedOut)
+        PackingCallbacksUnbindOwner(owner, "Closed", nil)
+    }
 }
