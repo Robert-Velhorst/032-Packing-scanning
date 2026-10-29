@@ -17,8 +17,8 @@ RUN set -eux; \
     tar -xJf node.tar.xz --directory /usr/local --strip-components=1; \
     rm node.tar.xz; \
     node --version | grep --fixed-strings --line-regexp "v26.13.0" \
-+ && npm install --global npm@12.2.1 --ignore-scripts \
-+ && npm --version | grep --fixed-strings --line-regexp "12.2.1"
+ && npm install --global npm@12.2.1 --ignore-scripts \
+ && npm --version | grep --fixed-strings --line-regexp "12.2.1"
 
 FROM node-runtime AS build
 WORKDIR /app
