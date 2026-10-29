@@ -90,6 +90,21 @@ def main():
             raise RuntimeError('Normal strict metadata resolution failed; inspect retained resolver output')
         if not lockfile.is_file():
             raise RuntimeError('No complete generated metadata lock was produced')
+
+        audit_code = run('metadata-audit', ['npm', 'audit', '--json', '--package-lock=true', '--ignore-scripts'],
+                         cwd=source, timeout=180, environment=env)
+        report['audit_metadata_returncode'] = audit_code
+        audit_file = out / 'metadata-audit.log'
+        try:
+            audit = json.loads(audit_file.read_text(encoding='utf-8'))
+            (out / 'audit-result.json').write_text(json.dumps(audit, indent=2) + '\n')
+            report['audit_metadata'] = audit.get('metadata')
+            report['audit_report_version'] = audit.get('auditReportVersion')
+            report['audit_error'] = audit.get('error')
+            report['audit_scope'] = 'Complete unmodified publisher workspace dependency metadata; not native-iOS-framework vulnerability attribution'
+        except (ValueError, UnicodeError) as error:
+            report['audit_parse_error'] = str(error)
+
         if report['prerelease_packages']:
             raise RuntimeError('Unapproved prerelease versions selected; no SDK dependency installation or cases may run')
         report['strict_stable_graph_acceptance'] = True
