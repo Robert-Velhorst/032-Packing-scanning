@@ -28,7 +28,9 @@ def snapshot(root):
 
 def main():
     assert os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("RUNNER_OS") == "macOS"
-    out = Path(os.environ["RUNNER_TEMP"]) / "packing-current-apple-linker"
+    if os.environ.get("RUNNER_TEMP") != "/Users/runner/work/_temp":
+        raise RuntimeError("Only the reviewed disposable macOS runner temp root is allowed")
+    out = Path("/Users/runner/work/_temp/packing-current-apple-linker")
     out.mkdir(exist_ok=False)
     report = {"purpose": "One explicit platform integration link; not an unmodified-SDK or acceptance claim", "link_added": False}
 

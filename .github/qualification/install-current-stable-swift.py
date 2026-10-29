@@ -16,7 +16,23 @@ TEAM = "V9AUD2URP3"
 
 def main():
     assert os.environ.get("GITHUB_ACTIONS") == "true" and os.environ.get("RUNNER_OS") == "macOS"
-    folder = Path(os.environ["RUNNER_TEMP"]) / "packing-current-stable-swift"
+    if os.environ.get("RUNNER_TEMP") != "/Users/runner/work/_temp":
+        raise RuntimeError("Only the reviewed disposable macOS runner temp root is allowed")
+    command_root = Path("/Users/runner/work/_temp/_runner_file_commands")
+    if command_root.resolve(strict=True) != command_root or not command_root.is_dir():
+        raise RuntimeError("Unexpected runner command-file directory")
+    supplied_env = os.environ["GITHUB_ENV"]
+    # Select an existing child of the trusted directory. Never construct a path
+    # from the environment string, even after a lexical filename check.
+    candidates = [path for path in command_root.glob("set_env_*") if str(path) == supplied_env]
+    if len(candidates) != 1:
+        raise RuntimeError("Runner command-file name is not an existing child of its fixed root")
+    env_path = candidates[0]
+    if not re.fullmatch(r"set_env_[0-9a-f-]{36}", env_path.name):
+        raise RuntimeError("Unexpected runner environment-command filename")
+    if env_path.resolve(strict=True) != env_path or not env_path.is_file():
+        raise RuntimeError("Runner environment-command file escapes its fixed root")
+    folder = Path("/Users/runner/work/_temp/packing-current-stable-swift")
     folder.mkdir(exist_ok=False)
     evidence = {"version": VERSION, "url": URL, "expected_signer": SIGNER, "commands": [], "installed": False}
 
@@ -64,7 +80,12 @@ def main():
         assert actual_path.is_relative_to(toolchain.resolve()), "xcrun did not select the verified toolchain"
         version = run("actual-swift-version", ["xcrun", "swift", "--version"], env=selected)
         assert re.search(r"\bSwift version 6\.4\.1\b", version), "Compiler version differs from the pinned stable release"
-        with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as stream:
+        directory = os.open(command_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            descriptor = os.open(env_path.name, os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW, dir_fd=directory)
+        finally:
+            os.close(directory)
+        with os.fdopen(descriptor, "a", encoding="utf-8") as stream:
             stream.write("TOOLCHAINS=" + identifier + "\n")
         evidence.update({"toolchain_identifier": identifier, "actual_compiler": str(actual_path), "actual_version": version, "signature_and_selection_verified": True})
     finally:
