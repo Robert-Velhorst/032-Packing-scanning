@@ -1,0 +1,37 @@
+name: Stock SDK bounded callback ownership component qualification
+on:
+  push:
+    branches: [qualify/packing-stock-SDK-callbacks-20261029]
+permissions:
+  contents: read
+jobs:
+  component:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.15.2'
+      - name: Verify official stable Swift signer and compiler selection
+        run: python .github/qualification/install-current-stable-swift.py
+      - name: Compose explicit verified Apple platform linker
+        run: python .github/qualification/compose-current-apple-linker.py
+      - name: Run all nine owned callback component cases with Thread Sanitizer
+        run: python .github/qualification/qualify-stock-callbacks.py
+      - name: Preserve source and compiler/runtime evidence without SDK binaries
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: stock-SDK-callback-component
+          path: |
+            ${{ runner.temp }}/packing-stock-SDK-callbacks/*.json
+            ${{ runner.temp }}/packing-stock-SDK-callbacks/*.log
+            ${{ runner.temp }}/packing-current-stable-swift/*.json
+            ${{ runner.temp }}/packing-current-stable-swift/*.log
+            ${{ runner.temp }}/packing-current-apple-linker/*.json
+            ${{ runner.temp }}/packing-current-apple-linker/*.log
+          retention-days: 14
+          if-no-files-found: error
