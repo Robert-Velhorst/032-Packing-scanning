@@ -89,14 +89,14 @@ def main():
                                    'IPHONEOS_DEPLOYMENT_TARGET=15.4', 'CODE_SIGNING_ALLOWED=NO', 'test'])
         test_source = '\n'.join(p.read_text(encoding='utf-8') for p in sorted((consumer / 'Tests').rglob('*.swift')))
         expected = re.findall(r'@Test(?:\s+@MainActor)?\s+func (\w+)\(', test_source)
-        assert len(expected) == 26
+        assert len(expected) == 28
         passed = [name for name in expected if re.search(r'Test ' + name + r'\(\) passed', log)]
         report['component_cases_expected'] = expected
         report['component_cases_reported_passed'] = passed
         assert passed == expected and '** TEST SUCCEEDED **' in log
         report['thread_sanitizer_requested'] = True
         report['test_summary'] = json.loads(run('xcresult-summary', ['xcrun', 'xcresulttool', 'get', 'test-results', 'summary', '--path', str(bundle)], 60))
-        for key, expected_count in [('passedTests', 26), ('failedTests', 0), ('skippedTests', 0)]:
+        for key, expected_count in [('passedTests', 28), ('failedTests', 0), ('skippedTests', 0)]:
             assert report['test_summary'].get(key) == expected_count
         for path, digest in report['consumer_before'].items():
             assert hashlib.sha256((consumer / path).read_bytes()).hexdigest() == digest
@@ -107,7 +107,7 @@ def main():
         if 'SDK_binary_payloads_before' in report:
             report['SDK_binary_payloads_unchanged'] = report['SDK_binary_payloads_before'] == snapshot(artifacts)
         (out / 'result.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
-    print(json.dumps({'component_acceptance': True, 'cases': 26, 'scope': report['scope']}))
+    print(json.dumps({'component_acceptance': True, 'cases': 28, 'scope': report['scope']}))
 
 
 if __name__ == '__main__':

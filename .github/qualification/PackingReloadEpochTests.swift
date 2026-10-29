@@ -72,4 +72,72 @@ struct PackingReloadEpochTests {
         #expect(teardownDone.wait(timeout: .now() + 5) == .success)
         #expect(PackingCallbacksOwnerEpoch(owner) == nil)
     }
+
+    // The queue is occupied until teardown has entered its revoker, so the
+    // previously accepted event is delivered only while teardown is active.
+    @Test func queuedEventDoesNotFireDuringTeardown() {
+        let queue = DispatchQueue(label: "packing.reload.teardown.event")
+        let owner = UUID().uuidString
+        let enteredRevoker = DispatchSemaphore(value: 0)
+        let releaseRevoker = DispatchSemaphore(value: 0)
+        let teardownDone = DispatchSemaphore(value: 0)
+        let eventDelivered = DispatchSemaphore(value: 0)
+        let drained = DispatchSemaphore(value: 0)
+        queue.async {
+            let plugin = CAPPlugin()
+            let listener = CAPPluginCall(callbackId: UUID().uuidString, methodName: "listener", options: [:], success: { _, _ in
+                eventDelivered.signal()
+            }, error: { _ in })!
+            plugin.addEventListener("captureWorkspaceLocked", listener: listener)
+            #expect(PackingCallbacksBindOwner(plugin, queue, owner))
+            guard let epoch = PackingCallbacksOwnerEpoch(owner) else {
+                releaseRevoker.signal()
+                drained.signal()
+                return
+            }
+            #expect(PackingCallbacksSetRevocationForEpoch(owner, epoch) {
+                enteredRevoker.signal()
+                _ = releaseRevoker.wait(timeout: .now() + 10)
+            })
+            #expect(PackingCallbacksNotifyOwnerForEpoch(owner, epoch, "captureWorkspaceLocked", Data("{}".utf8)))
+            DispatchQueue.global().async {
+                PackingCallbacksUnbindOwner(owner, "Closed", "STORAGE_CHANGED")
+                teardownDone.signal()
+            }
+            #expect(enteredRevoker.wait(timeout: .now() + 5) == .success)
+            queue.async {
+                withExtendedLifetime(plugin) { withExtendedLifetime(listener) {} }
+                drained.signal()
+            }
+        }
+        #expect(drained.wait(timeout: .now() + 5) == .success)
+        #expect(eventDelivered.wait(timeout: .now()) == .timedOut)
+        releaseRevoker.signal()
+        #expect(teardownDone.wait(timeout: .now() + 5) == .success)
+    }
+
+    @Test func activeOwnerDeliversQueuedEvent() {
+        let queue = DispatchQueue(label: "packing.reload.event.positive")
+        let owner = UUID().uuidString
+        let observed = DispatchSemaphore(value: 0)
+        let drained = DispatchSemaphore(value: 0)
+        queue.async {
+            let plugin = CAPPlugin()
+            let listener = CAPPluginCall(callbackId: UUID().uuidString, methodName: "listener", options: [:], success: { _, _ in
+                observed.signal()
+            }, error: { _ in })!
+            plugin.addEventListener("captureWorkspaceLocked", listener: listener)
+            #expect(PackingCallbacksBindOwner(plugin, queue, owner))
+            if let epoch = PackingCallbacksOwnerEpoch(owner) {
+                #expect(PackingCallbacksNotifyOwnerForEpoch(owner, epoch, "captureWorkspaceLocked", Data("{}".utf8)))
+            } else { Issue.record("Missing owner epoch") }
+            queue.async {
+                withExtendedLifetime(plugin) { withExtendedLifetime(listener) {} }
+                PackingCallbacksUnbindOwner(owner, "Closed", nil)
+                drained.signal()
+            }
+        }
+        #expect(drained.wait(timeout: .now() + 5) == .success)
+        #expect(observed.wait(timeout: .now()) == .success)
+    }
 }
