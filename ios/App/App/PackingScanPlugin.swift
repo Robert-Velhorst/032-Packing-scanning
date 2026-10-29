@@ -676,10 +676,11 @@ private struct NativeScanFlow: View {
 @objc(ScanBridgeViewController)
 class ScanBridgeViewController: CAPBridgeViewController {
     #if DEBUG && targetEnvironment(simulator)
-    override func webViewConfiguration(for instanceConfiguration: InstanceConfiguration) -> WKWebViewConfiguration {
-        let configuration = super.webViewConfiguration(for: instanceConfiguration)
+    override func webView(with frame: CGRect, configuration: WKWebViewConfiguration) -> WKWebView {
+        // Capacitor replaces userContentController after webViewConfiguration(for:).
+        // This public factory receives the actual final controller before WebView creation.
         PackingUIQualificationLog.install(on: configuration)
-        return configuration
+        return super.webView(with: frame, configuration: configuration)
     }
     #endif
     override open func capacitorDidLoad() {
@@ -743,6 +744,7 @@ import OSLog
     (() => {
       const clean = value => String(value ?? '').replace(/(https?:\/\/[^\s?#]+)[?#][^\s]*/g, '$1').slice(0, 1024);
       const emit = value => { try { window.webkit.messageHandlers.packingSyntheticQualification.postMessage(value); } catch {} };
+      emit({kind:'dom', text:'script-installed'});
       window.addEventListener('error', event => emit({kind:'error', name:clean(event.error?.name), text:clean(event.message), path:clean((event.filename || '').split(/[?#]/)[0]), line:String(event.lineno || 0), column:String(event.colno || 0)}));
       window.addEventListener('unhandledrejection', event => emit({kind:'rejection', name:clean(event.reason?.name), text:clean(event.reason?.message ?? event.reason)}));
       let last = '', pending = false;
