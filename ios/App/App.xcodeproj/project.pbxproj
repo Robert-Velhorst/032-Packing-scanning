@@ -444,7 +444,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.packingscanning.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -465,7 +465,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.packingscanning.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
@@ -480,7 +480,7 @@
                 MARKETING_VERSION = 1.0;
                 PRODUCT_BUNDLE_IDENTIFIER = com.packingscanning.app.PhotoUITests;
                 PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SKIP_INSTALL = YES;
-                SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = App;
+                SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = App;
             };
             name = Debug;
         };
@@ -494,7 +494,7 @@
                 MARKETING_VERSION = 1.0;
                 PRODUCT_BUNDLE_IDENTIFIER = com.packingscanning.app.PhotoUITests;
                 PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SKIP_INSTALL = YES;
-                SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = App;
+                SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = App;
             };
             name = Release;
         };

@@ -1,0 +1,169 @@
+name: iOS Swift 6 language qualification
+on:
+  push:
+    branches: [qualify/packing-swift6-language-20261029]
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  simulator:
+    name: Unsigned iOS simulator and device builds
+    runs-on: xcode-27
+    timeout-minutes: 30
+    env:
+      PACKING_ACCOUNT_ORIGIN: ''
+      NPM_CONFIG_ENGINE_STRICT: 'true'
+      NPM_CONFIG_STRICT_PEER_DEPS: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.0
+          cache: npm
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.15.2'
+      - name: Use current stable npm
+        run: npm install --global npm@12.2.1
+      - name: Bind original native inputs and final stable toolchain
+        run: python .github/qualification/photo-geometry-source.py before
+      - run: npm ci --ignore-scripts
+      - name: Verify runtime-supported simulator selection controls
+        run: node --test .github/qualification/simulator-selection.controls.mjs
+      - name: Check actual fitted-photo helper against positive and negative bitmap controls
+        run: python .github/qualification/photo-geometry-source.py geometry
+      - name: Check iOS project object and source wiring
+        run: node scripts/check-xcode.cjs
+      - name: Check ImageIO reference photos and encrypted editor handoff
+        shell: bash
+        run: |
+          xcrun swiftc -sanitize=thread -g -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingPendingBackupStore.swift ios/App/App/PackingReferencePhoto.swift ios/App/App/PackingPendingItemPhotoStore.swift ios/App/App/PackingCaptureBridgeValues.swift ios/App/App/PackingBackupRuntime.swift ios/App/App/PackingItemPhotoRuntime.swift scripts/test-ios-item-photos.swift -o "$RUNNER_TEMP/item-photo-checks"
+          TSAN_OPTIONS=halt_on_error=1:exitcode=66 "$RUNNER_TEMP/item-photo-checks" "$RUNNER_TEMP/item-photo-result.json"
+          node scripts/check-ios-item-photo.mjs "$RUNNER_TEMP/item-photo-result.json"
+      - name: Check native capture authority and provider compatibility
+        shell: bash
+        run: |
+          xcrun swiftc -parse-as-library ios/App/App/PackingCaptureAuthority.swift scripts/test-ios-capture-authority.swift -o "$RUNNER_TEMP/capture-authority-checks"
+          "$RUNNER_TEMP/capture-authority-checks" "$RUNNER_TEMP/capture-provider-fixture.json"
+          node scripts/check-ios-capture-provider.mjs "$RUNNER_TEMP/capture-provider-fixture.json"
+      - name: Check native storage bridge values
+        shell: bash
+        run: |
+          xcrun swiftc -sanitize=thread -g -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingCaptureBridgeValues.swift scripts/test-ios-capture-bridge-values.swift -o "$RUNNER_TEMP/capture-bridge-checks"
+          TSAN_OPTIONS=halt_on_error=1:exitcode=66 "$RUNNER_TEMP/capture-bridge-checks"
+      - name: Check protected capture persistence
+        shell: bash
+        run: |
+          xcrun swiftc -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingScanEnvelope.swift ios/App/App/PackingVoxelSolid.swift ios/App/App/PackingVoxelCavity.swift ios/App/App/PackingPointCapture.swift ios/App/App/PackingEncryptedCaptureStore.swift scripts/test-ios-encrypted-store.swift -o "$RUNNER_TEMP/encrypted-store-checks"
+          "$RUNNER_TEMP/encrypted-store-checks"
+      - name: Check point capture provenance
+        shell: bash
+        run: |
+          xcrun swiftc -parse-as-library ios/App/App/PackingScanEnvelope.swift ios/App/App/PackingVoxelSolid.swift ios/App/App/PackingVoxelCavity.swift ios/App/App/PackingPointCapture.swift scripts/test-ios-point-capture.swift -o "$RUNNER_TEMP/point-capture-checks"
+          "$RUNNER_TEMP/point-capture-checks"
+      - name: Check in-memory depth source and encrypted handoff
+        shell: bash
+        run: |
+          xcrun swiftc -sanitize=thread -g -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingScanEnvelope.swift ios/App/App/PackingVoxelSolid.swift ios/App/App/PackingVoxelCavity.swift ios/App/App/PackingPointCapture.swift ios/App/App/PackingEncryptedCaptureStore.swift ios/App/App/PackingDepthSource.swift scripts/test-ios-depth-source.swift -o "$RUNNER_TEMP/depth-source-checks"
+          TSAN_OPTIONS=halt_on_error=1:exitcode=66 "$RUNNER_TEMP/depth-source-checks"
+      - name: Check oriented bounds and Android-native parity
+        shell: bash
+        run: |
+          xcrun swiftc -O -parse-as-library ios/App/App/PackingScanEnvelope.swift ios/App/App/PackingVoxelSolid.swift ios/App/App/PackingVoxelCavity.swift ios/App/App/PackingPointCapture.swift scripts/test-ios-envelope.swift -o "$RUNNER_TEMP/envelope-checks"
+          "$RUNNER_TEMP/envelope-checks" "$RUNNER_TEMP/envelope-parity.txt" "$RUNNER_TEMP/depth-result.json"
+          node scripts/check-ios-depth-result.mjs "$RUNNER_TEMP/depth-result.json"
+          mkdir -p "$RUNNER_TEMP/envelope-java"
+          javac -d "$RUNNER_TEMP/envelope-java" android/app/src/main/java/com/packingscanning/app/scanning/ScanEnvelope.java android/app/src/main/java/com/packingscanning/app/scanning/DepthCloud.java android/app/src/main/java/com/packingscanning/app/scanning/CaptureGuidance.java scripts/CheckIosEnvelope.java
+          java -cp "$RUNNER_TEMP/envelope-java" CheckIosEnvelope "$RUNNER_TEMP/envelope-parity.txt"
+      - name: Check observed-shell reconstruction and Android-native parity
+        shell: bash
+        run: |
+          xcrun swiftc -O -parse-as-library ios/App/App/PackingVoxelSolid.swift scripts/test-ios-voxel-solid.swift -o "$RUNNER_TEMP/voxel-solid-checks"
+          "$RUNNER_TEMP/voxel-solid-checks" "$RUNNER_TEMP/voxel-solid-parity.txt"
+          javac -cp "$RUNNER_TEMP/envelope-java" -d "$RUNNER_TEMP/envelope-java" android/app/src/main/java/com/packingscanning/app/scanning/VoxelSolid.java scripts/CheckIosVoxelSolid.java
+          java -cp "$RUNNER_TEMP/envelope-java" CheckIosVoxelSolid "$RUNNER_TEMP/voxel-solid-parity.txt"
+      - name: Check encrypted-source reconstruction and shared result parser
+        shell: bash
+        run: |
+          xcrun swiftc -O -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingScanEnvelope.swift ios/App/App/PackingVoxelSolid.swift ios/App/App/PackingVoxelCavity.swift ios/App/App/PackingPointCapture.swift ios/App/App/PackingEncryptedCaptureStore.swift scripts/test-ios-point-reconstruction.swift -o "$RUNNER_TEMP/point-reconstruction-checks"
+          "$RUNNER_TEMP/point-reconstruction-checks" "$RUNNER_TEMP/point-reconstruction.json"
+          node scripts/check-ios-point-reconstruction.mjs "$RUNNER_TEMP/point-reconstruction.json"
+      - name: Check seeded cavity, Android parity and shared result parser
+        shell: bash
+        run: |
+          xcrun swiftc -O -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingScanEnvelope.swift ios/App/App/PackingVoxelSolid.swift ios/App/App/PackingVoxelCavity.swift ios/App/App/PackingPointCapture.swift ios/App/App/PackingEncryptedCaptureStore.swift scripts/test-ios-voxel-cavity.swift -o "$RUNNER_TEMP/cavity-checks"
+          "$RUNNER_TEMP/cavity-checks" "$RUNNER_TEMP/cavity-parity.txt" "$RUNNER_TEMP/cavity-result.json"
+          node scripts/check-ios-cavity-result.mjs "$RUNNER_TEMP/cavity-result.json"
+          javac -cp "$RUNNER_TEMP/envelope-java" -d "$RUNNER_TEMP/envelope-java" android/app/src/main/java/com/packingscanning/app/scanning/VoxelCavity.java scripts/CheckIosVoxelCavity.java
+          java -cp "$RUNNER_TEMP/envelope-java" CheckIosVoxelCavity "$RUNNER_TEMP/cavity-parity.txt"
+      - name: Check scoped raw-source retention and metadata preservation
+        shell: bash
+        run: |
+          xcrun swiftc -O -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingScanEnvelope.swift ios/App/App/PackingVoxelSolid.swift ios/App/App/PackingVoxelCavity.swift ios/App/App/PackingPointCapture.swift ios/App/App/PackingEncryptedCaptureStore.swift scripts/test-ios-scan-retention.swift -o "$RUNNER_TEMP/retention-checks"
+          "$RUNNER_TEMP/retention-checks" "$RUNNER_TEMP/retention-result.json"
+          node scripts/check-ios-scan-retention.mjs "$RUNNER_TEMP/retention-result.json"
+      - name: Check encrypted pending document store and lease rebinding
+        shell: bash
+        run: |
+          xcrun swiftc -sanitize=thread -g -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingPendingBackupStore.swift scripts/test-ios-pending-backups.swift -o "$RUNNER_TEMP/pending-backup-checks"
+          TSAN_OPTIONS=halt_on_error=1:exitcode=66 "$RUNNER_TEMP/pending-backup-checks"
+      - name: Check provider document IO and owned temporary cleanup
+        shell: bash
+        run: |
+          xcrun swiftc -sanitize=thread -g -parse-as-library ios/App/App/PackingCaptureAuthority.swift ios/App/App/PackingCaptureBridgeValues.swift ios/App/App/PackingPendingBackupStore.swift ios/App/App/PackingBackupRuntime.swift ios/App/App/PackingBackupDocumentIO.swift scripts/test-ios-backup-documents.swift -o "$RUNNER_TEMP/backup-document-checks"
+          TSAN_OPTIONS=halt_on_error=1:exitcode=66 "$RUNNER_TEMP/backup-document-checks"
+      - name: Check depth capture flow and stale callbacks
+        shell: bash
+        run: |
+          xcrun swiftc -parse-as-library ios/App/App/PackingDepthFlow.swift scripts/test-ios-depth-flow.swift -o "$RUNNER_TEMP/depth-flow-checks"
+          "$RUNNER_TEMP/depth-flow-checks"
+      - name: Check native capture file boundaries
+        shell: bash
+        run: |
+          xcrun swiftc -parse-as-library ios/App/App/PackingCaptureFiles.swift scripts/test-ios-capture-files.swift -o "$RUNNER_TEMP/capture-file-checks"
+          "$RUNNER_TEMP/capture-file-checks"
+      - name: Build bundled web assets and native iOS app
+        shell: bash
+        run: bash scripts/build-ios.sh 2>&1 | tee "$RUNNER_TEMP/packing-ios-build.log"
+      - name: Check actual WebView/native photo and backup flows on a fresh simulator
+        shell: bash
+        run: bash scripts/test-ios-photo-ui.sh "$RUNNER_TEMP/item-photo-result.json"
+      - name: Preserve simulator photo UI diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-photo-ui
+          path: |
+            ${{ runner.temp }}/packing-ios-ui.*/photo-ui.xcresult
+            ${{ runner.temp }}/packing-ios-ui.*/photo-ui.log
+            ${{ runner.temp }}/packing-ios-ui.*/attachments
+            ${{ runner.temp }}/packing-ios-ui.*/attachments-export.log
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Preserve native build diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-build-log
+          path: ${{ runner.temp }}/packing-ios-build.log
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Bind original native inputs after all checks
+        if: always()
+        run: python .github/qualification/photo-geometry-source.py after
+      - name: Retain exact geometry and toolchain evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: packing-photo-geometry
+          path: |
+            ${{ runner.temp }}/packing-photo-geometry/*.json
+            ${{ runner.temp }}/packing-photo-geometry/*.swift
+          retention-days: 14
+          if-no-files-found: error
