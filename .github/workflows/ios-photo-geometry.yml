@@ -1,7 +1,7 @@
-name: iOS fitted reference-photo verification
+name: Original iOS cases with owned console observation
 on:
   push:
-    branches: [qualify/packing-transitive-refresh-20261029]
+    branches: [qualify/packing-ios-console-20261029]
 permissions:
   contents: read
 
@@ -131,6 +131,8 @@ jobs:
       - name: Build bundled web assets and native iOS app
         shell: bash
         run: bash scripts/build-ios.sh 2>&1 | tee "$RUNNER_TEMP/packing-ios-build.log"
+      - name: Start owned synthetic simulator console observation
+        run: python .github/qualification/owned-ios-console.py start
       - name: Check actual WebView/native photo and backup flows on a fresh simulator
         shell: bash
         run: bash scripts/test-ios-photo-ui.sh "$RUNNER_TEMP/item-photo-result.json"
@@ -165,5 +167,16 @@ jobs:
           path: |
             ${{ runner.temp }}/packing-photo-geometry/*.json
             ${{ runner.temp }}/packing-photo-geometry/*.swift
+          retention-days: 14
+          if-no-files-found: error
+      - name: Stop only owned console observer
+        if: always()
+        run: python .github/qualification/owned-ios-console.py stop
+      - name: Preserve synthetic app console and observer ownership evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: owned-ios-app-console
+          path: ${{ runner.temp }}/packing-owned-console/**
           retention-days: 14
           if-no-files-found: error
