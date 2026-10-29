@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        73D52A2B0E7A61266865CE11 /* PackingSDKCallbacks.m in Sources */ = {isa = PBXBuildFile; fileRef = E03AB1DC81EE70EDE608B7C0 /* PackingSDKCallbacks.m */; };
+        0B3F6898BD311A81C16CFA1C /* PackingCallbackToken.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F565E043106E30C0E76600 /* PackingCallbackToken.swift */; };
+
         85F92F94B94A5874CD42829A /* PackingForeground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E2D7929B8FF15DDDAB83C92 /* PackingForeground.swift */; };
         DC0331111111111111111111 /* PackingPhotoPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC0332222222222222222222 /* PackingPhotoPlugin.swift */; };
         2F553A7D710C7BD2B24FA266 /* PackingReferenceCamera.swift in Sources */ = {isa = PBXBuildFile; fileRef = F31D468F599ECA34A3D7D14B /* PackingReferenceCamera.swift */; };
@@ -46,6 +49,11 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        E03AB1DC81EE70EDE608B7C0 /* PackingSDKCallbacks.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = PackingSDKCallbacks.m; sourceTree = "<group>"; };
+        6CDAB3C0880B9422F98C04A5 /* PackingSDKCallbacks.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PackingSDKCallbacks.h; sourceTree = "<group>"; };
+        86AE4C9F08E141DE443F9CE5 /* PackingNative-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = PackingNative-Bridging-Header.h; sourceTree = "<group>"; };
+        A1F565E043106E30C0E76600 /* PackingCallbackToken.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingCallbackToken.swift; sourceTree = "<group>"; };
+
         5E2D7929B8FF15DDDAB83C92 /* PackingForeground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingForeground.swift; sourceTree = "<group>"; };
         DC0332222222222222222222 /* PackingPhotoPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingPhotoPlugin.swift; sourceTree = "<group>"; };
         F31D468F599ECA34A3D7D14B /* PackingReferenceCamera.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackingReferenceCamera.swift; sourceTree = "<group>"; };
@@ -150,6 +158,11 @@
                 FC0322222222222222222222 /* PackingCaptureBridgeValues.swift */,
                 AC0322222222222222222222 /* PackingAccountPlugin.swift */,
                 AF0322222222222222222222 /* PackingPrintPlugin.swift */,
+                E03AB1DC81EE70EDE608B7C0 /* PackingSDKCallbacks.m */,
+                6CDAB3C0880B9422F98C04A5 /* PackingSDKCallbacks.h */,
+                86AE4C9F08E141DE443F9CE5 /* PackingNative-Bridging-Header.h */,
+                A1F565E043106E30C0E76600 /* PackingCallbackToken.swift */,
+
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
@@ -290,6 +303,9 @@
                 FC0321111111111111111111 /* PackingCaptureBridgeValues.swift in Sources */,
                 AC0321111111111111111111 /* PackingAccountPlugin.swift in Sources */,
                 AF0321111111111111111111 /* PackingPrintPlugin.swift in Sources */,
+                73D52A2B0E7A61266865CE11 /* PackingSDKCallbacks.m in Sources */,
+                0B3F6898BD311A81C16CFA1C /* PackingCallbackToken.swift in Sources */,
+
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -445,6 +461,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_VERSION = 6.0;
+				SWIFT_OBJC_BRIDGING_HEADER = "App/PackingNative-Bridging-Header.h";
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -467,6 +484,7 @@
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
 				OTHER_SWIFT_FLAGS = "$(inherited) -Xfrontend -enable-cross-import-overlays";
 				SWIFT_VERSION = 6.0;
+				SWIFT_OBJC_BRIDGING_HEADER = "App/PackingNative-Bridging-Header.h";
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
