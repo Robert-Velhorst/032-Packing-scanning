@@ -1,7 +1,6 @@
 name: Packing ordinary transitive stable refresh
 on:
-  push:
-    branches: [qualify/packing-transitive-refresh-20261029]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

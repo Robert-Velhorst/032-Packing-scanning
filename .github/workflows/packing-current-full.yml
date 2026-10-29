@@ -1,7 +1,7 @@
 name: Packing current stable full application checks
 on:
   push:
-    branches: [qualify/packing-current-stable-20261029]
+    branches: [qualify/packing-transitive-refresh-20261029]
 permissions:
   contents: read
 
