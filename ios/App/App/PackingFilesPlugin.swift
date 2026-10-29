@@ -30,14 +30,16 @@ private struct PackingPreparedBackup: Sendable {
 /** UIKit and Capacitor calls stay on MainActor. The provider worker receives only scoped values. */
 @objc(PackingFilesPlugin)
 public class PackingFilesPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate {
-    public let identifier = "PackingFilesPlugin"
-    public let jsName = "PackingFiles"
-    public let pluginMethods: [CAPPluginMethod] = [
+    public nonisolated let identifier = "PackingFilesPlugin"
+    public nonisolated let jsName = "PackingFiles"
+    public nonisolated var pluginMethods: [CAPPluginMethod] {
+        [
         CAPPluginMethod(name: "pickBackup", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "saveBackup", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "readBackup", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "discardBackup", returnType: CAPPluginReturnPromise),
     ]
+    }
     @MainActor private var operation: PackingDocumentOperation?
     @MainActor private var permit: PackingFilesPermit?
     private let runtime = PackingBackupRuntime.shared

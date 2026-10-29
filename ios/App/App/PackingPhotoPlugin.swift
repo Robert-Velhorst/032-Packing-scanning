@@ -31,13 +31,15 @@ private struct PackingPreparedPhotoDraft: Sendable {
 
 @objc(PackingPhotoPlugin)
 public class PackingPhotoPlugin: CAPPlugin, CAPBridgedPlugin, PHPickerViewControllerDelegate, UIAdaptivePresentationControllerDelegate {
-    public let identifier = "PackingPhotoPlugin"
-    public let jsName = "PackingPhoto"
-    public let pluginMethods: [CAPPluginMethod] = [
+    public nonisolated let identifier = "PackingPhotoPlugin"
+    public nonisolated let jsName = "PackingPhoto"
+    public nonisolated var pluginMethods: [CAPPluginMethod] {
+        [
         CAPPluginMethod(name: "pickItemPhoto", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "readItemPhoto", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "discardItemPhoto", returnType: CAPPluginReturnPromise),
     ]
+    }
     private let runtime = PackingItemPhotoRuntime.shared
     @MainActor private var permit: PackingPhotoPermit?
     @MainActor private var operation: PackingPhotoOperation?

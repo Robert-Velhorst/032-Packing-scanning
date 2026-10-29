@@ -106,13 +106,15 @@ private final class AccountReply: NSObject, URLSessionDataDelegate {
 
 @objc(PackingAccountPlugin)
 public class PackingAccountPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDelegate {
-    public let identifier = "PackingAccountPlugin"
-    public let jsName = "PackingAccount"
-    public let pluginMethods: [CAPPluginMethod] = [
+    public nonisolated let identifier = "PackingAccountPlugin"
+    public nonisolated let jsName = "PackingAccount"
+    public nonisolated var pluginMethods: [CAPPluginMethod] {
+        [
         CAPPluginMethod(name: "getAvailability", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "request", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "forgetSession", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "exportFile", returnType: CAPPluginReturnPromise)]
+    }
     private let worker = DispatchQueue(label: "com.packingscanning.account")
     private let pendingLock = NSLock()
     private var pending = 0

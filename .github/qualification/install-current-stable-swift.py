@@ -36,13 +36,21 @@ def main():
         signature = run("package-signature", ["pkgutil", "--check-signature", str(package)])
         assert SIGNER in signature, "Package is not signed by the documented Swift Open Source developer ID"
         run("package-gatekeeper", ["spctl", "--assess", "--type", "install", "--verbose=4", str(package)])
-        toolchains = Path.home() / "Library/Developer/Toolchains"
-        before = set(toolchains.glob("*.xctoolchain"))
+        roots = [Path.home() / "Library/Developer/Toolchains", Path("/Library/Developer/Toolchains")]
+        before = {str(root): sorted(p.name for p in root.glob("*.xctoolchain")) for root in roots}
+        evidence["toolchain_directories_before"] = before
         run("install", ["installer", "-target", "CurrentUserHomeDirectory", "-pkg", str(package)])
         evidence["installed"] = True
-        added = set(toolchains.glob("*.xctoolchain")) - before
-        assert len(added) == 1, "Expected exactly one new isolated user toolchain; no ambiguous fallback"
-        toolchain = added.pop()
+        evidence["toolchain_directories_after"] = {
+            str(root): sorted(p.name for p in root.glob("*.xctoolchain")) for root in roots
+        }
+        # A hosted image may already contain this exact release. Installation
+        # success need not create a new directory. Select only the pinned release;
+        # its signature, team, resolved path and actual version are still checked.
+        candidates = {p.resolve() for root in roots for p in root.glob("*.xctoolchain")
+                      if p.name == "swift-6.4.1-RELEASE.xctoolchain"}
+        assert len(candidates) == 1, "Expected exactly one pinned release toolchain; inspect recorded directories"
+        toolchain = candidates.pop()
         with (toolchain / "Info.plist").open("rb") as stream:
             info = plistlib.load(stream)
         identifier = info["CFBundleIdentifier"]
