@@ -38,6 +38,7 @@ on:
       - 'scripts/test-ios-capture-bridge-values.swift'
       - 'scripts/check-ios-capture-provider.mjs'
       - '.github/workflows/ios.yml'
+      - '.github/qualification/**'
   push:
     branches: [main]
     paths:
@@ -76,6 +77,7 @@ on:
       - 'scripts/test-ios-capture-bridge-values.swift'
       - 'scripts/check-ios-capture-provider.mjs'
       - '.github/workflows/ios.yml'
+      - '.github/qualification/**'
   workflow_dispatch:
 
 permissions:
