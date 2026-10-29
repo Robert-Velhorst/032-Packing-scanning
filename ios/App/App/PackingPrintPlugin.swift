@@ -26,7 +26,11 @@ public class PackingPrintPlugin: CAPPlugin, CAPBridgedPlugin {
     deinit { NotificationCenter.default.removeObserver(self) }
 
     @objc func printSequence(_ call: CAPPluginCall) {
-        DispatchQueue.main.async { [weak self] in
+        // Capacitor 8.6 invokes plugin selectors on its serial background bridge queue.
+        // Borrow its non-Sendable call only during this bounded main-queue handoff;
+        // WebKit evaluation and system-print completion remain asynchronous.
+        dispatchPrecondition(condition: .notOnQueue(.main))
+        DispatchQueue.main.sync { [weak self] in
             guard let self else { call.reject("Printing is unavailable."); return }
             guard self.pending == nil else {
                 call.reject("Finish or cancel the current print request before starting another."); return
