@@ -183,7 +183,7 @@ static BOOL PackingNotifyOwner(NSString *owner, NSString *expectedEpoch, NSStrin
     dispatch_async(queue, ^{
         dispatch_assert_queue(queue);
         [PackingTableLock lock];
-        BOOL current = PackingOwners[identity] == binding && [binding.epoch isEqualToString:epoch];
+        BOOL current = PackingOwners[identity] == binding && !binding.resetting && [binding.epoch isEqualToString:epoch];
         [PackingTableLock unlock];
         if (!current) { return; }
         CAPPlugin *plugin = binding.plugin;
