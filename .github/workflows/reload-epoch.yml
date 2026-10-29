@@ -1,7 +1,7 @@
 name: Scan reload generation support qualification
 on:
   push:
-    branches: [qualify/packing-duplicate-authorization-20261029]
+    branches: [qualify/packing-no-eager-cleanup-20261029]
 permissions:
   contents: read
 jobs:

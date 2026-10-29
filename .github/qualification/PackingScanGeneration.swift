@@ -49,7 +49,9 @@ struct PackingScanReply: Sendable {
             _ = try? access.checked { action() }
         }
         guard PackingCallbacksSetGuardWithCancellation(token, guardResponse, failureMessage, failureCode, onDenied) else {
-            onDenied?()
+            // A rejected second installation does not transfer ownership of the
+            // first reply's artifact. Creation/cancellation must be coordinated
+            // separately before this candidate can be integrated.
             throw PackingCaptureAuthorityError.changed
         }
     }
