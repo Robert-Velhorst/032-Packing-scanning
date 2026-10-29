@@ -44,7 +44,7 @@ struct PackingReloadEpochTests {
         #expect(!result)
     }
 
-    @Test func teardownWaitsUntilActiveRevocationFinishes() async {
+    @Test func teardownWaitsUntilActiveRevocationFinishes() {
         let owner = UUID().uuidString
         #expect(PackingCallbacksResetOwner(owner, "Reloaded", "STORAGE_CHANGED"))
         let epoch = PackingCallbacksOwnerEpoch(owner)!
