@@ -440,7 +440,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
+				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\" -Xfrontend -enable-cross-import-overlays";
 				PRODUCT_BUNDLE_IDENTIFIER = com.packingscanning.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
@@ -465,6 +465,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.packingscanning.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				OTHER_SWIFT_FLAGS = "$(inherited) -Xfrontend -enable-cross-import-overlays";
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -480,6 +481,7 @@
                 MARKETING_VERSION = 1.0;
                 PRODUCT_BUNDLE_IDENTIFIER = com.packingscanning.app.PhotoUITests;
                 PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SKIP_INSTALL = YES;
+                OTHER_SWIFT_FLAGS = "$(inherited) -Xfrontend -enable-cross-import-overlays";
                 SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = App;
             };
             name = Debug;
@@ -494,6 +496,7 @@
                 MARKETING_VERSION = 1.0;
                 PRODUCT_BUNDLE_IDENTIFIER = com.packingscanning.app.PhotoUITests;
                 PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SKIP_INSTALL = YES;
+                OTHER_SWIFT_FLAGS = "$(inherited) -Xfrontend -enable-cross-import-overlays";
                 SWIFT_VERSION = 6.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_TARGET_NAME = App;
             };
             name = Release;
