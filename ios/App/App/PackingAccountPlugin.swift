@@ -214,7 +214,11 @@ public class PackingAccountPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPicker
                     }
                 } catch {
                     try? FileManager.default.removeItem(at: url); try? FileManager.default.removeItem(at: folder)
-                    DispatchQueue.main.async { self.exportCall = nil; call.reject("The system file-save dialog could not open.", "export_failed") }
+                    DispatchQueue.main.async {
+                        let pendingCall = self.exportCall
+                        self.exportCall = nil
+                        pendingCall?.reject("The system file-save dialog could not open.", "export_failed")
+                    }
                 }
             }
         }
