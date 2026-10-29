@@ -24,6 +24,8 @@ jobs:
       - name: Use current stable npm
         run: npm install --global npm@12.2.1
       - run: npm ci
+      - name: Verify all eight owned Node simulator selection controls
+        run: node --test .github/qualification/simulator-selection.controls.mjs
       - run: npm audit --audit-level=moderate
       - run: npm run check:benchmarks
       - run: node scripts/check-xcode.cjs

@@ -33,7 +33,7 @@ jobs:
         run: python .github/qualification/photo-geometry-source.py before
       - run: npm ci --ignore-scripts
       - name: Verify runtime-supported simulator selection controls
-        run: node --test .github/qualification/simulator-selection.test.mjs
+        run: node --test .github/qualification/simulator-selection.controls.mjs
       - name: Check actual fitted-photo helper against positive and negative bitmap controls
         run: python .github/qualification/photo-geometry-source.py geometry
       - name: Check iOS project object and source wiring
