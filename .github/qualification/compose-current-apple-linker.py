@@ -50,8 +50,8 @@ def main():
         linker = Path(checked("selected-Apple-linker", ["xcrun", "--toolchain", "default", "--find", "ld"])).resolve()
         assert linker == (platform_tools / "usr/bin/ld").resolve()
         assert linker.is_relative_to(platform_tools.resolve())
-        checked("Apple-linker-signature", ["codesign", "--verify", "--strict", "-R", "anchor apple", str(linker)])
         checked("Apple-linker-identity", ["codesign", "--display", "--verbose=4", str(linker)])
+        checked("Apple-linker-signature", ["codesign", "--verify", "--strict", "-R", "=anchor apple", str(linker)])
         destination = toolchain / "usr/bin/ld"
         assert not os.path.lexists(destination), "Never replace an existing SDK entry"
         before = snapshot(toolchain)
