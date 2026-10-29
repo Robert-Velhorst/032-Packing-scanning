@@ -1,7 +1,7 @@
 name: iOS fitted reference-photo verification
 on:
   push:
-    branches: [fix/ios-photo-content-geometry-20261029]
+    branches: [qualify/packing-current-stable-20261029]
 permissions:
   contents: read
 

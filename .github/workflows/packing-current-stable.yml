@@ -1,7 +1,6 @@
 name: Packing current stable dependency resolution
 on:
-  push:
-    branches: [qualify/packing-current-stable-20261029]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

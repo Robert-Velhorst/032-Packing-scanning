@@ -1,4 +1,4 @@
-FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS node-runtime
+FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS node-runtime
 ARG TARGETARCH
 WORKDIR /tmp
 RUN apt-get update \
@@ -6,17 +6,19 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 RUN set -eux; \
     case "$TARGETARCH" in \
-      amd64) node_arch=x64; node_sha=fd47865ecd6391ebb431fc815e01b9135bf83ded5cf373247e9331e196b7aded ;; \
-      arm64) node_arch=arm64; node_sha=fd6cc729fa4448c2ac27c3fca5606019ced63c65a15c152c8df03e0cbce7f4c5 ;; \
+      amd64) node_arch=x64; node_sha=d28a96af6c38596f6d9d97c0ee531c13d238d757742387d1928de822d959e997 ;; \
+      arm64) node_arch=arm64; node_sha=406fe3fbde1c054adff8b297c16fdb5af6659db327c1ac8acd46b56ef1af9a92 ;; \
       *) echo "Unsupported target architecture: $TARGETARCH" >&2; exit 1 ;; \
     esac; \
     curl --fail --location --silent --show-error \
-      "https://nodejs.org/dist/v26.12.0/node-v26.12.0-linux-${node_arch}.tar.xz" \
+      "https://nodejs.org/dist/v26.13.0/node-v26.13.0-linux-${node_arch}.tar.xz" \
       --output node.tar.xz; \
     echo "${node_sha}  node.tar.xz" | sha256sum --check --status; \
     tar -xJf node.tar.xz --directory /usr/local --strip-components=1; \
     rm node.tar.xz; \
-    node --version | grep --fixed-strings --line-regexp "v26.12.0"
+    node --version | grep --fixed-strings --line-regexp "v26.13.0" \
++ && npm install --global npm@12.2.1 --ignore-scripts \
++ && npm --version | grep --fixed-strings --line-regexp "12.2.1"
 
 FROM node-runtime AS build
 WORKDIR /app
@@ -25,7 +27,7 @@ RUN npm ci --ignore-scripts
 COPY . .
 RUN npm run check:benchmarks && npm test && npm run build
 
-FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS runtime
+FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS runtime
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates libatomic1 \
  && rm -rf /var/lib/apt/lists/*
