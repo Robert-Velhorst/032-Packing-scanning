@@ -57,6 +57,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
     private var privacyCover: UIView?
 
+    // Synthetic simulator observation only; preserve window and privacy-cover behavior.
+    private func recordQualificationScene(_ scene: UIScene, event: String) {
+        #if DEBUG && targetEnvironment(simulator)
+        let windows = (scene as? UIWindowScene)?.windows ?? []
+        PackingUIQualificationLog.record([
+            "kind": "native", "name": event,
+            "text": "scene:\(scene.activationState.rawValue);app:\(UIApplication.shared.applicationState.rawValue);cover:\(privacyCover != nil);windowHidden:\(window?.isHidden ?? true);windowKey:\(window?.isKeyWindow ?? false);windows:\(windows.count);keys:\(windows.filter { $0.isKeyWindow }.count);rootViewConnected:\(window?.rootViewController?.viewIfLoaded?.window != nil)"
+        ])
+        #endif
+    }
+
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession,
                options connectionOptions: UIScene.ConnectionOptions) {
         guard let windowScene = scene as? UIWindowScene else { return }
@@ -67,23 +78,30 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             preconditionFailure("Main storyboard must provide the scene-owned ScanBridgeViewController")
         }
         window.makeKeyAndVisible()
+        recordQualificationScene(scene, event: "scene-connected")
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
     }
 
     func sceneWillResignActive(_ scene: UIScene) {
+        recordQualificationScene(scene, event: "scene-will-resign-active")
         guard privacyCover == nil, let window else { return }
         let cover = UIView(frame: window.bounds)
         cover.backgroundColor = .black; cover.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         cover.accessibilityElementsHidden = true
         window.addSubview(cover); privacyCover = cover
+        recordQualificationScene(scene, event: "privacy-cover-added")
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
+        recordQualificationScene(scene, event: "scene-did-become-active-before")
         privacyCover?.removeFromSuperview(); privacyCover = nil
+        recordQualificationScene(scene, event: "scene-did-become-active-after")
     }
 
     func sceneDidDisconnect(_ scene: UIScene) {
+        recordQualificationScene(scene, event: "scene-did-disconnect-before")
         privacyCover?.removeFromSuperview(); privacyCover = nil
+        recordQualificationScene(scene, event: "scene-did-disconnect-after")
     }
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
