@@ -696,12 +696,30 @@ import WebKit
 import OSLog
 
 /// Opt-in synthetic guest UI diagnostics. No release/device implementation or account response logging.
-@MainActor private final class PackingUIQualificationLog: NSObject, WKScriptMessageHandler {
+@MainActor final class PackingUIQualificationLog: NSObject, WKScriptMessageHandler {
     private static let logger = Logger(subsystem: "com.packingscanning.app.UIQualification", category: "synthetic-ui")
     private var messages = 0
 
+    static func record(_ body: [String: String]) {
+        guard ProcessInfo.processInfo.environment["PACKING_SYNTHETIC_GUEST_UI_DIAGNOSTICS"] == "1",
+              let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first,
+              let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]) else { return }
+        let file = directory.appendingPathComponent("packing-synthetic-ui.ndjson")
+        if !FileManager.default.fileExists(atPath: file.path) {
+            FileManager.default.createFile(atPath: file.path, contents: nil)
+        }
+        guard let handle = try? FileHandle(forWritingTo: file) else { return }
+        defer { try? handle.close() }
+        do {
+            let offset = try handle.seekToEnd()
+            guard offset < 1024 * 1024 else { return }
+            try handle.write(contentsOf: data + Data([10]))
+        } catch { /* Diagnostics must not alter the original failure behavior. */ }
+    }
+
     static func install(on configuration: WKWebViewConfiguration) {
         guard ProcessInfo.processInfo.environment["PACKING_SYNTHETIC_GUEST_UI_DIAGNOSTICS"] == "1" else { return }
+        record(["kind": "native", "text": "configuration-hook-installed"])
         let controller = configuration.userContentController
         controller.add(PackingUIQualificationLog(), name: "packingSyntheticQualification")
         controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -717,6 +735,7 @@ import OSLog
               let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]),
               let text = String(data: data, encoding: .utf8) else { return }
         messages += 1
+        Self.record(body)
         Self.logger.error("UIQUAL \(text, privacy: .public)")
     }
 

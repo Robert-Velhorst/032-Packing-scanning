@@ -1,5 +1,5 @@
 """Observe only this disposable worker's freshly created PackingPhotoQA simulator."""
-import json,os,re,signal,subprocess,sys,time,uuid
+import hashlib,json,os,re,signal,subprocess,sys,time,uuid
 from pathlib import Path
 root=Path(os.environ['RUNNER_TEMP'])/'packing-owned-console';root.mkdir(exist_ok=True)
 identity=root/'owner.json';script=Path(__file__).resolve()
@@ -26,6 +26,24 @@ else:
         global stopping
         stopping=True
     signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
+    observed_hashes=set(); capture_errors=set(); capture_count=0
+    def capture_synthetic_file():
+        global capture_count
+        if not selected or capture_count >= 100: return
+        current=[d for d in devices() if d['udid']==selected['udid'] and d['name']==selected['name']]
+        if len(current)!=1: return
+        probe=subprocess.run(['xcrun','simctl','get_app_container',selected['udid'],'com.packingscanning.app','data'],stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=5)
+        if probe.returncode: return
+        container=Path(probe.stdout.decode().strip()).resolve()
+        owned=(Path(selected['dataPath'])/'Containers'/'Data'/'Application').resolve()
+        assert container.is_relative_to(owned), 'App container escaped the freshly owned simulator.'
+        source=(container/'Library'/'Caches'/'packing-synthetic-ui.ndjson').resolve()
+        assert source.is_relative_to(container), 'Synthetic diagnostic path escaped the app container.'
+        if not source.is_file() or source.stat().st_size > 1024*1024: return
+        data=source.read_bytes(); digest=hashlib.sha256(data).hexdigest()
+        if digest in observed_hashes: return
+        observed_hashes.add(digest);capture_count+=1
+        (root/f'synthetic-ui-snapshot-{capture_count:03d}.ndjson').write_bytes(data)
     started=time.monotonic()
     try:
         while not stopping and time.monotonic()-started<600:
@@ -39,10 +57,12 @@ else:
                 stream=subprocess.Popen(['xcrun','simctl','spawn',selected['udid'],'log','stream','--style','ndjson','--level','info','--predicate','process == "App" AND subsystem == "com.packingscanning.app.UIQualification"'],stdin=subprocess.DEVNULL,stdout=output,stderr=errors)
                 while not stopping and stream.poll()is None and time.monotonic()-started<1800:
                     if (root/'app-console.ndjson').stat().st_size>64*1024*1024:truncated=True;break
+                    try: capture_synthetic_file()
+                    except (OSError,subprocess.TimeoutExpired) as error: capture_errors.add(type(error).__name__)
                     time.sleep(.5)
     finally:
         if stream and stream.poll()is None:
             stream.terminate()
             try:stream.wait(timeout=10)
             except subprocess.TimeoutExpired:stream.kill();stream.wait()
-        (root/'observer-result.json').write_text(json.dumps({'session':session,'selected_fresh_owned_simulator':selected,'console_size_limited':truncated,'app_or_test_process_terminated_by_observer':False,'only_owned_log_stream_cleanup':True},indent=2)+'\n')
+        (root/'observer-result.json').write_text(json.dumps({'session':session,'selected_fresh_owned_simulator':selected,'synthetic_file_snapshots':capture_count,'synthetic_file_capture_errors':sorted(capture_errors),'console_size_limited':truncated,'app_or_test_process_terminated_by_observer':False,'only_owned_log_stream_cleanup':True},indent=2)+'\n')
