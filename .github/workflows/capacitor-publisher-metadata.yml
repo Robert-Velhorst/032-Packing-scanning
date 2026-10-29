@@ -1,0 +1,34 @@
+name: Resolve complete preserved Capacitor publisher metadata
+on:
+  push:
+    branches: [qualify/packing-capacitor-publisher-metadata-20261029]
+permissions:
+  contents: read
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 26.13.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.15.2'
+      - name: Use current stable npm
+        run: npm install --global npm@12.2.1
+      - name: Resolve all unchanged publisher workspaces without installation or SDK execution
+        run: python .github/qualification/resolve-capacitor-publisher-metadata.py
+      - name: Retain exact resolver graph and original publisher source binding
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: Capacitor-publisher-metadata
+          path: |
+            ${{ runner.temp }}/capacitor-publisher-metadata/*.json
+            ${{ runner.temp }}/capacitor-publisher-metadata/*.log
+          retention-days: 14
+          if-no-files-found: error
