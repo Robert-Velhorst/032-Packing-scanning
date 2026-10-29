@@ -730,7 +730,7 @@ import OSLog
         guard messages < 100, message.frameInfo.isMainFrame,
               let url = message.frameInfo.request.url, url.scheme == "capacitor", url.host == "localhost",
               let body = message.body as? [String: String],
-              let kind = body["kind"], ["error", "rejection", "dom"].contains(kind),
+              let kind = body["kind"], ["error", "rejection", "dom", "interaction"].contains(kind),
               body.keys.allSatisfy({ ["kind", "name", "text", "path", "line", "column"].contains($0) }),
               body.values.allSatisfy({ $0.utf8.count <= 2048 }),
               let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]),
@@ -745,13 +745,26 @@ import OSLog
       const clean = value => String(value ?? '').replace(/(https?:\/\/[^\s?#]+)[?#][^\s]*/g, '$1').slice(0, 1024);
       const emit = value => { try { window.webkit.messageHandlers.packingSyntheticQualification.postMessage(value); } catch {} };
       emit({kind:'dom', text:'script-installed'});
+      // [DEBUG-packing-native-click-20261029] Observe only static allowlisted actions.
+      for (const type of ['pointerdown', 'pointerup', 'click']) {
+        document.addEventListener(type, event => {
+          const target = event.target instanceof Element ? event.target : null;
+          const button = target?.closest('button');
+          const raw = (button?.getAttribute('aria-label') || button?.textContent || '').trim().replace(/\s+/g, ' ');
+          const action = raw === 'Add item' ? 'Add item' : raw === 'Items' ? 'Items' : /^My items(?: \d+)?$/.test(raw) ? 'My items' : 'other';
+          const rect = button?.getBoundingClientRect();
+          const point = `${Math.round(event.clientX || 0)},${Math.round(event.clientY || 0)}`;
+          const bounds = rect ? [rect.x, rect.y, rect.width, rect.height].map(Math.round).join(',') : 'none';
+          emit({kind:'interaction', name:type, text:`${action};tag:${target?.tagName || 'none'};trusted:${event.isTrusted}`, path:`point:${point};button:${bounds};viewport:${innerWidth},${innerHeight}`});
+        }, true);
+      }
       window.addEventListener('error', event => emit({kind:'error', name:clean(event.error?.name), text:clean(event.message), path:clean((event.filename || '').split(/[?#]/)[0]), line:String(event.lineno || 0), column:String(event.colno || 0)}));
       window.addEventListener('unhandledrejection', event => emit({kind:'rejection', name:clean(event.reason?.name), text:clean(event.reason?.message ?? event.reason)}));
       let last = '', pending = false;
       const describe = () => {
         pending = false;
         const root = document.getElementById('root');
-        const state = [document.visibilityState, root?.childElementCount ?? -1, root?.querySelectorAll('button').length ?? 0, root?.querySelectorAll('input').length ?? 0].join(':');
+        const state = [document.visibilityState, root?.childElementCount ?? -1, root?.querySelectorAll('button').length ?? 0, root?.querySelectorAll('input').length ?? 0, root?.querySelectorAll('[role=dialog]').length ?? 0, root?.querySelector('input[placeholder="e.g. Travel adapter"]') ? 1 : 0].join(':');
         if (state !== last) { last = state; emit({kind:'dom', text:state}); }
       };
       new MutationObserver(() => { if (!pending) { pending = true; setTimeout(describe, 200); } }).observe(document, {childList:true, subtree:true});

@@ -61,6 +61,9 @@ final class PackingPhotoUITests: XCTestCase {
             let desktop = app.webViews.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "My items")).firstMatch
             XCTAssertTrue(desktop.waitForExistence(timeout: 30)); desktop.tap()
         }
+        // The packing page also has an Add item button that only opens the library.
+        // Wait for the library's unique heading before the caller taps its editor button.
+        XCTAssertTrue(app.webViews.staticTexts["My items"].waitForExistence(timeout: 30))
         XCTAssertTrue(app.webViews.buttons["Add item"].waitForExistence(timeout: 30))
     }
     @MainActor private func prepareDraft(_ name: String, app: XCUIApplication) {
