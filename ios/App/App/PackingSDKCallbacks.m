@@ -22,6 +22,7 @@
 @property(nonatomic, copy) PackingCallbackDeliveryGuard deliveryGuard;
 @property(nonatomic, copy) NSString *guardFailureMessage;
 @property(nonatomic, copy) NSString *guardFailureCode;
+@property(nonatomic, copy) dispatch_block_t cancellationCleanup;
 @end
 @implementation PackingCallbackEntry
 @end
@@ -268,6 +269,23 @@ BOOL PackingCallbacksSetDeliveryGuard(NSString *token, PackingCallbackDeliveryGu
     return accepted;
 }
 
+BOOL PackingCallbacksSetGuardWithCancellation(NSString *token, PackingCallbackDeliveryGuard guard,
+                                                NSString *failureMessage, NSString *failureCode,
+                                                dispatch_block_t cancellationCleanup) {
+    PackingInitialize();
+    [PackingTableLock lock];
+    PackingCallbackEntry *entry = PackingTable[token];
+    BOOL accepted = entry != nil && !entry.claimed && !entry.cancelled;
+    if (accepted) {
+        entry.deliveryGuard = guard;
+        entry.guardFailureMessage = failureMessage;
+        entry.guardFailureCode = failureCode;
+        entry.cancellationCleanup = cancellationCleanup;
+    }
+    [PackingTableLock unlock];
+    return accepted;
+}
+
 static void PackingApplyDeliveryGuard(PackingCallbackEntry *entry, dispatch_block_t response) {
     dispatch_assert_queue(entry.queue);
     // Guard fields become immutable when the terminal response is claimed.
@@ -302,7 +320,10 @@ static BOOL PackingDeliverCancellation(NSString *token, PackingCallbackEntry *en
     }
     [PackingTable removeObjectForKey:token];
     [PackingTableLock unlock];
-    if (cancelled) { [entry.call reject:message :code :nil :nil]; }
+    if (cancelled) {
+        if (entry.cancellationCleanup != nil) { entry.cancellationCleanup(); }
+        [entry.call reject:message :code :nil :nil];
+    }
     return cancelled;
 }
 

@@ -12,6 +12,11 @@ typedef void (^PackingCallbackDeliveryGuard)(dispatch_block_t action);
 FOUNDATION_EXPORT BOOL PackingCallbacksSetDeliveryGuard(NSString *token,
     PackingCallbackDeliveryGuard guard, NSString *failureMessage, NSString * _Nullable failureCode);
 
+// Candidate: cleanup runs on the SDK queue if cancellation suppresses a guarded delivery.
+FOUNDATION_EXPORT BOOL PackingCallbacksSetGuardWithCancellation(NSString *token,
+    PackingCallbackDeliveryGuard guard, NSString *failureMessage, NSString * _Nullable failureCode,
+    dispatch_block_t _Nullable cancellationCleanup);
+
 FOUNDATION_EXPORT BOOL PackingCallbacksResetOwner(NSString *owner, NSString *message, NSString * _Nullable code);
 FOUNDATION_EXPORT NSString * _Nullable PackingCallbacksOwnerEpoch(NSString *owner);
 FOUNDATION_EXPORT NSString * _Nullable PackingCallbacksTokenEpoch(NSString *token);
