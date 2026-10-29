@@ -2,8 +2,8 @@
 import hashlib,json,os,stat,subprocess,zipfile
 from pathlib import Path,PurePosixPath
 out=Path(os.environ['RUNNER_TEMP'])/'packing-saved-ui-inspection';out.mkdir(exist_ok=False)
-archive=out/'input.zip';raw=subprocess.check_output(['gh','api','repos/Robert-Velhorst/032-Packing-scanning/actions/artifacts/12869476345/zip'])
-assert hashlib.sha256(raw).hexdigest()=='b3a2265f56d2cd6d6721573e0f7fc5770431c21fa2b6feb5addbd1df53a12213'
+archive=out/'input.zip';raw=subprocess.check_output(['gh','api','repos/Robert-Velhorst/032-Packing-scanning/actions/artifacts/12873764996/zip'])
+assert hashlib.sha256(raw).hexdigest()=='cced658f0b4d2d3691739bb5f045ac094aa39f37a5675e86f4bf02f66dbd89f2'
 archive.write_bytes(raw);stage=out/'input';stage.mkdir()
 with zipfile.ZipFile(archive) as z:
     assert sum(r.file_size for r in z.infolist())<512*1024*1024
@@ -66,7 +66,7 @@ for item in objects:
         attachments.append({'label':label,'uti':uti,'file':destination.name,'exported':destination.exists()})
 after=snapshot()
 changes=[{'path':p,'before':before.get(p),'after':after.get(p)}for p in sorted(before.keys()|after.keys())if before.get(p)!=after.get(p)]
-assert hashlib.sha256(archive.read_bytes()).hexdigest()=='b3a2265f56d2cd6d6721573e0f7fc5770431c21fa2b6feb5addbd1df53a12213'
+assert hashlib.sha256(archive.read_bytes()).hexdigest()=='cced658f0b4d2d3691739bb5f045ac094aa39f37a5675e86f4bf02f66dbd89f2'
 video_source=Path('.github/qualification/scene-video-frames.swift')
 if video_source.exists():
     binary=out/'frames-generator'
@@ -76,7 +76,7 @@ if video_source.exists():
     decoded=subprocess.run([str(binary),str(exports)],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     (out/'video-decode.log').write_bytes(decoded.stdout+decoded.stderr)
     assert decoded.returncode==0,'Saved video frame decoding failed; inspect exact decoder log.'
-report={'source_run':40806503241,'source_head':'b5238165c4263aa9bf65c5dd798a876c47203e18','input_artifact':12869476345,'input_sha256':hashlib.sha256(raw).hexdigest(),
+report={'source_run':40819773767,'source_head':'724b75d14e24ac7141772e39a8b1c8833f0df811','input_artifact':12873764996,'input_sha256':hashlib.sha256(raw).hexdigest(),
  'input_payload_files':len(before),'all_input_files_unchanged':not changes,'disposable_extracted_copy_changes':changes,'pristine_archive_unchanged':True,'commands':commands,'selected_attachments':attachments,
  'SDK_cases_or_application_or_provider_execution':False,'legacy_flag_scope':'saved result object format reader only'}
 (out/'inspection.json').write_text(json.dumps(report,indent=2)+'\n')
