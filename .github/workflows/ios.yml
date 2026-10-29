@@ -88,18 +88,32 @@ concurrency:
 jobs:
   simulator:
     name: Unsigned iOS simulator and device builds
-    runs-on: macos-15
+    runs-on: xcode-27
     timeout-minutes: 30
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
       PACKING_ACCOUNT_ORIGIN: ''
+      NPM_CONFIG_ENGINE_STRICT: 'true'
+      NPM_CONFIG_STRICT_PEER_DEPS: 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 26.12.0
+          node-version: 26.13.0
           cache: npm
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.15.2'
+      - name: Use current stable npm
+        run: npm install --global npm@12.2.1
+      - name: Bind original native inputs and final stable toolchain
+        run: python .github/qualification/photo-geometry-source.py before
       - run: npm ci --ignore-scripts
+      - name: Verify runtime-supported simulator selection controls
+        run: node --test .github/qualification/simulator-selection.controls.mjs
+      - name: Check actual fitted-photo helper against positive and negative bitmap controls
+        run: python .github/qualification/photo-geometry-source.py geometry
       - name: Check iOS project object and source wiring
         run: node scripts/check-xcode.cjs
       - name: Check ImageIO reference photos and encrypted editor handoff
@@ -216,3 +230,16 @@ jobs:
           path: ${{ runner.temp }}/packing-ios-build.log
           retention-days: 7
           if-no-files-found: ignore
+      - name: Bind original native inputs after all checks
+        if: always()
+        run: python .github/qualification/photo-geometry-source.py after
+      - name: Retain exact geometry and toolchain evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: packing-photo-geometry
+          path: |
+            ${{ runner.temp }}/packing-photo-geometry/*.json
+            ${{ runner.temp }}/packing-photo-geometry/*.swift
+          retention-days: 14
+          if-no-files-found: error

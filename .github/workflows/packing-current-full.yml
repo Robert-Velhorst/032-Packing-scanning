@@ -5,6 +5,10 @@ on:
 permissions:
   contents: read
 
+env:
+  NPM_CONFIG_ENGINE_STRICT: 'true'
+  NPM_CONFIG_STRICT_PEER_DEPS: 'true'
+
 jobs:
   node:
     name: Node.js ${{ matrix.node-version }}

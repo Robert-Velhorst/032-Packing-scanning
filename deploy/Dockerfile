@@ -22,6 +22,7 @@ RUN set -eux; \
 
 FROM node-runtime AS build
 WORKDIR /app
+ENV NPM_CONFIG_ENGINE_STRICT=true NPM_CONFIG_STRICT_PEER_DEPS=true
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY . .
