@@ -21,7 +21,6 @@ jobs:
       PACKING_ACCOUNT_ORIGIN: ''
       NPM_CONFIG_ENGINE_STRICT: 'true'
       NPM_CONFIG_STRICT_PEER_DEPS: 'true'
-      GRADLE_USER_HOME: ${{ runner.temp }}/packing-android-gradle
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -38,6 +37,8 @@ jobs:
       - name: Install final Android SDK and stable metadata gate
         shell: bash
         run: |
+          export GRADLE_USER_HOME="$RUNNER_TEMP/packing-android-gradle"
+          echo "GRADLE_USER_HOME=$GRADLE_USER_HOME" >> "$GITHUB_ENV"
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-37.2' 'build-tools;37.0.0'
           mkdir -p "$GRADLE_USER_HOME/init.d"
           cp .github/qualification/android-stable-metadata.gradle "$GRADLE_USER_HOME/init.d/packing-stable-metadata.gradle"
